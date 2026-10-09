@@ -1,5 +1,5 @@
-
-import React, { useState } from 'react'
+import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   Field,
@@ -8,33 +8,98 @@ import {
   Select,
   PhoneInput,
   RadioGroup,
-  UploadButton,
   SectionCard,
   InfoNote,
-} from './Formcontrols'
+} from "./Formcontrols";
 
-import { KycRow } from './CustomerTab'
+import { KycRow } from "./CustomerTab";
 
 import {
   RELATIONSHIPS,
   RESIDENCE_TYPES,
-} from '../../Options'
+} from "../../Options";
+
+// =====================================================
+// FILE → BASE64
+// =====================================================
+const fileToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      resolve(null);
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      resolve({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        data: reader.result,
+      });
+    };
+
+    reader.onerror = () => {
+      reject(new Error("Failed to read file"));
+    };
+
+    reader.readAsDataURL(file);
+  });
+};
 
 const GuarantorTab = ({ data, onChange }) => {
+  const { t } = useTranslation();
+
+  // =====================================================
+  // KYC STATE
+  // =====================================================
   const [kycEnabled, setKycEnabled] = useState(
-    data.kycRequired !== 'No'
-  )
+    data.kycRequired !== "No"
+  );
 
-  const set = (key) => (e) => onChange(key, e.target.value)
+  // =====================================================
+  // GENERIC CHANGE HANDLER
+  // =====================================================
+  const set = (key) => (e) => {
+    onChange(key, e.target.value);
+  };
 
-  const required = data.required === 'Yes'
+  // =====================================================
+  // GUARANTOR REQUIRED
+  // =====================================================
+  const required = data.required === "Yes";
 
+  // =====================================================
+  // KYC TOGGLE
+  // =====================================================
   const toggleKyc = () => {
-    const nextValue = !kycEnabled
+    const nextValue = !kycEnabled;
 
-    setKycEnabled(nextValue)
-    onChange('kycRequired', nextValue ? 'Yes' : 'No')
-  }
+    setKycEnabled(nextValue);
+
+    onChange(
+      "kycRequired",
+      nextValue ? "Yes" : "No"
+    );
+  };
+
+  // =====================================================
+  // FILE CHANGE HANDLER
+  // =====================================================
+  const handleFileChange = async (key, file) => {
+    if (!file) {
+      onChange(key, null);
+      return;
+    }
+
+    try {
+      const fileData = await fileToBase64(file);
+      onChange(key, fileData);
+    } catch (error) {
+      console.error(`Failed to save ${key}:`, error);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -46,23 +111,26 @@ const GuarantorTab = ({ data, onChange }) => {
 
         <div>
           <h2 className="text-sm font-semibold text-slate-900">
-            Guarantor Required?
+            {t("guarantor.required")}
           </h2>
 
           <p className="mt-0.5 text-[11px] text-slate-500">
-            Select whether this application requires a guarantor.
+            {t("guarantor.requiredDescription")}
           </p>
         </div>
 
         <RadioGroup
           name="guarantorRequired"
-          options={['Yes', 'No']}
+          options={["Yes", "No"]}
           value={data.required}
           onChange={(value) =>
-            onChange('required', value)
+            onChange("required", value)
           }
+          optionLabels={{
+            Yes: t("common.yes"),
+            No: t("common.no"),
+          }}
         />
-
       </div>
 
       {/* =====================================================
@@ -70,7 +138,7 @@ const GuarantorTab = ({ data, onChange }) => {
       ====================================================== */}
       {!required ? (
         <InfoNote>
-          No guarantor is required for this application.
+          {t("guarantor.notRequired")}
         </InfoNote>
       ) : (
 
@@ -82,120 +150,158 @@ const GuarantorTab = ({ data, onChange }) => {
           {/* =================================================
               LEFT — GUARANTOR DETAILS
           ================================================== */}
-          <SectionCard title="Guarantor Details">
+          <SectionCard title={t("guarantor.details")}>
 
             <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
 
               {/* Name */}
-              <Field label="Guarantor Name" required>
+              <Field
+                label={t("guarantor.name")}
+                required
+              >
                 <Input
                   value={data.name}
-                  onChange={set('name')}
-                  placeholder="Enter guarantor name"
+                  onChange={set("name")}
+                  placeholder={t(
+                    "guarantor.enterName"
+                  )}
                 />
               </Field>
 
               {/* Mobile */}
-              <Field label="Mobile Number" required>
+              <Field
+                label={t("common.mobileNumber")}
+                required
+              >
                 <PhoneInput
                   code={data.countryCode}
                   mobile={data.mobile}
                   onCodeChange={(value) =>
-                    onChange('countryCode', value)
+                    onChange("countryCode", value)
                   }
                   onMobileChange={(value) =>
-                    onChange('mobile', value)
+                    onChange("mobile", value)
                   }
                 />
               </Field>
 
               {/* Relationship */}
               <Field
-                label="Relationship with Customer"
+                label={t("guarantor.relationship")}
                 required
               >
                 <Input
                   list="guarantor-relationship-options"
                   value={data.relationship}
-                  onChange={set('relationship')}
-                  placeholder="Enter relationship"
+                  onChange={set("relationship")}
+                  placeholder={t(
+                    "guarantor.enterRelationship"
+                  )}
                 />
+
                 <datalist id="guarantor-relationship-options">
                   {RELATIONSHIPS.map((relationship) => (
-                    <option key={relationship} value={relationship} />
+                    <option
+                      key={relationship}
+                      value={relationship}
+                    >
+                      {t(
+                        `options.relationships.${relationship}`,
+                        {
+                          defaultValue: relationship,
+                        }
+                      )}
+                    </option>
                   ))}
                 </datalist>
               </Field>
 
               {/* Profession */}
-              <Field label="Profession">
+              <Field label={t("common.profession")}>
                 <Input
                   value={data.profession}
-                  onChange={set('profession')}
-                  placeholder="Enter profession"
+                  onChange={set("profession")}
+                  placeholder={t(
+                    "guarantor.enterProfession"
+                  )}
                 />
               </Field>
 
               {/* Address */}
               <Field
-                label="Address"
+                label={t("common.address")}
                 required
                 className="md:col-span-2"
               >
                 <Textarea
                   value={data.address}
-                  onChange={set('address')}
-                  placeholder="Enter full address"
+                  onChange={set("address")}
+                  placeholder={t(
+                    "common.enterFullAddress"
+                  )}
                   className="min-h-[64px] resize-none"
                 />
               </Field>
-
             </div>
 
             {/* Location */}
             <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-3">
 
-              <Field label="Area / Locality">
+              {/* Area */}
+              <Field label={t("common.areaLocality")}>
                 <Input
                   value={data.area}
-                  onChange={set('area')}
-                  placeholder="Enter area / locality"
+                  onChange={set("area")}
+                  placeholder={t(
+                    "common.enterAreaLocality"
+                  )}
                 />
               </Field>
 
-              <Field label="Landmark">
+              {/* Landmark */}
+              <Field label={t("common.landmark")}>
                 <Input
                   value={data.landmark}
-                  onChange={set('landmark')}
-                  placeholder="Enter landmark"
+                  onChange={set("landmark")}
+                  placeholder={t(
+                    "common.enterLandmark"
+                  )}
                 />
               </Field>
 
-              <Field label="Pincode">
+              {/* Pincode */}
+              <Field label={t("common.pincode")}>
                 <Input
                   inputMode="numeric"
                   maxLength={6}
                   value={data.pincode}
                   onChange={(e) =>
                     onChange(
-                      'pincode',
-                      e.target.value.replace(/\D/g, '')
+                      "pincode",
+                      e.target.value.replace(/\D/g, "")
                     )
                   }
-                  placeholder="Enter 6-digit pincode"
+                  placeholder={t(
+                    "common.enterPincode"
+                  )}
                 />
               </Field>
-
             </div>
 
             {/* Residence */}
             <div className="mt-3 max-w-sm">
-              <Field label="Residence Type" required>
+              <Field
+                label={t("common.residenceType")}
+                required
+              >
                 <Select
                   options={RESIDENCE_TYPES}
-                  placeholder="Select residence type"
+                  placeholder={t(
+                    "common.selectResidenceType"
+                  )}
+                  translationKey="options.residence"
                   value={data.residenceType}
-                  onChange={set('residenceType')}
+                  onChange={set("residenceType")}
                 />
               </Field>
             </div>
@@ -206,26 +312,28 @@ const GuarantorTab = ({ data, onChange }) => {
               RIGHT — OPTIONAL KYC
           ================================================== */}
           <SectionCard
-            title="Guarantor KYC"
+            title={t("guarantor.kyc.title")}
             right={
               <button
                 type="button"
                 onClick={toggleKyc}
                 className={[
-                  'relative h-5 w-9 rounded-full transition-colors',
+                  "relative h-5 w-9 rounded-full transition-colors",
                   kycEnabled
-                    ? 'bg-emerald-600'
-                    : 'bg-slate-300',
-                ].join(' ')}
-                aria-label="Toggle guarantor KYC"
+                    ? "bg-emerald-600"
+                    : "bg-slate-300",
+                ].join(" ")}
+                aria-label={t(
+                  "guarantor.kyc.toggle"
+                )}
               >
                 <span
                   className={[
-                    'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
+                    "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
                     kycEnabled
-                      ? 'translate-x-4'
-                      : 'translate-x-0.5',
-                  ].join(' ')}
+                      ? "translate-x-4"
+                      : "translate-x-0.5",
+                  ].join(" ")}
                 />
               </button>
             }
@@ -236,84 +344,109 @@ const GuarantorTab = ({ data, onChange }) => {
 
               <div>
                 <p className="text-xs font-medium text-slate-700">
-                  KYC Documents
+                  {t("guarantor.kyc.documents")}
                 </p>
 
                 <p className="text-[10px] text-slate-400">
-                  Optional for guarantor
+                  {t("guarantor.kyc.optional")}
                 </p>
               </div>
 
               <span
                 className={[
-                  'rounded px-2 py-1 text-[10px] font-medium',
+                  "rounded px-2 py-1 text-[10px] font-medium",
                   kycEnabled
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-slate-100 text-slate-500',
-                ].join(' ')}
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-slate-100 text-slate-500",
+                ].join(" ")}
               >
-                {kycEnabled ? 'Enabled' : 'Optional'}
+                {kycEnabled
+                  ? t("common.enabled")
+                  : t("common.optional")}
               </span>
-
             </div>
 
             {kycEnabled ? (
 
               <div className="space-y-3">
 
+                {/* Aadhaar */}
                 <KycRow
-                  label="Aadhaar Number"
-                  placeholder="Enter Aadhaar number"
-                  uploadLabel="Upload"
+                  label={t("kyc.aadhaarNumber")}
+                  placeholder={t(
+                    "guarantor.kyc.enterAadhaar"
+                  )}
+                  uploadLabel={t("common.upload")}
                   value={data.aadhaarNo}
                   file={data.aadhaarFile}
                   onValue={(value) =>
-                    onChange('aadhaarNo', value)
+                    onChange("aadhaarNo", value)
                   }
                   onFile={(file) =>
-                    onChange('aadhaarFile', file)
+                    handleFileChange(
+                      "aadhaarFile",
+                      file
+                    )
                   }
                 />
 
+                {/* PAN */}
                 <KycRow
-                  label="PAN Number"
-                  placeholder="Enter PAN number"
-                  uploadLabel="Upload"
+                  label={t("kyc.panNumber")}
+                  placeholder={t(
+                    "guarantor.kyc.enterPan"
+                  )}
+                  uploadLabel={t("common.upload")}
                   value={data.panNo}
                   file={data.panFile}
                   onValue={(value) =>
-                    onChange('panNo', value)
+                    onChange("panNo", value)
                   }
                   onFile={(file) =>
-                    onChange('panFile', file)
+                    handleFileChange(
+                      "panFile",
+                      file
+                    )
                   }
                 />
 
+                {/* Driving Licence */}
                 <KycRow
-                  label="Driving Licence"
-                  placeholder="Enter DL number"
-                  uploadLabel="Upload"
+                  label={t("kyc.drivingLicence")}
+                  placeholder={t(
+                    "guarantor.kyc.enterDl"
+                  )}
+                  uploadLabel={t("common.upload")}
                   value={data.dlNo}
                   file={data.dlFile}
                   onValue={(value) =>
-                    onChange('dlNo', value)
+                    onChange("dlNo", value)
                   }
                   onFile={(file) =>
-                    onChange('dlFile', file)
+                    handleFileChange(
+                      "dlFile",
+                      file
+                    )
                   }
                 />
 
+                {/* Voter ID */}
                 <KycRow
-                  label="Voter ID"
-                  placeholder="Enter Voter ID"
-                  uploadLabel="Upload"
+                  label={t("kyc.voterId")}
+                  placeholder={t(
+                    "guarantor.kyc.enterVoterId"
+                  )}
+                  uploadLabel={t("common.upload")}
                   value={data.voterNo}
                   file={data.voterFile}
                   onValue={(value) =>
-                    onChange('voterNo', value)
+                    onChange("voterNo", value)
                   }
                   onFile={(file) =>
-                    onChange('voterFile', file)
+                    handleFileChange(
+                      "voterFile",
+                      file
+                    )
                   }
                 />
 
@@ -330,18 +463,18 @@ const GuarantorTab = ({ data, onChange }) => {
                   </div>
 
                   <p className="text-xs font-medium text-slate-600">
-                    KYC is optional
+                    {t("guarantor.kyc.isOptional")}
                   </p>
 
                   <p className="mt-1 text-[10px] leading-4 text-slate-400">
-                    Enable KYC if identity documents are
-                    required for this guarantor.
+                    {t(
+                      "guarantor.kyc.enableDescription"
+                    )}
                   </p>
 
                 </div>
 
               </div>
-
             )}
 
           </SectionCard>
@@ -350,7 +483,7 @@ const GuarantorTab = ({ data, onChange }) => {
       )}
 
     </div>
-  )
-}
+  );
+};
 
-export default GuarantorTab
+export default GuarantorTab;

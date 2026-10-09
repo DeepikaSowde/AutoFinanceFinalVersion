@@ -1,5 +1,6 @@
 
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import {
   Field,
@@ -8,13 +9,8 @@ import {
   AdornedInput,
   RadioGroup,
   SectionCard,
-  OutlineButton,
-  InfoNote,
-  InfoIcon,
-  CalendarIcon,
-  ArrowRight,
-  PlusIcon,
   formatINR,
+  CalendarIcon ,
   formatDate,
 } from './Formcontrols'
 
@@ -26,38 +22,28 @@ import {
   PENALTY_TYPES,
 } from '../../Options'
 
-
 /* =========================================================
    CONSTANTS
 ========================================================= */
 
 const YES_NO = ['Yes', 'No']
 
-
-
 /* =========================================================
    HELPERS
 ========================================================= */
 
-export const calcLoanAmount = (vehicleAmount, downPayment) => {
-  const v = Number(vehicleAmount) || 0
-  const d = Number(downPayment) || 0
 
-  return Math.max(v - d, 0)
-}
 const digits = (value = '') =>
   value.replace(/\D/g, '')
 
-
 const decimal = (value = '') =>
   value.replace(/[^\d.]/g, '')
-
 
 /* =========================================================
    REPAYMENT CALCULATION
 ========================================================= */
 
-const calculateRepayment = ({
+export const calculateRepayment = ({
   principal,
   interestRate,
   tenure,
@@ -66,15 +52,11 @@ const calculateRepayment = ({
   interestType,
   repaymentMethod,
 }) => {
-
   const P = Number(principal) || 0
   const annualRate = Number(interestRate) || 0
   const tenureValue = Number(tenure) || 0
 
-  if (
-    P <= 0 ||
-    tenureValue <= 0
-  ) {
+  if (P <= 0 || tenureValue <= 0) {
     return {
       principal: P,
       interest: 0,
@@ -84,7 +66,6 @@ const calculateRepayment = ({
     }
   }
 
-
   /* -------------------------------------------------------
      NUMBER OF PAYMENTS
   ------------------------------------------------------- */
@@ -92,29 +73,18 @@ const calculateRepayment = ({
   let numberOfPayments = tenureValue
 
   if (tenureUnit === 'Years') {
-
     if (paymentFrequency === 'Monthly') {
       numberOfPayments = tenureValue * 12
-    }
-
-    else if (paymentFrequency === 'Quarterly') {
+    } else if (paymentFrequency === 'Quarterly') {
       numberOfPayments = tenureValue * 4
-    }
-
-    else if (paymentFrequency === 'Half-Yearly') {
+    } else if (paymentFrequency === 'Half-Yearly') {
       numberOfPayments = tenureValue * 2
-    }
-
-    else if (paymentFrequency === 'Yearly') {
+    } else if (paymentFrequency === 'Yearly') {
       numberOfPayments = tenureValue
-    }
-
-    else {
+    } else {
       numberOfPayments = tenureValue * 12
     }
-
   }
-
 
   /* -------------------------------------------------------
      PAYMENT FREQUENCY
@@ -124,34 +94,22 @@ const calculateRepayment = ({
 
   if (paymentFrequency === 'Weekly') {
     periodsPerYear = 52
-  }
-
-  else if (paymentFrequency === 'Bi-Weekly') {
+  } else if (paymentFrequency === 'Bi-Weekly') {
     periodsPerYear = 26
-  }
-
-  else if (paymentFrequency === 'Monthly') {
+  } else if (paymentFrequency === 'Monthly') {
     periodsPerYear = 12
-  }
-
-  else if (paymentFrequency === 'Quarterly') {
+  } else if (paymentFrequency === 'Quarterly') {
     periodsPerYear = 4
-  }
-
-  else if (paymentFrequency === 'Half-Yearly') {
+  } else if (paymentFrequency === 'Half-Yearly') {
     periodsPerYear = 2
-  }
-
-  else if (paymentFrequency === 'Yearly') {
+  } else if (paymentFrequency === 'Yearly') {
     periodsPerYear = 1
   }
-
 
   numberOfPayments = Math.max(
     Math.round(numberOfPayments),
     0
   )
-
 
   if (numberOfPayments <= 0) {
     return {
@@ -163,16 +121,13 @@ const calculateRepayment = ({
     }
   }
 
-
   /* -------------------------------------------------------
      REDUCING BALANCE
   ------------------------------------------------------- */
 
   if (interestType === 'Reducing Balance') {
-
     const periodicRate =
       annualRate / 100 / periodsPerYear
-
 
     /* EMI method */
 
@@ -180,15 +135,11 @@ const calculateRepayment = ({
       repaymentMethod === 'EMI' ||
       !repaymentMethod
     ) {
-
       let emi = 0
 
       if (periodicRate === 0) {
-
         emi = P / numberOfPayments
-
       } else {
-
         emi =
           P *
           periodicRate *
@@ -202,7 +153,6 @@ const calculateRepayment = ({
               numberOfPayments
             ) - 1
           )
-
       }
 
       const totalPayable =
@@ -218,29 +168,27 @@ const calculateRepayment = ({
         emiAmount: emi,
         numberOfPayments,
       }
-
     }
-
 
     /* Principal method */
 
     if (repaymentMethod === 'Principal') {
-
       const principalPerPayment =
         P / numberOfPayments
 
       let balance = P
       let totalInterest = 0
 
-      for (let i = 0; i < numberOfPayments; i++) {
-
+      for (
+        let i = 0;
+        i < numberOfPayments;
+        i++
+      ) {
         const interestForPeriod =
           balance * periodicRate
 
         totalInterest += interestForPeriod
-
         balance -= principalPerPayment
-
       }
 
       const totalPayable =
@@ -256,11 +204,8 @@ const calculateRepayment = ({
         emiAmount: averagePayment,
         numberOfPayments,
       }
-
     }
-
   }
-
 
   /* -------------------------------------------------------
      FLAT / SIMPLE INTEREST
@@ -291,7 +236,6 @@ const calculateRepayment = ({
   }
 }
 
-
 /* =========================================================
    SUMMARY ROW
 ========================================================= */
@@ -301,9 +245,7 @@ const SummaryRow = ({
   value,
   strong = false,
 }) => (
-
   <div className="flex items-center justify-between gap-3">
-
     <span className="text-xs text-slate-600">
       {label}
     </span>
@@ -317,10 +259,8 @@ const SummaryRow = ({
     >
       {value}
     </span>
-
   </div>
 )
-
 
 /* =========================================================
    LOAN TAB
@@ -332,22 +272,19 @@ const LoanTab = ({
   onChange,
   onViewSchedule,
 }) => {
+  const { t } = useTranslation()
+  const [referralEnabled, setReferralEnabled] = useState(Boolean(data.referredBy || data.referredByCommission))
 
   /* -------------------------------------------------------
      VEHICLE / LOAN AMOUNT
   ------------------------------------------------------- */
 
   const vehicleAmount =
-    data.vehicleAmount ??
-    vehicleAmountFromVehicle ??
-    ''
+  data.vehicleAmount !== "" && data.vehicleAmount != null
+    ? data.vehicleAmount
+    : vehicleAmountFromVehicle ?? ""
 
-  const loanAmount =
-    calcLoanAmount(
-      vehicleAmount,
-      data.downPayment
-    )
-
+  const loanAmount = Number(data.loanAmount) || 0
 
   /* -------------------------------------------------------
      CONDITIONS
@@ -359,16 +296,26 @@ const LoanTab = ({
   const reducingBalance =
     data.interestType === 'Reducing Balance'
 
-
   const isReducingBalance =
     data.interestType === 'Reducing Balance'
 
-  // Clear repayment method if user changes back to Flat
+  /* Clear repayment method if user changes back to Flat */
+
   React.useEffect(() => {
-    if (!isReducingBalance && data.repaymentMethod) {
-      onChange('repaymentMethod', '')
+    if (
+      !isReducingBalance &&
+      data.repaymentMethod
+    ) {
+      onChange(
+        'repaymentMethod',
+        ''
+      )
     }
-  }, [isReducingBalance])
+  }, [
+    isReducingBalance,
+    data.repaymentMethod,
+    onChange,
+  ])
 
   /* -------------------------------------------------------
      REPAYMENT CALCULATION
@@ -381,9 +328,12 @@ const LoanTab = ({
         interestRate: data.interestRate,
         tenure: data.tenure,
         tenureUnit: data.tenureUnit,
-        paymentFrequency: data.paymentFrequency,
-        interestType: data.interestType,
-        repaymentMethod: data.repaymentMethod,
+        paymentFrequency:
+          data.paymentFrequency,
+        interestType:
+          data.interestType,
+        repaymentMethod:
+          data.repaymentMethod,
       }),
     [
       loanAmount,
@@ -396,13 +346,11 @@ const LoanTab = ({
     ]
   )
 
-
   /* -------------------------------------------------------
      CHANGE VEHICLE AMOUNT
   ------------------------------------------------------- */
 
   const handleVehicleAmountChange = (e) => {
-
     const value =
       digits(e.target.value)
 
@@ -412,52 +360,44 @@ const LoanTab = ({
     )
   }
 
-
   /* -------------------------------------------------------
      DOWN PAYMENT
   ------------------------------------------------------- */
 
   const handleDownPaymentChange = (e) => {
-
     onChange(
       'downPayment',
       digits(e.target.value)
     )
   }
 
-
   /* -------------------------------------------------------
      INTEREST RATE
   ------------------------------------------------------- */
 
   const handleInterestRateChange = (e) => {
-
     onChange(
       'interestRate',
       decimal(e.target.value)
     )
   }
 
-
   /* -------------------------------------------------------
      TENURE
   ------------------------------------------------------- */
 
   const handleTenureChange = (e) => {
-
     onChange(
       'tenure',
       digits(e.target.value)
     )
   }
 
-
   /* -------------------------------------------------------
      RULE TOGGLE
   ------------------------------------------------------- */
 
   const toggleRules = () => {
-
     const nextValue =
       !rulesEnabled
 
@@ -467,7 +407,6 @@ const LoanTab = ({
     )
 
     if (!nextValue) {
-
       onChange(
         'gracePeriod',
         ''
@@ -485,11 +424,8 @@ const LoanTab = ({
     }
   }
 
-
   return (
-
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-
 
       {/* =================================================
           MAIN FORM
@@ -497,164 +433,160 @@ const LoanTab = ({
 
       <div className="space-y-4">
 
-
         {/* =================================================
             1. LOAN DETAILS
         ================================================== */}
 
-        <SectionCard title="1. Loan Details">
-
+        <SectionCard
+          title={`1. ${t('loan.loanDetails')}`}
+        >
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-
 
             {/* VEHICLE AMOUNT */}
 
             <Field
-              label="Vehicle Amount"
+              label={t('loan.vehicleAmount')}
               required
             >
-
               <AdornedInput
                 prefix="₹"
                 inputMode="numeric"
                 value={vehicleAmount}
-                onChange={handleVehicleAmountChange}
-                placeholder="Enter vehicle amount"
+                onChange={
+                  handleVehicleAmountChange
+                }
+                placeholder={t(
+                  'loan.enterVehicleAmount'
+                )}
               />
-
             </Field>
-
 
             {/* DOWN PAYMENT */}
 
             <Field
-              label="Down Payment"
+              label={t('loan.downPayment')}
               required
             >
-
               <AdornedInput
                 prefix="₹"
                 inputMode="numeric"
                 value={data.downPayment}
-                onChange={handleDownPaymentChange}
-                placeholder="Enter down payment"
+                onChange={
+                  handleDownPaymentChange
+                }
+                placeholder={t(
+                  'loan.enterDownPayment'
+                )}
               />
-
             </Field>
-
 
             {/* LOAN AMOUNT */}
 
             <div className="rounded-md bg-emerald-50 p-3">
-
               <div className="mb-1 flex items-center justify-between">
-
                 <span className="text-xs font-medium text-emerald-800">
-                  Loan Amount
-                </span>
-
-                <span className="text-[10px] text-emerald-600">
-                  Auto-calculated
+                  {t('loan.loanAmount')}
                 </span>
 
               </div>
 
               <AdornedInput
                 prefix="₹"
-                value={
-                  vehicleAmount === ''
-                    ? ''
-                    : loanAmount.toLocaleString('en-IN')
+                inputMode="numeric"
+                value={data.loanAmount || ''}
+                onChange={(e) =>
+                  onChange('loanAmount', digits(e.target.value))
                 }
-                readOnly
-                disabled
+                placeholder={t('loan.enterLoanAmount')}
               />
-
             </div>
-
 
             {/* INTEREST TYPE */}
 
-<Field label="Interest Type" required>
-  <Select
-    options={INTEREST_TYPES}
-    placeholder="Select interest type"
-    value={data.interestType}
-    onChange={(e) =>
-      onChange('interestType', e.target.value)
-    }
-  />
-</Field>
-{isReducingBalance && (
-  <Field label="Repayment Method" required>
-    <Select
-      options={REPAYMENT_METHODS}
-      placeholder="Select repayment method"
-      value={data.repaymentMethod}
-      onChange={(e) =>
-        onChange('repaymentMethod', e.target.value)
-      }
-    />
-  </Field>
-)}
-
+            <Field
+              label={t('loan.interestType')}
+              required
+            >
+              <Select
+                options={INTEREST_TYPES}
+                placeholder={t(
+                  'loan.selectInterestType'
+                )}
+                translationKey="options.interestTypes"
+                value={data.interestType}
+                onChange={(e) =>
+                  onChange(
+                    'interestType',
+                    e.target.value
+                  )
+                }
+              />
+            </Field>
 
             {/* REPAYMENT METHOD */}
 
             {reducingBalance && (
-
               <Field
-                label="Repayment Method"
+                label={t(
+                  'loan.repaymentMethod'
+                )}
                 required
               >
-
                 <RadioGroup
                   name="repaymentMethod"
                   options={REPAYMENT_METHODS}
-                  value={data.repaymentMethod}
+                  translationKey="options.repaymentMethods"
+                  value={
+                    data.repaymentMethod
+                  }
                   onChange={(value) =>
                     onChange(
                       'repaymentMethod',
                       value
                     )
                   }
-                  className="flex flex-wrap gap-x-5 gap-y-2 pt-1"
                 />
-
               </Field>
-
             )}
-
 
             {/* INTEREST RATE */}
 
             <Field
-              label="Interest Rate"
+              label={t('loan.interestRate')}
               required
             >
-
               <AdornedInput
                 suffix="%"
                 inputMode="decimal"
                 value={data.interestRate}
-                onChange={handleInterestRateChange}
-                placeholder="Enter interest rate"
+                onChange={
+                  handleInterestRateChange
+                }
+                placeholder={t(
+                  'loan.enterInterestRate'
+                )}
               />
-
             </Field>
-
 
             {/* PAYMENT FREQUENCY */}
 
             <Field
-              label="Payment Frequency"
+              label={t(
+                'loan.paymentFrequency'
+              )}
               required
             >
-
               <Select
-                options={PAYMENT_FREQUENCIES}
-                placeholder="Select frequency"
-                value={data.paymentFrequency}
+                options={
+                  PAYMENT_FREQUENCIES
+                }
+                placeholder={t(
+                  'loan.selectFrequency'
+                )}
+                translationKey="options.paymentFrequencies"
+                value={
+                  data.paymentFrequency
+                }
                 onChange={(e) =>
                   onChange(
                     'paymentFrequency',
@@ -662,29 +594,33 @@ const LoanTab = ({
                   )
                 }
               />
-
             </Field>
-
 
             {/* LOAN TENURE */}
 
             <Field
-              label="Loan Tenure"
+              label={t('loan.loanTenure')}
               required
             >
-
               <div className="grid grid-cols-[1fr_110px] gap-2">
 
                 <Input
                   inputMode="numeric"
                   value={data.tenure}
-                  onChange={handleTenureChange}
-                  placeholder="Enter tenure"
+                  onChange={
+                    handleTenureChange
+                  }
+                  placeholder={t(
+                    'loan.enterTenure'
+                  )}
                 />
 
                 <Select
                   options={TENURE_UNITS}
-                  value={data.tenureUnit}
+                  translationKey="options.tenureUnits"
+                  value={
+                    data.tenureUnit
+                  }
                   onChange={(e) =>
                     onChange(
                       'tenureUnit',
@@ -694,17 +630,16 @@ const LoanTab = ({
                 />
 
               </div>
-
             </Field>
-
 
             {/* FIRST DUE DATE */}
 
             <Field
-              label="First Due Date"
+              label={t(
+                'loan.firstDueDate'
+              )}
               required
             >
-
               <div className="relative">
 
                 <CalendarIcon
@@ -714,7 +649,9 @@ const LoanTab = ({
                 <Input
                   type="date"
                   className="pl-9"
-                  value={data.firstDueDate}
+                  value={
+                    data.firstDueDate
+                  }
                   onChange={(e) =>
                     onChange(
                       'firstDueDate',
@@ -724,189 +661,275 @@ const LoanTab = ({
                 />
 
               </div>
-
             </Field>
-
 
             {/* DOCUMENT CHARGE */}
 
             <Field
-              label="Document Charge"
+              label={t(
+                'loan.documentCharge'
+              )}
               required
             >
-
               <AdornedInput
                 prefix="₹"
                 inputMode="numeric"
-                value={data.documentCharge}
+                value={
+                  data.documentCharge
+                }
                 onChange={(e) =>
                   onChange(
                     'documentCharge',
-                    digits(e.target.value)
+                    digits(
+                      e.target.value
+                    )
                   )
                 }
-                placeholder="Enter document charge"
+                placeholder={t(
+                  'loan.enterDocumentCharge'
+                )}
               />
-
             </Field>
 
-          </div>
+            <div className="md:col-span-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextEnabled = !referralEnabled
+                  setReferralEnabled(nextEnabled)
+                  if (!nextEnabled) {
+                    onChange('referredBy', '')
+                    onChange('referredByCommission', '')
+                  }
+                }}
+                className="text-sm font-medium text-emerald-700 hover:text-emerald-800"
+              >
+                {referralEnabled
+                  ? `− ${t('loan.removeReferredBy')}`
+                  : `+ ${t('loan.addReferredBy')}`}
+              </button>
 
+              {referralEnabled && (
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <Field label={t('loan.referredBy')}>
+                    <Input
+                      value={data.referredBy || ''}
+                      onChange={(e) => onChange('referredBy', e.target.value)}
+                      placeholder={t('loan.enterReferredBy')}
+                    />
+                  </Field>
+                  <Field label={t('loan.commission')}>
+                    <AdornedInput
+                      suffix="%"
+                      inputMode="decimal"
+                      value={data.referredByCommission || ''}
+                      onChange={(e) => onChange('referredByCommission', digits(e.target.value))}
+                      placeholder={t('loan.enterCommission')}
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>
+
+          </div>
         </SectionCard>
 
-        {/* =================================================
-            2. CUSTOMER-SPECIFIC CHARGES
-        ================================================== */}
+        <div>
+          <button
+            type="button"
+            onClick={toggleRules}
+            className="text-sm font-medium text-emerald-700 hover:text-emerald-800"
+          >
+            {rulesEnabled
+              ? `− ${t('loan.removeCharges')}`
+              : `+ ${t('loan.addGracePenalty')}`}
+          </button>
 
-        <SectionCard
-          title={
-            <>
-              2. Customer Charges{' '}
-              <span className="font-medium text-slate-400">
-                Optional
-              </span>
-            </>
-          }
-          right={
-            <button
-              type="button"
-              onClick={toggleRules}
-              className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 hover:text-emerald-800"
-            >
-              <PlusIcon className="h-4 w-4" />
-              {rulesEnabled ? 'Remove Charges' : 'Add Grace & Penalty'}
-            </button>
-          }
-        >
-          {!rulesEnabled ? (
-            <p className="text-xs text-slate-500">
-              Use this only when a custom grace period or late
-              payment penalty needs to be applied to this customer.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <Field label="Grace Period">
+          {rulesEnabled && (
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+
+              {/* GRACE PERIOD */}
+
+              <Field
+                label={t(
+                  'loan.gracePeriod'
+                )}
+              >
                 <AdornedInput
-                  suffix="Days"
+                  suffix={t(
+                    'common.days'
+                  )}
                   inputMode="numeric"
-                  value={data.gracePeriod}
-                  onChange={(e) =>
-                    onChange('gracePeriod', digits(e.target.value))
+                  value={
+                    data.gracePeriod
                   }
-                  placeholder="Enter days"
+                  onChange={(e) =>
+                    onChange(
+                      'gracePeriod',
+                      digits(
+                        e.target.value
+                      )
+                    )
+                  }
+                  placeholder={t(
+                    'loan.enterDays'
+                  )}
                 />
               </Field>
 
-              <Field label="Late Payment Penalty">
+              {/* LATE PAYMENT PENALTY */}
+
+              <Field
+                label={t(
+                  'loan.latePaymentPenalty'
+                )}
+              >
                 <AdornedInput
                   prefix="₹"
-                  suffix="Amount"
+                  suffix={t(
+                    'common.amount'
+                  )}
                   inputMode="numeric"
-                  value={data.latePenalty}
-                  onChange={(e) =>
-                    onChange('latePenalty', digits(e.target.value))
+                  value={
+                    data.latePenalty
                   }
-                  placeholder="Enter amount"
+                  onChange={(e) =>
+                    onChange(
+                      'latePenalty',
+                      digits(
+                        e.target.value
+                      )
+                    )
+                  }
+                  placeholder={t(
+                    'loan.enterAmount'
+                  )}
                 />
               </Field>
 
-              <Field label="Penalty Type">
+              {/* PENALTY TYPE */}
+
+              <Field
+                label={t(
+                  'loan.penaltyType'
+                )}
+              >
                 <Select
                   options={PENALTY_TYPES}
-                  value={data.penaltyType}
+                  translationKey="options.penaltyTypes"
+                  value={
+                    data.penaltyType
+                  }
                   onChange={(e) =>
-                    onChange('penaltyType', e.target.value)
+                    onChange(
+                      'penaltyType',
+                      e.target.value
+                    )
                   }
                 />
               </Field>
+
             </div>
           )}
-        </SectionCard>
-
+        </div>
 
       </div>
-
 
       {/* =================================================
           REPAYMENT SUMMARY
       ================================================== */}
 
       <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+
         <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-4">
 
-        <h3 className="mb-4 text-sm font-semibold text-emerald-900">
-          Repayment Summary
-        </h3>
+          <h3 className="mb-4 text-sm font-semibold text-emerald-900">
+            {t('loan.repaymentSummary')}
+          </h3>
 
+          <div className="space-y-3">
 
-        <div className="space-y-3">
-
-
-          {/* PRINCIPAL */}
-
-          <SummaryRow
-            label="Principal"
-            value={formatINR(repayment.principal)}
-          />
-
-
-          {/* INTEREST */}
-
-          <SummaryRow
-            label="Interest"
-            value={formatINR(repayment.interest)}
-          />
-
-
-          {/* TOTAL PAYABLE */}
-
-          <div className="border-t border-emerald-100 pt-3">
+            {/* PRINCIPAL */}
 
             <SummaryRow
-              label="Total Payable"
-              value={formatINR(repayment.totalPayable)}
-              strong
+              label={t('loan.principal')}
+              value={formatINR(
+                repayment.principal
+              )}
+            />
+
+            {/* INTEREST */}
+
+            <SummaryRow
+              label={t('loan.interest')}
+              value={formatINR(
+                repayment.interest
+              )}
+            />
+
+            {/* TOTAL PAYABLE */}
+
+            <div className="border-t border-emerald-100 pt-3">
+
+              <SummaryRow
+                label={t(
+                  'loan.totalPayable'
+                )}
+                value={formatINR(
+                  repayment.totalPayable
+                )}
+                strong
+              />
+
+            </div>
+
+            {/* EMI */}
+
+            <SummaryRow
+              label={t(
+                'loan.emiAmount'
+              )}
+              value={formatINR(
+                repayment.emiAmount
+              )}
+            />
+
+            {/* NUMBER OF PAYMENTS */}
+
+            <SummaryRow
+              label={t(
+                'loan.numberOfPayments'
+              )}
+              value={
+                repayment.numberOfPayments ||
+                0
+              }
+            />
+
+            {/* FIRST DUE DATE */}
+
+            <SummaryRow
+              label={t(
+                'loan.firstDueDate'
+              )}
+              value={formatDate(
+                data.firstDueDate
+              )}
             />
 
           </div>
 
+          {/* INFO */}
 
-          {/* EMI */}
+          <div className="mt-4 border-t border-emerald-100 pt-3">
 
-          <SummaryRow
-            label="EMI Amount"
-            value={formatINR(repayment.emiAmount)}
-          />
+            <p className="text-[10px] leading-4 text-slate-500">
+              {t(
+                'loan.repaymentInfo'
+              )}
+            </p>
 
-
-          {/* NUMBER OF PAYMENTS */}
-
-          <SummaryRow
-            label="Number of Payments"
-            value={repayment.numberOfPayments || 0}
-          />
-
-
-          {/* FIRST DUE DATE */}
-
-          <SummaryRow
-            label="First Due Date"
-            value={formatDate(data.firstDueDate)}
-          />
-
-        </div>
-
-
-        {/* INFO */}
-
-        <div className="mt-4 border-t border-emerald-100 pt-3">
-
-          <p className="text-[10px] leading-4 text-slate-500">
-            Repayment values are calculated from the loan amount,
-            interest rate, tenure and payment frequency.
-          </p>
-
-        </div>
+          </div>
 
         </div>
 
@@ -915,6 +938,5 @@ const LoanTab = ({
     </div>
   )
 }
-
 
 export default LoanTab

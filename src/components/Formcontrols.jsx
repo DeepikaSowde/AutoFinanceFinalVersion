@@ -1,4 +1,5 @@
 import React, { useRef } from 'react'
+import { useTranslation } from "react-i18next";
 
 /* ---------- helpers ---------- */
 export const formatINR = (n) =>
@@ -74,17 +75,42 @@ export const Textarea = ({ className = '', ...props }) => (
   <textarea rows={3} className={`${inputCls} resize-y ${className}`} {...props} />
 )
 
-export const Select = ({ placeholder, options = [], className = '', ...props }) => (
-  <div className="relative">
-    <select className={`${inputCls} appearance-none pr-9 ${className}`} {...props}>
-      {placeholder && <option value="">{placeholder}</option>}
-      {options.map((o) => (
-        <option key={o} value={o}>{o}</option>
-      ))}
-    </select>
-    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-  </div>
-)
+export const Select = ({
+  placeholder,
+  options = [],
+  translationKey,
+  className = "",
+  ...props
+}) => {
+  const { t } = useTranslation();
+
+  return (
+    <div className="relative">
+      <select
+        className={`${inputCls} appearance-none pr-9 ${className}`}
+        {...props}
+      >
+        {placeholder && (
+          <option value="">
+            {placeholder}
+          </option>
+        )}
+
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {translationKey
+              ? t(`${translationKey}.${option}`, {
+                  defaultValue: option,
+                })
+              : option}
+          </option>
+        ))}
+      </select>
+
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 text-slate-500" />
+    </div>
+  );
+};
 
 /** Input with a fixed prefix (₹) or suffix (%, Days, Amount) */
 export const AdornedInput = ({ prefix, suffix, disabled, ...props }) => (
@@ -95,7 +121,10 @@ export const AdornedInput = ({ prefix, suffix, disabled, ...props }) => (
   </div>
 )
 
-export const PhoneInput = ({ code, mobile, onCodeChange, onMobileChange }) => (
+export const PhoneInput = ({ code, mobile, onCodeChange, onMobileChange }) => {
+  const { t } = useTranslation()
+
+  return (
   <div className="flex">
     <div className="relative w-20 shrink-0">
       <select
@@ -113,30 +142,51 @@ export const PhoneInput = ({ code, mobile, onCodeChange, onMobileChange }) => (
       maxLength={10}
       value={mobile}
       onChange={(e) => onMobileChange(e.target.value.replace(/\D/g, ''))}
-      placeholder="Enter 10-digit mobile number"
+      placeholder={t('common.enterMobileNumber')}
       className={`${inputCls} rounded-l-none border-l-0`}
     />
   </div>
-)
+  )
+}
 
-export const RadioGroup = ({ name, options, value, onChange, disabled, className = 'flex flex-wrap gap-x-6 gap-y-2' }) => (
-  <div className={className}>
-    {options.map((o) => (
-      <label key={o} className={`flex items-center gap-2 text-sm ${disabled ? 'text-slate-400' : 'cursor-pointer text-slate-700'}`}>
-        <input
-          type="radio"
-          name={name}
-          value={o}
-          checked={value === o}
-          disabled={disabled}
-          onChange={() => onChange(o)}
-          className="h-4 w-4 accent-emerald-700"
-        />
-        {o}
-      </label>
-    ))}
-  </div>
-)
+export const RadioGroup = ({
+  name,
+  options = [],
+  value,
+  onChange,
+  translationKey,
+}) => {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex items-center gap-4">
+      {options.map((option) => (
+        <label
+          key={option}
+          className="flex items-center gap-2 text-xs text-slate-700"
+        >
+          <input
+            type="radio"
+            name={name}
+            value={option}
+            checked={value === option}
+            onChange={() => onChange(option)}
+          />
+
+          <span>
+            {translationKey
+              ? t(`${translationKey}.${option}`, {
+                  defaultValue: option,
+                })
+              : option}
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+};
+
+
 
 /** Button that opens a file picker; shows "Uploaded" tick below when a file exists */
 export const UploadButton = ({ label, file, onFile, accept = 'image/*,.pdf', disabled, icon: Icon = UploadIcon }) => {
@@ -171,21 +221,62 @@ export const UploadButton = ({ label, file, onFile, accept = 'image/*,.pdf', dis
 /** Dashed photo upload box (vehicle / guarantor photo) */
 export const PhotoUpload = ({ title, hint, file, onFile }) => {
   const ref = useRef(null)
+
+  // Supports both:
+  // 1. Newly selected File object
+  // 2. Base64 object restored from localStorage
+  const getPreviewUrl = () => {
+    if (!file) return null
+
+    // Restored from localStorage
+    if (file.data) {
+      return file.data
+    }
+
+    // Newly selected browser File
+    if (file instanceof File) {
+      return URL.createObjectURL(file)
+    }
+
+    return null
+  }
+
+  const previewUrl = getPreviewUrl()
+
   return (
     <div>
-      <input ref={ref} type="file" accept="image/png,image/jpeg" hidden onChange={(e) => onFile(e.target.files?.[0] || null)} />
+      <input
+        ref={ref}
+        type="file"
+        accept="image/png,image/jpeg"
+        hidden
+        onChange={(e) =>
+          onFile(e.target.files?.[0] || null)
+        }
+      />
+
       <button
         type="button"
         onClick={() => ref.current?.click()}
         className="flex min-h-[140px] w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed border-emerald-400 bg-white p-4 text-center hover:bg-emerald-50"
       >
-        {file ? (
-          <img src={URL.createObjectURL(file)} alt="" className="max-h-32 rounded object-contain" />
+        {previewUrl ? (
+          <img
+            src={previewUrl}
+            alt=""
+            className="max-h-32 rounded object-contain"
+          />
         ) : (
           <>
             <CameraIcon className="h-7 w-7 text-slate-700" />
-            <span className="text-sm font-medium text-slate-800">{title}</span>
-            <span className="text-xs text-slate-500">{hint}</span>
+
+            <span className="text-sm font-medium text-slate-800">
+              {title}
+            </span>
+
+            <span className="text-xs text-slate-500">
+              {hint}
+            </span>
           </>
         )}
       </button>

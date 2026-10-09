@@ -1,0 +1,451 @@
+{
+"app": {
+  "language": "Language",
+  "selectLanguage": "Select language",
+  "modules": "Modules",
+  "sidebarNavigation": "Sidebar navigation",
+  "newLoan": "New Loan",
+  "customers": "Customers",
+  "investors": "Investors",
+  "back": "Back",
+  "saveDraft": "Save Draft",
+  "submitApplication": "Submit Application",
+  "next": "Next",
+  "sections": {
+    "customer": "Customer",
+    "customerDescription": "Customer and identity details",
+    "guarantor": "Guarantor",
+    "guarantorDescription": "Guarantor details, if required"
+  },
+  "verifiedDetails": "I have verified all the above details and documents.",
+  "steps": {
+    "customer": "Customer",
+    "vehicle": "Vehicle",
+    "guarantor": "Guarantor",
+    "loan": "Loan",
+    "review": "Review"
+  },
+  "titles": {
+    "customer": "New Loan Application",
+    "vehicle": "Vehicle Details",
+    "guarantor": "Guarantor Details",
+    "loan": "Loan Details",
+    "review": "Review & Submit"
+  },
+  "subtitles": {
+    "customer": "Complete the details below to continue with the loan application.",
+    "vehicle": "Enter and verify the vehicle information",
+    "guarantor": "Provide guarantor information (if required)",
+    "loan": "Enter loan information and set repayment rules (optional).",
+    "review": "Please verify all the details before submitting the application."
+  }
+},
+"common": {
+    "yes": "Yes",
+    "no": "No",
+    "mobileNumber": "Mobile Number",
+    "profession": "Profession",
+    "address": "Address",
+    "areaLocality": "Area / Locality",
+    "landmark": "Landmark",
+    "pincode": "Pincode",
+    "residenceType": "Residence Type",
+    "selectResidenceType": "Select residence type",
+    "enterFullAddress": "Enter full address",
+    "enterAreaLocality": "Enter area / locality",
+    "enterLandmark": "Enter landmark",
+    "enterPincode": "Enter 6-digit pincode",
+    "enabled": "Enabled",
+    "optional": "Optional",
+    "upload": "Upload",
+    "enterMobileNumber": "Enter 10-digit mobile number"
+  },
+    "guarantor": {
+    "required": "Guarantor Required?",
+    "requiredDescription": "Select whether this application requires a guarantor.",
+    "notRequired": "No guarantor is required for this application.",
+    "details": "Guarantor Details",
+    "name": "Guarantor Name",
+    "enterName": "Enter guarantor name",
+    "relationship": "Relationship with Customer",
+    "enterRelationship": "Enter relationship",
+    "enterProfession": "Enter profession",
+
+    "kyc": {
+      "title": "Guarantor KYC",
+      "toggle": "Toggle guarantor KYC",
+      "documents": "KYC Documents",
+      "optional": "Optional for guarantor",
+      "enterAadhaar": "Enter Aadhaar number",
+      "enterPan": "Enter PAN number",
+      "enterDl": "Enter DL number",
+      "enterVoterId": "Enter Voter ID",
+      "isOptional": "KYC is optional",
+      "enableDescription": "Enable KYC if identity documents are required for this guarantor."
+    }
+  },
+
+  "customer": {
+    "information": "Customer Information",
+    "details": "Customer Details",
+    "applicationDate": "Application Date",
+    "name": "Customer Name",
+    "mobileNumber": "Mobile Number",
+    "profession": "Profession",
+    "residenceType": "Residence Type",
+    "address": "Address",
+    "areaLocality": "Area / Locality",
+    "landmark": "Landmark",
+    "pincode": "Pincode",
+
+    "enterName": "Enter customer name",
+    "enterProfession": "Enter profession",
+    "selectResidenceType": "Select residence type",
+    "enterFullAddress": "Enter full address",
+    "enterAreaLocality": "Enter area / locality",
+    "enterLandmark": "Enter landmark",
+    "enterPincode": "Enter 6-digit pincode",
+
+    "addReferredBy": "Add Referred By",
+    "removeReferredBy": "Remove Referred By",
+    "referredByName": "Referred By Name",
+    "referralPercentage": "Referral Percentage",
+    "enterReferralName": "Enter referral name",
+    "enterPercentage": "Enter percentage",
+    "enterCustomerDetailsAndIdentityInformation": "Enter customer details and identity information"
+  },
+
+  "kyc": {
+    "title": "KYC & Identity Documents",
+    "aadhaarNumber": "Aadhaar Number",
+    "panNumber": "PAN Number",
+    "drivingLicence": "Driving Licence",
+    "voterId": "Voter ID",
+
+    "enterAadhaar": "Enter 12-digit Aadhaar",
+    "enterPan": "Enter 10-digit PAN",
+    "enterDl": "Enter DL number",
+    "enterVoterId": "Enter Voter ID",
+
+    "uploadAadhaar": "Upload Aadhaar",
+    "uploadPan": "Upload PAN",
+    "uploadDl": "Upload DL",
+    "uploadVoterId": "Upload Voter ID",
+
+    "documentUploaded": "Document uploaded",
+
+    "information": "Upload the available identity document along with its corresponding number."
+  },
+
+  "steps": {
+    "stepOf": "Step {{current}} of {{total}}"
+  },
+
+  "options": {
+    "residence": {
+      "Own House": "Own House",
+      "Rented": "Rented",
+      "Family House": "Family House",
+      "Other": "Other"
+    },
+    "vehicleTypes": {
+  "Two Wheeler": "Two Wheeler",
+  "Three Wheeler": "Three Wheeler",
+  "Four Wheeler": "Four Wheeler"
+},
+
+"brands": {
+  "Honda": "Honda",
+  "Hero": "Hero",
+  "TVS": "TVS",
+  "Bajaj": "Bajaj",
+  "Yamaha": "Yamaha",
+  "Royal Enfield": "Royal Enfield",
+  "Suzuki": "Suzuki",
+  "Other": "Other"
+},
+
+"models": {
+  "Activa 6G": "Activa 6G",
+  "Activa 125": "Activa 125",
+  "Shine": "Shine",
+  "Splendor Plus": "Splendor Plus",
+  "HF Deluxe": "HF Deluxe",
+  "Jupiter": "Jupiter",
+  "Access 125": "Access 125",
+  "Pulsar 125": "Pulsar 125",
+  "Other": "Other"
+},
+
+"variants": {
+  "Standard": "Standard",
+  "Deluxe": "Deluxe",
+  "Premium": "Premium"
+},
+
+"colours": {
+  "Black": "Black",
+  "White": "White",
+  "Grey": "Grey",
+  "Red": "Red",
+  "Blue": "Blue",
+  "Silver": "Silver",
+  "Other": "Other"
+},
+
+"fuelTypes": {
+  "Petrol": "Petrol",
+  "Diesel": "Diesel",
+  "Electric": "Electric",
+  "CNG": "CNG"
+},
+
+"rtoLocations": {
+  "TN-01 Chennai Central": "TN-01 Chennai Central",
+  "TN-02 Chennai North": "TN-02 Chennai North",
+  "TN-09 Chennai West": "TN-09 Chennai West",
+  "TN-37 Coimbatore South": "TN-37 Coimbatore South",
+  "TN-38 Coimbatore North": "TN-38 Coimbatore North",
+  "TN-57 Dindigul": "TN-57 Dindigul"
+},
+
+"financiers": {
+  "HDFC Bank": "HDFC Bank",
+  "ICICI Bank": "ICICI Bank",
+  "Bajaj Finance": "Bajaj Finance",
+  "TVS Credit": "TVS Credit",
+  "Cholamandalam Finance": "Cholamandalam Finance",
+  "Other": "Other"
+},
+
+"nocStatuses": {
+  "Available": "Available",
+  "Pending": "Pending",
+  "Not Required": "Not Required"
+},
+
+"insuranceCompanies": {
+  "ICICI Lombard": "ICICI Lombard",
+  "HDFC ERGO": "HDFC ERGO",
+  "Bajaj Allianz": "Bajaj Allianz",
+  "New India Assurance": "New India Assurance",
+  "United India Insurance": "United India Insurance",
+  "Other": "Other"
+},
+
+"yesNo": {
+  "Yes": "Yes",
+  "No": "No"
+},
+
+    "profession": {
+      "Salaried": "Salaried",
+      "Self Employed": "Self Employed",
+      "Business": "Business",
+      "Professional": "Professional",
+      "Agriculture": "Agriculture",
+      "Student": "Student",
+      "Homemaker": "Homemaker",
+      "Other": "Other"
+    }
+  },
+   "vehicle": {
+    "sections": {
+      "vehicle": {
+        "label": "Vehicle Information",
+        "description": "Basic vehicle details"
+      },
+      "registration": {
+        "label": "Registration",
+        "description": "RC, RTO & hypothecation"
+      },
+      "insurance": {
+        "label": "Insurance",
+        "description": "Insurance & compliance"
+      }
+    },
+
+    "information": {
+      "title": "Vehicle Information"
+    },
+
+    "vehicleNumber": "Vehicle Number",
+    "vehicleNumberHint": "Example: TN 09 AB 1234",
+    "enterVehicleNumber": "Enter vehicle number",
+
+    "vehicleType": "Vehicle Type",
+    "selectVehicleType": "Select vehicle type",
+
+    "model": "Model",
+    "selectModel": "Select model",
+
+    "colour": "Colour",
+    "selectColour": "Select colour",
+
+    "fuelType": "Fuel Type",
+    "selectFuelType": "Select fuel type",
+
+    "brand": "Brand",
+    "selectBrand": "Select brand",
+
+    "variant": "Variant",
+    "selectVariant": "Select variant",
+
+    "manufacturingYear": "Manufacturing Year",
+    "selectYear": "Select year",
+
+    "vehicleAmount": "Vehicle Amount",
+    "enterVehicleAmount": "Enter vehicle amount",
+
+    "photo": {
+      "title": "Vehicle Photo",
+      "upload": "Upload Vehicle Photo",
+      "hint": "JPG, PNG (Max 5MB)"
+    },
+
+    "nextRegistration": "Next: Registration",
+
+    "registration": {
+      "title": "Registration & Identification",
+      "fetchHint": "Fetch details using registration number",
+      "fetchVehicle": "Fetch Vehicle"
+    },
+
+    "rtoLocation": "RTO / Registration Location",
+    "selectRtoLocation": "Select RTO location",
+
+    "dateOfRegistration": "Date of Registration",
+    "chassisNumber": "Chassis Number",
+    "enterChassisNumber": "Enter chassis number",
+
+    "engineNumber": "Engine Number",
+    "enterEngineNumber": "Enter engine number",
+
+    "hypothecation": "Hypothecation",
+    "existingFinancier": "Existing Financier",
+    "selectFinancier": "Select financier",
+
+    "nocStatus": "NOC Status",
+    "selectStatus": "Select status",
+
+    "nocDocument": "NOC Document",
+    "uploadNoc": "Upload NOC",
+
+    "backVehicle": "Vehicle Information",
+    "nextInsurance": "Next: Insurance",
+
+    "insurance": {
+      "title": "Insurance & Compliance"
+    },
+
+    "taxExpiry": "Tax Expiry",
+    "insuranceCompany": "Insurance Company",
+    "selectInsuranceCompany": "Select insurance company",
+
+    "policyNumber": "Policy Number",
+    "enterPolicyNumber": "Enter policy number",
+
+    "insuranceExpiry": "Insurance Expiry",
+
+    "financierEndorsement": "Financier Endorsement",
+
+    "insuranceDocument": "Insurance Document",
+    "uploadInsuranceDocument": "Upload Insurance Document",
+
+    "remarks": "Remarks",
+    "enterRemarks": "Enter any additional remarks (optional)",
+
+    "backRegistration": "Registration",
+    "completed": "Vehicle details completed"
+  },
+
+  "loan": {
+    "loanDetails": "Loan Details",
+    "vehicleAmount": "Vehicle Amount",
+    "enterVehicleAmount": "Enter vehicle amount",
+    "downPayment": "Down Payment",
+    "enterDownPayment": "Enter down payment",
+    "loanAmount": "Loan Amount",
+    "enterLoanAmount": "Enter loan amount",
+    "referredBy": "Referred By",
+    "enterReferredBy": "Enter referral name",
+    "addReferredBy": "Add Referred By",
+    "removeReferredBy": "Remove Referred By",
+    "commission": "Commission",
+    "enterCommission": "Enter commission",
+    "autoCalculated": "Auto-calculated",
+    "interestType": "Interest Type",
+    "selectInterestType": "Select interest type",
+    "repaymentMethod": "Repayment Method",
+    "selectRepaymentMethod": "Select repayment method",
+    "interestRate": "Interest Rate",
+    "enterInterestRate": "Enter interest rate",
+    "paymentFrequency": "Payment Frequency",
+    "selectFrequency": "Select frequency",
+    "loanTenure": "Loan Tenure",
+    "enterTenure": "Enter tenure",
+    "firstDueDate": "First Due Date",
+    "documentCharge": "Document Charge",
+    "enterDocumentCharge": "Enter document charge",
+    "customerCharges": "Customer Charges",
+    "optional": "Optional",
+    "removeCharges": "Remove Charges",
+    "addGracePenalty": "Add Grace & Penalty",
+    "gracePeriod": "Grace Period",
+    "latePaymentPenalty": "Late Payment Penalty",
+    "penaltyType": "Penalty Type",
+    "repaymentSummary": "Repayment Summary",
+    "principal": "Principal",
+    "interest": "Interest",
+    "totalPayable": "Total Payable",
+    "emiAmount": "EMI Amount",
+    "numberOfPayments": "Number of Payments",
+    "repaymentInfo": "Repayment values are calculated from the loan amount, interest rate, tenure and payment frequency."
+  },
+  "review": {
+  "customerInformation": "Customer Information",
+  "kycUploaded": "KYC Uploaded",
+  "kycPending": "KYC Pending",
+
+  "name": "Name",
+  "mobile": "Mobile",
+  "referredBy": "Referred By",
+  "address": "Address",
+
+  "vehicle": "Vehicle",
+  "vehicleType": "Vehicle Type",
+  "brandModel": "Brand / Model",
+  "vehicleNumber": "Vehicle Number",
+  "vehicleAmount": "Vehicle Amount",
+  "manufacturingYear": "Manufacturing Year",
+  "hypothecation": "Hypothecation",
+  "existingFinancier": "Existing Financier",
+
+  "guarantor": "Guarantor",
+  "relationship": "Relationship",
+  "residence": "Residence",
+  "guarantorRequired": "Guarantor Required",
+
+  "loanDetails": "Loan Details",
+  "downPayment": "Down Payment",
+  "loanAmount": "Loan Amount",
+  "interestType": "Interest Type",
+  "repaymentMethod": "Repayment Method",
+  "interestRate": "Interest Rate",
+  "paymentFrequency": "Payment Frequency",
+  "loanTenure": "Loan Tenure",
+  "firstDueDate": "First Due Date",
+  "documentCharge": "Document Charge",
+
+  "customerSpecificCharges": "Customer-Specific Charges",
+  "gracePeriod": "Grace Period",
+  "latePenalty": "Late Penalty",
+  "penaltyType": "Penalty Type",
+
+  "repaymentSchedule": "Repayment Schedule",
+  "reviewInstallmentSchedule": "Review installment schedule",
+  "checkRepaymentDates": "Check repayment dates and amounts.",
+  "viewSchedule": "View Schedule"
+}
+}
+  

@@ -1,0 +1,434 @@
+{
+  "app": {
+    "language": "மொழி",
+    "selectLanguage": "மொழியைத் தேர்ந்தெடுக்கவும்",
+    "modules": "தொகுதிகள்",
+    "sidebarNavigation": "பக்கப்பட்டி வழிசெலுத்தல்",
+    "newLoan": "புதிய கடன்",
+    "customers": "வாடிக்கையாளர்கள்",
+    "investors": "முதலீட்டாளர்கள்",
+    "back": "பின்செல்",
+    "saveDraft": "வரைவைச் சேமிக்கவும்",
+    "submitApplication": "விண்ணப்பத்தைச் சமர்ப்பிக்கவும்",
+    "next": "அடுத்து",
+    "sections": {
+      "customer": "வாடிக்கையாளர்",
+      "customerDescription": "வாடிக்கையாளர் மற்றும் அடையாள விவரங்கள்",
+      "guarantor": "உத்தரவாததாரர்",
+      "guarantorDescription": "தேவைப்பட்டால் உத்தரவாததாரர் விவரங்கள்"
+    },
+    "verifiedDetails": "மேலே உள்ள அனைத்து விவரங்களையும் ஆவணங்களையும் சரிபார்த்துள்ளேன்.",
+    "steps": {
+      "customer": "வாடிக்கையாளர்",
+      "vehicle": "வாகனம்",
+      "guarantor": "உத்தரவாததாரர்",
+      "loan": "கடன்",
+      "review": "மதிப்பாய்வு"
+    },
+    "titles": {
+      "customer": "புதிய கடன் விண்ணப்பம்",
+      "vehicle": "வாகன விவரங்கள்",
+      "guarantor": "உத்தரவாததாரர் விவரங்கள்",
+      "loan": "கடன் விவரங்கள்",
+      "review": "மதிப்பாய்வு செய்து சமர்ப்பிக்கவும்"
+    },
+    "subtitles": {
+      "customer": "கடன் விண்ணப்பத்தைத் தொடர கீழே உள்ள விவரங்களை நிறைவு செய்யவும்.",
+      "vehicle": "வாகன விவரங்களை உள்ளிட்டு சரிபார்க்கவும்",
+      "guarantor": "தேவைப்பட்டால் உத்தரவாததாரர் விவரங்களை வழங்கவும்",
+      "loan": "கடன் தகவலை உள்ளிட்டு திருப்பிச் செலுத்தும் விதிகளை அமைக்கவும்.",
+      "review": "விண்ணப்பத்தைச் சமர்ப்பிக்கும் முன் அனைத்து விவரங்களையும் சரிபார்க்கவும்."
+    }
+  },
+  "common": {
+  "yes": "ஆம்",
+  "no": "இல்லை",
+  "mobileNumber": "மொபைல் எண்",
+  "profession": "தொழில்",
+  "address": "முகவரி",
+  "areaLocality": "பகுதி / வட்டாரம்",
+  "landmark": "அடையாள இடம்",
+  "pincode": "அஞ்சல் குறியீடு",
+  "residenceType": "வசிக்கும் வகை",
+  "selectResidenceType": "வசிக்கும் வகையைத் தேர்ந்தெடுக்கவும்",
+  "enterFullAddress": "முழு முகவரியை உள்ளிடவும்",
+  "enterAreaLocality": "பகுதி / வட்டாரத்தை உள்ளிடவும்",
+  "enterLandmark": "அடையாள இடத்தை உள்ளிடவும்",
+  "enterPincode": "6 இலக்க அஞ்சல் குறியீட்டை உள்ளிடவும்",
+  "enabled": "இயக்கப்பட்டது",
+  "optional": "விருப்பத்தேர்வு",
+  "upload": "பதிவேற்று",
+  "days": "நாட்கள்",
+  "amount": "தொகை",
+  "enterMobileNumber": "10 இலக்க மொபைல் எண்ணை உள்ளிடவும்"
+},
+    "guarantor": {
+    "required": "உத்தரவாததாரர் தேவையா?",
+    "requiredDescription": "இந்த விண்ணப்பத்திற்கு உத்தரவாததாரர் தேவையா என்பதைத் தேர்ந்தெடுக்கவும்.",
+    "notRequired": "இந்த விண்ணப்பத்திற்கு உத்தரவாததாரர் தேவையில்லை.",
+    "details": "உத்தரவாததாரர் விவரங்கள்",
+    "name": "உத்தரவாததாரர் பெயர்",
+    "enterName": "உத்தரவாததாரர் பெயரை உள்ளிடவும்",
+    "relationship": "வாடிக்கையாளருடனான உறவு",
+    "enterRelationship": "உறவை உள்ளிடவும்",
+    "enterProfession": "தொழிலை உள்ளிடவும்",
+
+    "kyc": {
+      "title": "உத்தரவாததாரர் KYC",
+      "toggle": "உத்தரவாததாரர் KYC-ஐ மாற்றவும்",
+      "documents": "KYC ஆவணங்கள்",
+      "optional": "உத்தரவாததாரருக்கு விருப்பத்தேர்வு",
+      "enterAadhaar": "ஆதார் எண்ணை உள்ளிடவும்",
+      "enterPan": "PAN எண்ணை உள்ளிடவும்",
+      "enterDl": "DL எண்ணை உள்ளிடவும்",
+      "enterVoterId": "வாக்காளர் அடையாள எண்ணை உள்ளிடவும்",
+      "isOptional": "KYC விருப்பத்தேர்வாகும்",
+      "enableDescription": "இந்த உத்தரவாததாரருக்கு அடையாள ஆவணங்கள் தேவைப்பட்டால் KYC-ஐ இயக்கவும்."
+    }
+  },
+
+  "customer": {
+    "information": "வாடிக்கையாளர் தகவல்",
+    "details": "வாடிக்கையாளர் விவரங்கள்",
+    "applicationDate": "விண்ணப்ப தேதி",
+    "name": "வாடிக்கையாளர் பெயர்",
+    "mobileNumber": "மொபைல் எண்",
+    "profession": "தொழில்",
+    "residenceType": "வசிக்கும் வகை",
+    "address": "முகவரி",
+    "areaLocality": "பகுதி / வட்டாரம்",
+    "landmark": "அடையாள இடம்",
+    "pincode": "அஞ்சல் குறியீடு",
+
+    "enterName": "வாடிக்கையாளர் பெயரை உள்ளிடவும்",
+    "enterProfession": "தொழிலை உள்ளிடவும்",
+    "selectResidenceType": "வசிக்கும் வகையைத் தேர்ந்தெடுக்கவும்",
+    "enterFullAddress": "முழு முகவரியை உள்ளிடவும்",
+    "enterAreaLocality": "பகுதி / வட்டாரத்தை உள்ளிடவும்",
+    "enterLandmark": "அடையாள இடத்தை உள்ளிடவும்",
+    "enterPincode": "6 இலக்க அஞ்சல் குறியீட்டை உள்ளிடவும்",
+
+    "addReferredBy": "பரிந்துரைத்தவரைச் சேர்க்கவும்",
+    "removeReferredBy": "பரிந்துரைத்தவரை நீக்கவும்",
+    "referredByName": "பரிந்துரைத்தவர் பெயர்",
+    "referralPercentage": "பரிந்துரை சதவீதம்",
+    "enterReferralName": "பரிந்துரைத்தவர் பெயரை உள்ளிடவும்",
+    "enterPercentage": "சதவீதத்தை உள்ளிடவும்",
+  "enterCustomerDetailsAndIdentityInformation": "வாடிக்கையாளர் மற்றும் அடையாள விவரங்களை உள்ளிடவும்"
+  },
+
+  "kyc": {
+    "title": "KYC மற்றும் அடையாள ஆவணங்கள்",
+    "aadhaarNumber": "ஆதார் எண்",
+    "panNumber": "PAN எண்",
+    "drivingLicence": "ஓட்டுநர் உரிமம்",
+    "voterId": "வாக்காளர் அடையாள அட்டை",
+
+    "enterAadhaar": "12 இலக்க ஆதார் எண்ணை உள்ளிடவும்",
+    "enterPan": "10 இலக்க PAN எண்ணை உள்ளிடவும்",
+    "enterDl": "ஓட்டுநர் உரிம எண்ணை உள்ளிடவும்",
+    "enterVoterId": "வாக்காளர் அடையாள எண்ணை உள்ளிடவும்",
+
+    "uploadAadhaar": "ஆதாரை பதிவேற்றவும்",
+    "uploadPan": "PAN-ஐ பதிவேற்றவும்",
+    "uploadDl": "DL-ஐ பதிவேற்றவும்",
+    "uploadVoterId": "வாக்காளர் அடையாள அட்டையை பதிவேற்றவும்",
+
+    "documentUploaded": "ஆவணம் பதிவேற்றப்பட்டது",
+
+    "information": "கிடைக்கும் அடையாள ஆவணத்தையும் அதற்கான எண்ணையும் பதிவேற்றவும்."
+  },
+
+  "steps": {
+    "stepOf": "{{total}} இல் {{current}}வது படி"
+  },
+
+  "options": {
+    "residence": {
+      "Own House": "சொந்த வீடு",
+      "Rented": "வாடகை வீடு",
+      "Family House": "குடும்ப வீடு",
+      "Other": "மற்றவை"
+    },
+    "interestTypes": {
+  "Flat": "நிலையான வட்டி",
+  "Reducing Balance": "குறையும் இருப்பு"
+},
+
+"repaymentMethods": {
+  "EMI": "EMI",
+  "Principal": "அசல் தொகை"
+},
+
+"paymentFrequencies": {
+  "Monthly": "மாதாந்திரம்",
+  "Weekly": "வாராந்திரம்",
+  "Bi-Weekly": "இரு வாரத்திற்கு ஒருமுறை"
+},
+
+"tenureUnits": {
+  "Months": "மாதங்கள்",
+  "Years": "ஆண்டுகள்"
+},
+
+"penaltyTypes": {
+  "Per Day": "ஒரு நாளுக்கு",
+  "Fixed Per Missed Payment": "தவறிய ஒவ்வொரு தவணைக்கும் நிலையான தொகை",
+  "Percentage": "சதவீதம்"
+},
+"yesNo": {
+  "Yes": "ஆம்",
+  "No": "இல்லை"
+},
+
+"vehicleTypes": {
+  "Two Wheeler": "இருசக்கர வாகனம்",
+  "Three Wheeler": "முச்சக்கர வாகனம்",
+  "Four Wheeler": "நான்கு சக்கர வாகனம்"
+},
+
+"relationships": {
+  "Father": "தந்தை",
+  "Mother": "தாய்",
+  "Spouse": "துணைவர்",
+  "Brother": "சகோதரர்",
+  "Sister": "சகோதரி",
+  "Son": "மகன்",
+  "Daughter": "மகள்",
+  "Friend": "நண்பர்",
+  "Other": "மற்றவை"
+},
+
+    "profession": {
+      "Salaried": "சம்பளம் பெறுபவர்",
+      "Self Employed": "சுயதொழில்",
+      "Business": "வணிகம்",
+      "Professional": "தொழில்முறை",
+      "Agriculture": "விவசாயம்",
+      "Student": "மாணவர்",
+      "Homemaker": "குடும்பத் தலைவர்",
+      "Other": "மற்றவை"
+    }
+  },
+  
+  "vehicle": {
+    "sections": {
+      "vehicle": {
+        "label": "வாகன தகவல்",
+        "description": "அடிப்படை வாகன விவரங்கள்"
+      },
+      "registration": {
+        "label": "பதிவு",
+        "description": "RC, RTO மற்றும் ஹைப்போதிகேஷன்"
+      },
+      "insurance": {
+        "label": "காப்பீடு",
+        "description": "காப்பீடு மற்றும் இணக்கம்"
+      }
+    },
+
+    "information": {
+      "title": "வாகன தகவல்"
+    },
+
+    "vehicleNumber": "வாகன எண்",
+    "vehicleNumberHint": "உதாரணம்: TN 09 AB 1234",
+    "enterVehicleNumber": "வாகன எண்ணை உள்ளிடவும்",
+
+    "vehicleType": "வாகன வகை",
+    "selectVehicleType": "வாகன வகையைத் தேர்ந்தெடுக்கவும்",
+
+    "model": "மாடல்",
+    "selectModel": "மாடலைத் தேர்ந்தெடுக்கவும்",
+
+    "colour": "நிறம்",
+    "selectColour": "நிறத்தைத் தேர்ந்தெடுக்கவும்",
+
+    "fuelType": "எரிபொருள் வகை",
+    "selectFuelType": "எரிபொருள் வகையைத் தேர்ந்தெடுக்கவும்",
+
+    "brand": "பிராண்ட்",
+    "selectBrand": "பிராண்டைத் தேர்ந்தெடுக்கவும்",
+
+    "variant": "வேரியண்ட்",
+    "selectVariant": "வேரியண்ட்டைத் தேர்ந்தெடுக்கவும்",
+
+    "manufacturingYear": "உற்பத்தி ஆண்டு",
+    "selectYear": "ஆண்டைத் தேர்ந்தெடுக்கவும்",
+
+    "vehicleAmount": "வாகனத் தொகை",
+    "enterVehicleAmount": "வாகனத் தொகையை உள்ளிடவும்",
+
+    "photo": {
+      "title": "வாகன புகைப்படம்",
+      "upload": "வாகன புகைப்படத்தைப் பதிவேற்றவும்",
+      "hint": "JPG, PNG (அதிகபட்சம் 5MB)"
+    },
+
+    "nextRegistration": "அடுத்து: பதிவு",
+
+    "registration": {
+      "title": "பதிவு மற்றும் அடையாளம்",
+      "fetchHint": "பதிவு எண்ணைப் பயன்படுத்தி விவரங்களைப் பெறவும்",
+      "fetchVehicle": "வாகன விவரங்களைப் பெறவும்"
+    },
+
+    "rtoLocation": "RTO / பதிவு இடம்",
+    "selectRtoLocation": "RTO இடத்தைத் தேர்ந்தெடுக்கவும்",
+
+    "dateOfRegistration": "பதிவு தேதி",
+    "chassisNumber": "சேஸிஸ் எண்",
+    "enterChassisNumber": "சேஸிஸ் எண்ணை உள்ளிடவும்",
+
+    "engineNumber": "எஞ்சின் எண்",
+    "enterEngineNumber": "எஞ்சின் எண்ணை உள்ளிடவும்",
+
+    "hypothecation": "ஹைப்போதிகேஷன்",
+    "existingFinancier": "தற்போதைய நிதியாளர்",
+    "selectFinancier": "நிதியாளரைத் தேர்ந்தெடுக்கவும்",
+
+    "nocStatus": "NOC நிலை",
+    "selectStatus": "நிலையைத் தேர்ந்தெடுக்கவும்",
+
+    "nocDocument": "NOC ஆவணம்",
+    "uploadNoc": "NOC-ஐ பதிவேற்றவும்",
+
+    "backVehicle": "வாகன தகவல்",
+    "nextInsurance": "அடுத்து: காப்பீடு",
+
+    "insurance": {
+      "title": "காப்பீடு மற்றும் இணக்கம்"
+    },
+
+    "taxExpiry": "வரி காலாவதி",
+    "insuranceCompany": "காப்பீட்டு நிறுவனம்",
+    "selectInsuranceCompany": "காப்பீட்டு நிறுவனத்தைத் தேர்ந்தெடுக்கவும்",
+
+    "policyNumber": "பாலிசி எண்",
+    "enterPolicyNumber": "பாலிசி எண்ணை உள்ளிடவும்",
+
+    "insuranceExpiry": "காப்பீடு காலாவதி",
+
+    "financierEndorsement": "நிதியாளர் ஒப்புதல்",
+
+    "insuranceDocument": "காப்பீட்டு ஆவணம்",
+    "uploadInsuranceDocument": "காப்பீட்டு ஆவணத்தைப் பதிவேற்றவும்",
+
+    "remarks": "குறிப்புகள்",
+    "enterRemarks": "கூடுதல் குறிப்புகளை உள்ளிடவும் (விருப்பத்தேர்வு)",
+
+    "backRegistration": "பதிவு",
+    "completed": "வாகன விவரங்கள் முடிக்கப்பட்டன"
+  },
+  
+ "loan": {
+  "loanDetails": "கடன் விவரங்கள்",
+
+  "vehicleAmount": "வாகனத் தொகை",
+  "enterVehicleAmount": "வாகனத் தொகையை உள்ளிடவும்",
+
+  "downPayment": "முன்பணம்",
+  "enterDownPayment": "முன்பணத்தை உள்ளிடவும்",
+
+  "loanAmount": "கடன் தொகை",
+  "enterLoanAmount": "கடன் தொகையை உள்ளிடவும்",
+  "referredBy": "பரிந்துரைத்தவர்",
+  "enterReferredBy": "பரிந்துரைத்தவர் பெயரை உள்ளிடவும்",
+  "addReferredBy": "பரிந்துரைத்தவரைச் சேர்க்கவும்",
+  "removeReferredBy": "பரிந்துரைத்தவரை நீக்கவும்",
+  "commission": "கமிஷன்",
+  "enterCommission": "கமிஷனை உள்ளிடவும்",
+  "autoCalculated": "தானாக கணக்கிடப்பட்டது",
+
+  "interestType": "வட்டி வகை",
+  "selectInterestType": "வட்டி வகையைத் தேர்ந்தெடுக்கவும்",
+
+  "repaymentMethod": "திருப்பிச் செலுத்தும் முறை",
+  "selectRepaymentMethod": "திருப்பிச் செலுத்தும் முறையைத் தேர்ந்தெடுக்கவும்",
+
+  "interestRate": "வட்டி விகிதம்",
+  "enterInterestRate": "வட்டி விகிதத்தை உள்ளிடவும்",
+
+  "paymentFrequency": "செலுத்தும் கால இடைவெளி",
+  "selectFrequency": "செலுத்தும் கால இடைவெளியைத் தேர்ந்தெடுக்கவும்",
+
+  "loanTenure": "கடன் காலம்",
+  "enterTenure": "கடன் காலத்தை உள்ளிடவும்",
+
+  "firstDueDate": "முதல் தவணை தேதி",
+
+  "documentCharge": "ஆவணக் கட்டணம்",
+  "enterDocumentCharge": "ஆவணக் கட்டணத்தை உள்ளிடவும்",
+
+  "customerCharges": "வாடிக்கையாளர் கட்டணங்கள்",
+  "optional": "விருப்பத்தேர்வு",
+
+  "addGracePenalty": "சலுகைக் காலம் / அபராதத்தைச் சேர்க்கவும்",
+  "removeCharges": "கட்டணங்களை நீக்கவும்",
+
+  "customChargeDescription": "சலுகைக் காலம் மற்றும் தாமதக் கட்டணத்தை அமைக்கவும்.",
+
+  "gracePeriod": "சலுகைக் காலம்",
+  "enterDays": "நாட்களை உள்ளிடவும்",
+
+  "latePaymentPenalty": "தாமதமான கட்டண அபராதம்",
+  "enterAmount": "தொகையை உள்ளிடவும்",
+
+  "penaltyType": "அபராத வகை",
+
+  "repaymentSummary": "திருப்பிச் செலுத்தும் சுருக்கம்",
+
+  "principal": "அசல் தொகை",
+  "interest": "வட்டி",
+  "totalPayable": "மொத்தம் செலுத்த வேண்டியது",
+  "emiAmount": "தவணைத் தொகை",
+  "numberOfPayments": "தவணைகளின் எண்ணிக்கை",
+
+  "repaymentInfo": "கடன் தொகை, வட்டி விகிதம், காலம் மற்றும் செலுத்தும் இடைவெளியின் அடிப்படையில் திருப்பிச் செலுத்தும் தொகை கணக்கிடப்படுகிறது."
+},
+"review": {
+  "customerInformation": "வாடிக்கையாளர் தகவல்",
+  "kycUploaded": "KYC பதிவேற்றப்பட்டது",
+  "kycPending": "KYC நிலுவையில் உள்ளது",
+
+  "name": "பெயர்",
+  "mobile": "மொபைல்",
+  "referredBy": "பரிந்துரைத்தவர்",
+  "address": "முகவரி",
+
+  "vehicle": "வாகனம்",
+  "vehicleType": "வாகன வகை",
+  "brandModel": "பிராண்ட் / மாடல்",
+  "vehicleNumber": "வாகன எண்",
+  "vehicleAmount": "வாகனத் தொகை",
+  "manufacturingYear": "உற்பத்தி ஆண்டு",
+  "hypothecation": "ஹைப்போதிகேஷன்",
+  "existingFinancier": "தற்போதைய நிதியாளர்",
+
+  "guarantor": "உத்தரவாததாரர்",
+  "relationship": "உறவு",
+  "residence": "வசிக்கும் வகை",
+  "guarantorRequired": "உத்தரவாததாரர் தேவையா",
+
+  "loanDetails": "கடன் விவரங்கள்",
+  "downPayment": "முன்பணம்",
+  "loanAmount": "கடன் தொகை",
+  "interestType": "வட்டி வகை",
+  "repaymentMethod": "திருப்பிச் செலுத்தும் முறை",
+  "interestRate": "வட்டி விகிதம்",
+  "paymentFrequency": "செலுத்தும் கால இடைவெளி",
+  "loanTenure": "கடன் காலம்",
+  "firstDueDate": "முதல் தவணை தேதி",
+  "documentCharge": "ஆவணக் கட்டணம்",
+
+  "customerSpecificCharges": "வாடிக்கையாளர் சார்ந்த கட்டணங்கள்",
+  "gracePeriod": "சலுகைக் காலம்",
+  "latePenalty": "தாமத அபராதம்",
+  "penaltyType": "அபராத வகை",
+
+  "repaymentSchedule": "திருப்பிச் செலுத்தும் அட்டவணை",
+  "reviewInstallmentSchedule": "தவணை அட்டவணையைப் பார்க்கவும்",
+  "checkRepaymentDates": "திருப்பிச் செலுத்தும் தேதிகள் மற்றும் தொகைகளைச் சரிபார்க்கவும்.",
+  "viewSchedule": "அட்டவணையைப் பார்க்கவும்"
+}
+}

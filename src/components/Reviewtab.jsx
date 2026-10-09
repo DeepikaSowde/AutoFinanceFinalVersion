@@ -1,5 +1,5 @@
-
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 
 import {
   OutlineButton,
@@ -10,13 +10,11 @@ import {
   formatDate,
 } from './Formcontrols'
 
-import { calcLoanAmount } from './Loantab'
 
 const dash = (value) =>
   value === '' || value === null || value === undefined
     ? '—'
     : value
-
 
 /* =========================================================
    COMPACT CARD
@@ -24,24 +22,19 @@ const dash = (value) =>
 
 const Card = ({ title, right, children }) => (
   <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-
     <header className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
-
       <h3 className="text-sm font-semibold text-slate-800">
         {title}
       </h3>
 
       {right}
-
     </header>
 
     <div className="p-3">
       {children}
     </div>
-
   </section>
 )
-
 
 /* =========================================================
    COMPACT ROW
@@ -49,7 +42,6 @@ const Card = ({ title, right, children }) => (
 
 const Row = ({ label, value }) => (
   <div className="flex items-center justify-between gap-4 py-1.5 text-xs">
-
     <span className="text-slate-500">
       {label}
     </span>
@@ -57,17 +49,15 @@ const Row = ({ label, value }) => (
     <span className="max-w-[65%] text-right font-medium text-slate-800">
       {value}
     </span>
-
   </div>
 )
 
-
 /* =========================================================
    CUSTOMER KYC STATUS
-   Only Customer KYC is checked here.
 ========================================================= */
 
 const KycStatus = ({ customer }) => {
+  const { t } = useTranslation()
 
   const allUploaded =
     !!customer.aadhaarFile &&
@@ -77,13 +67,12 @@ const KycStatus = ({ customer }) => {
 
   return (
     <div className="flex items-center gap-1.5">
-
       {allUploaded ? (
         <>
           <CheckCircle className="h-4 w-4 text-emerald-600" />
 
           <span className="text-xs font-medium text-emerald-700">
-            KYC Uploaded
+            {t('review.kycUploaded')}
           </span>
         </>
       ) : (
@@ -91,15 +80,13 @@ const KycStatus = ({ customer }) => {
           <ClockIcon className="h-4 w-4 text-amber-500" />
 
           <span className="text-xs font-medium text-amber-600">
-            KYC Pending
+            {t('review.kycPending')}
           </span>
         </>
       )}
-
     </div>
   )
 }
-
 
 /* =========================================================
    REVIEW TAB
@@ -109,6 +96,7 @@ const ReviewTab = ({
   form,
   onViewSchedule,
 }) => {
+  const { t } = useTranslation()
 
   const {
     customer,
@@ -118,18 +106,29 @@ const ReviewTab = ({
   } = form
 
   const vehicleAmount =
-    loan.vehicleAmount ?? vehicle.amount
+    loan.vehicleAmount !== "" && loan.vehicleAmount != null
+      ? loan.vehicleAmount
+      : vehicle.amount ?? ""
 
-  const loanAmount = calcLoanAmount(
-    vehicleAmount,
-    loan.downPayment
-  )
+  const loanAmount = Number(loan.loanAmount) || 0
 
   const hypothecated =
     vehicle.hypothecation === 'Yes'
 
   const reducingBalance =
     loan.interestType === 'Reducing Balance'
+
+  /* =======================================================
+     DISPLAY TRANSLATIONS FOR STORED VALUES
+  ======================================================= */
+
+  const translateOption = (group, value) => {
+    if (!value) return '—'
+
+    return t(`options.${group}.${value}`, {
+      defaultValue: value,
+    })
+  }
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -141,22 +140,22 @@ const ReviewTab = ({
       <div className="space-y-3">
 
         {/* CUSTOMER */}
+
         <Card
-          title="Customer Information"
+          title={t('review.customerInformation')}
           right={
             <KycStatus customer={customer} />
           }
         >
-
           <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
 
             <Row
-              label="Name"
+              label={t('review.name')}
               value={dash(customer.name)}
             />
 
             <Row
-              label="Mobile"
+              label={t('review.mobile')}
               value={
                 customer.mobile
                   ? `${customer.countryCode || ''} ${customer.mobile}`
@@ -165,16 +164,20 @@ const ReviewTab = ({
             />
 
             <Row
-              label="Referred By"
+              label={t('review.referredBy')}
               value={
                 customer.referredBy
-                  ? `${customer.referredBy}${customer.referredByPercentage ? ` (${customer.referredByPercentage}%)` : ''}`
+                  ? `${customer.referredBy}${
+                      customer.referredByPercentage
+                        ? ` (${customer.referredByPercentage}%)`
+                        : ''
+                    }`
                   : '—'
               }
             />
 
             <Row
-              label="Address"
+              label={t('review.address')}
               value={
                 [
                   customer.area,
@@ -186,78 +189,95 @@ const ReviewTab = ({
             />
 
           </div>
-
         </Card>
 
-
         {/* VEHICLE */}
-        <Card title="Vehicle">
 
+        <Card title={t('review.vehicle')}>
           <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
 
             <Row
-              label="Vehicle Type"
-              value={dash(vehicle.type)}
+              label={t('review.vehicleType')}
+              value={translateOption(
+                'vehicleTypes',
+                vehicle.type
+              )}
             />
 
             <Row
-              label="Brand / Model"
+              label={t('review.brandModel')}
               value={
                 [
-                  vehicle.brand,
-                  vehicle.model,
+                  translateOption(
+                    'brands',
+                    vehicle.brand
+                  ),
+                  translateOption(
+                    'models',
+                    vehicle.model
+                  ),
                 ]
-                  .filter(Boolean)
+                  .filter(
+                    (value) => value !== '—'
+                  )
                   .join(' / ') || '—'
               }
             />
 
             <Row
-              label="Vehicle Number"
+              label={t('review.vehicleNumber')}
               value={dash(vehicle.regNo)}
             />
 
             <Row
-              label="Vehicle Amount"
+              label={t('review.vehicleAmount')}
               value={formatINR(vehicle.amount)}
             />
 
             <Row
-              label="Manufacturing Year"
+              label={t('review.manufacturingYear')}
               value={dash(vehicle.year)}
             />
 
             <Row
-              label="Hypothecation"
-              value={dash(vehicle.hypothecation)}
+              label={t('review.hypothecation')}
+              value={
+                vehicle.hypothecation
+                  ? translateOption(
+                      'yesNo',
+                      vehicle.hypothecation
+                    )
+                  : '—'
+              }
             />
 
             {hypothecated && (
               <Row
-                label="Existing Financier"
-                value={dash(vehicle.financier)}
+                label={t('review.existingFinancier')}
+                value={translateOption(
+                  'financiers',
+                  vehicle.financier
+                )}
               />
             )}
 
           </div>
-
         </Card>
 
-
         {/* GUARANTOR */}
-        <Card title="Guarantor">
 
+        <Card title={t('review.guarantor')}>
           {guarantor.required === 'Yes' ? (
 
             <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
 
               <Row
-                label="Name"
+                label={t('review.name')}
                 value={dash(guarantor.name)}
               />
 
               <Row
-                label="Mobile"
+                label={t('review.mobile')}
                 value={
                   guarantor.mobile
                     ? `${guarantor.countryCode || ''} ${guarantor.mobile}`
@@ -266,13 +286,19 @@ const ReviewTab = ({
               />
 
               <Row
-                label="Relationship"
-                value={dash(guarantor.relationship)}
+                label={t('review.relationship')}
+                value={translateOption(
+                  'relationships',
+                  guarantor.relationship
+                )}
               />
 
               <Row
-                label="Residence"
-                value={dash(guarantor.residenceType)}
+                label={t('review.residence')}
+                value={translateOption(
+                  'residence',
+                  guarantor.residenceType
+                )}
               />
 
             </div>
@@ -282,21 +308,18 @@ const ReviewTab = ({
             <div className="flex items-center justify-between py-1">
 
               <span className="text-xs text-slate-500">
-                Guarantor Required
+                {t('review.guarantorRequired')}
               </span>
 
               <span className="text-xs font-medium text-slate-800">
-                No
+                {t('common.no')}
               </span>
 
             </div>
-
           )}
-
         </Card>
 
       </div>
-
 
       {/* ===================================================
           RIGHT COLUMN
@@ -305,43 +328,46 @@ const ReviewTab = ({
       <div className="space-y-3">
 
         {/* LOAN */}
-        <Card title="Loan Details">
+
+        <Card title={t('review.loanDetails')}>
 
           <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
 
             <Row
-              label="Vehicle Amount"
+              label={t('review.vehicleAmount')}
               value={formatINR(vehicleAmount)}
             />
 
             <Row
-              label="Down Payment"
+              label={t('review.downPayment')}
               value={formatINR(loan.downPayment)}
             />
 
             <Row
-              label="Loan Amount"
-              value={
-                vehicleAmount === ''
-                  ? '—'
-                  : formatINR(loanAmount)
-              }
+              label={t('review.loanAmount')}
+              value={loan.loanAmount === '' ? '—' : formatINR(loanAmount)}
             />
 
             <Row
-              label="Interest Type"
-              value={dash(loan.interestType)}
+              label={t('review.interestType')}
+              value={translateOption(
+                'interestTypes',
+                loan.interestType
+              )}
             />
 
             {reducingBalance && (
               <Row
-                label="Repayment Method"
-                value={dash(loan.repaymentMethod)}
+                label={t('review.repaymentMethod')}
+                value={translateOption(
+                  'repaymentMethods',
+                  loan.repaymentMethod
+                )}
               />
             )}
 
             <Row
-              label="Interest Rate"
+              label={t('review.interestRate')}
               value={
                 loan.interestRate
                   ? `${loan.interestRate}%`
@@ -350,86 +376,107 @@ const ReviewTab = ({
             />
 
             <Row
-              label="Payment Frequency"
-              value={dash(loan.paymentFrequency)}
+              label={t('review.paymentFrequency')}
+              value={translateOption(
+                'paymentFrequencies',
+                loan.paymentFrequency
+              )}
             />
 
             <Row
-              label="Loan Tenure"
+              label={t('review.loanTenure')}
               value={
                 loan.tenure
-                  ? `${loan.tenure} ${loan.tenureUnit || ''}`
+                  ? `${loan.tenure} ${
+                      loan.tenureUnit
+                        ? translateOption(
+                            'tenureUnits',
+                            loan.tenureUnit
+                          )
+                        : ''
+                    }`
                   : '—'
               }
             />
 
             <Row
-              label="First Due Date"
-              value={formatDate(loan.firstDueDate)}
+              label={t('review.firstDueDate')}
+              value={formatDate(
+                loan.firstDueDate
+              )}
             />
 
             <Row
-              label="Document Charge"
-              value={formatINR(loan.documentCharge)}
+              label={t('review.documentCharge')}
+              value={formatINR(
+                loan.documentCharge
+              )}
             />
 
           </div>
 
-
           {/* CUSTOMER-SPECIFIC CHARGES */}
+
           {loan.customizeRules && (
             <div className="mt-3 border-t border-slate-100 pt-3">
 
               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                Customer-Specific Charges
+                {t('review.customerSpecificCharges')}
               </p>
 
               <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
 
                 <Row
-                  label="Grace Period"
+                  label={t('review.gracePeriod')}
                   value={
                     loan.gracePeriod
-                      ? `${loan.gracePeriod} Days`
+                      ? `${loan.gracePeriod} ${t(
+                          'common.days'
+                        )}`
                       : '—'
                   }
                 />
 
                 <Row
-                  label="Late Penalty"
-                  value={formatINR(loan.latePenalty)}
+                  label={t('review.latePenalty')}
+                  value={formatINR(
+                    loan.latePenalty
+                  )}
                 />
 
                 <Row
-                  label="Penalty Type"
-                  value={dash(loan.penaltyType)}
+                  label={t('review.penaltyType')}
+                  value={translateOption(
+                    'penaltyTypes',
+                    loan.penaltyType
+                  )}
                 />
 
               </div>
-
             </div>
           )}
 
         </Card>
 
-
         {/* REPAYMENT SCHEDULE */}
-        <Card title="Repayment Schedule">
+
+        <Card title={t('review.repaymentSchedule')}>
 
           <div className="flex items-center justify-between gap-3">
 
             <div>
               <p className="text-xs font-medium text-slate-700">
-                Review installment schedule
+                {t('review.reviewInstallmentSchedule')}
               </p>
 
               <p className="mt-0.5 text-[10px] text-slate-400">
-                Check repayment dates and amounts.
+                {t('review.checkRepaymentDates')}
               </p>
             </div>
 
             <OutlineButton onClick={onViewSchedule}>
-              View Schedule
+              {t('review.viewSchedule')}
+
               <ArrowRight className="h-3.5 w-3.5" />
             </OutlineButton>
 

@@ -1,5 +1,5 @@
-
-import React, { useState } from 'react'
+import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   Field,
@@ -15,7 +15,7 @@ import {
   InfoIcon,
   RefreshIcon,
   PlusIcon,
-} from './Formcontrols'
+} from "./Formcontrols";
 
 import {
   VEHICLE_TYPES,
@@ -29,37 +29,85 @@ import {
   FINANCIERS,
   NOC_STATUSES,
   INSURANCE_COMPANIES,
-} from '../../Options'
+} from "../../Options";
 
-const YES_NO = ['Yes', 'No']
+const YES_NO = ["Yes", "No"];
+
+/* =========================================================
+   FILE → BASE64
+========================================================= */
+const fileToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      resolve(null);
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      resolve({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        data: reader.result,
+      });
+    };
+
+    reader.onerror = () => {
+      reject(new Error("Failed to read file"));
+    };
+
+    reader.readAsDataURL(file);
+  });
+};
 
 const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
-  const [activeSection, setActiveSection] = useState('vehicle')
+  const { t } = useTranslation();
 
-  const set = (key) => (e) => onChange(key, e.target.value)
+  const [activeSection, setActiveSection] = useState("vehicle");
 
-  const hypothecated = data.hypothecation === 'Yes'
+  const set = (key) => (e) => onChange(key, e.target.value);
+
+  const hypothecated = data.hypothecation === "Yes";
+
+  /* =========================================================
+     HANDLE FILE UPLOAD
+  ========================================================= */
+  const handleFileChange = async (key, file) => {
+    if (!file) {
+      onChange(key, null);
+      return;
+    }
+
+    try {
+      const fileData = await fileToBase64(file);
+      onChange(key, fileData);
+    } catch (error) {
+      console.error(`Failed to save ${key}:`, error);
+    }
+  };
 
   const sections = [
     {
-      id: 'vehicle',
-      number: '01',
-      label: 'Vehicle Information',
-      description: 'Basic vehicle details',
+      id: "vehicle",
+      number: "01",
+      label: t("vehicle.sections.vehicle.label"),
+      description: t("vehicle.sections.vehicle.description"),
     },
     {
-      id: 'registration',
-      number: '02',
-      label: 'Registration',
-      description: 'RC, RTO & hypothecation',
+      id: "registration",
+      number: "02",
+      label: t("vehicle.sections.registration.label"),
+      description: t("vehicle.sections.registration.description"),
     },
     {
-      id: 'insurance',
-      number: '03',
-      label: 'Insurance',
-      description: 'Insurance & compliance',
+      id: "insurance",
+      number: "03",
+      label: t("vehicle.sections.insurance.label"),
+      description: t("vehicle.sections.insurance.description"),
     },
-  ]
+  ];
 
   return (
     <div className="space-y-3">
@@ -67,11 +115,12 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
       {/* =====================================================
           INTERNAL VEHICLE NAVIGATION
       ====================================================== */}
+
       <div className="rounded-lg border border-slate-200 bg-white p-1.5">
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
 
           {sections.map((section) => {
-            const active = activeSection === section.id
+            const active = activeSection === section.id;
 
             return (
               <button
@@ -79,19 +128,19 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
                 type="button"
                 onClick={() => setActiveSection(section.id)}
                 className={[
-                  'flex items-center gap-3 rounded-md px-3 py-2.5 text-left transition-all',
+                  "flex items-center gap-3 rounded-md px-3 py-2.5 text-left transition-all",
                   active
-                    ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100'
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
-                ].join(' ')}
+                    ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-700",
+                ].join(" ")}
               >
                 <span
                   className={[
-                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
                     active
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-100 text-slate-500',
-                  ].join(' ')}
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-100 text-slate-500",
+                  ].join(" ")}
                 >
                   {section.number}
                 </span>
@@ -99,11 +148,9 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
                 <span className="min-w-0">
                   <span
                     className={[
-                      'block text-xs font-semibold',
-                      active
-                        ? 'text-emerald-800'
-                        : 'text-slate-700',
-                    ].join(' ')}
+                      "block text-xs font-semibold",
+                      active ? "text-emerald-800" : "text-slate-700",
+                    ].join(" ")}
                   >
                     {section.label}
                   </span>
@@ -113,7 +160,7 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
                   </span>
                 </span>
               </button>
-            )
+            );
           })}
 
         </div>
@@ -122,150 +169,158 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
       {/* =====================================================
           01. VEHICLE INFORMATION
       ====================================================== */}
-      {activeSection === 'vehicle' && (
-        <SectionCard title="Vehicle Information">
+
+      {activeSection === "vehicle" && (
+        <SectionCard title={t("vehicle.information.title")}>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr_260px]">
 
             {/* LEFT COLUMN */}
+
             <div className="space-y-3">
 
               <Field
-                label="Vehicle Number"
+                label={t("vehicle.vehicleNumber")}
                 required
-                hint="Example: TN 09 AB 1234"
+                hint={t("vehicle.vehicleNumberHint")}
               >
                 <Input
-                  value={data.regNo}
+                  value={data.regNo || ""}
                   onChange={(e) =>
-                    onChange(
-                      'regNo',
-                      e.target.value.toUpperCase()
-                    )
+                    onChange("regNo", e.target.value.toUpperCase())
                   }
-                  placeholder="Enter vehicle number"
+                  placeholder={t("vehicle.enterVehicleNumber")}
                 />
               </Field>
 
-              <Field label="Vehicle Type" required>
+              <Field label={t("vehicle.vehicleType")} required>
                 <Select
                   options={VEHICLE_TYPES}
-                  placeholder="Select vehicle type"
-                  value={data.type}
-                  onChange={set('type')}
+                  placeholder={t("vehicle.selectVehicleType")}
+                  translationKey="options.vehicleTypes"
+                  value={data.type || ""}
+                  onChange={set("type")}
                 />
               </Field>
 
-              <Field label="Model" required>
+              <Field label={t("vehicle.model")} required>
                 <Select
                   options={MODELS}
-                  placeholder="Select model"
-                  value={data.model}
-                  onChange={set('model')}
+                  placeholder={t("vehicle.selectModel")}
+                  translationKey="options.models"
+                  value={data.model || ""}
+                  onChange={set("model")}
                 />
               </Field>
 
-              <Field label="Colour" required>
+              <Field label={t("vehicle.colour")} required>
                 <Select
                   options={COLOURS}
-                  placeholder="Select colour"
-                  value={data.colour}
-                  onChange={set('colour')}
+                  placeholder={t("vehicle.selectColour")}
+                  translationKey="options.colours"
+                  value={data.colour || ""}
+                  onChange={set("colour")}
                 />
               </Field>
 
-              <Field label="Fuel Type" required>
+              <Field label={t("vehicle.fuelType")} required>
                 <Select
                   options={FUEL_TYPES}
-                  placeholder="Select fuel type"
-                  value={data.fuelType}
-                  onChange={set('fuelType')}
+                  placeholder={t("vehicle.selectFuelType")}
+                  translationKey="options.fuelTypes"
+                  value={data.fuelType || ""}
+                  onChange={set("fuelType")}
                 />
               </Field>
 
             </div>
 
             {/* MIDDLE COLUMN */}
+
             <div className="space-y-3">
 
-              <Field label="Brand" required>
+              <Field label={t("vehicle.brand")} required>
                 <Select
                   options={BRANDS}
-                  placeholder="Select brand"
-                  value={data.brand}
-                  onChange={set('brand')}
+                  placeholder={t("vehicle.selectBrand")}
+                  translationKey="options.brands"
+                  value={data.brand || ""}
+                  onChange={set("brand")}
                 />
               </Field>
 
-              <Field label="Variant">
+              <Field label={t("vehicle.variant")}>
                 <Select
                   options={VARIANTS}
-                  placeholder="Select variant"
-                  value={data.variant}
-                  onChange={set('variant')}
+                  placeholder={t("vehicle.selectVariant")}
+                  translationKey="options.variants"
+                  value={data.variant || ""}
+                  onChange={set("variant")}
                 />
               </Field>
 
-              <Field label="Manufacturing Year" required>
+              <Field label={t("vehicle.manufacturingYear")} required>
                 <Select
                   options={MANUFACTURING_YEARS}
-                  placeholder="Select year"
-                  value={data.year}
-                  onChange={set('year')}
+                  placeholder={t("vehicle.selectYear")}
+                  value={data.year || ""}
+                  onChange={set("year")}
                 />
               </Field>
 
-              <Field label="Vehicle Amount" required>
+              <Field label={t("vehicle.vehicleAmount")} required>
                 <AdornedInput
                   prefix="₹"
                   inputMode="numeric"
-                  value={data.amount}
+                  value={data.amount || ""}
                   onChange={(e) =>
                     onChange(
-                      'amount',
-                      e.target.value.replace(/\D/g, '')
+                      "amount",
+                      e.target.value.replace(/\D/g, "")
                     )
                   }
-                  placeholder="Enter vehicle amount"
+                  placeholder={t("vehicle.enterVehicleAmount")}
                 />
               </Field>
 
             </div>
 
             {/* VEHICLE PHOTO */}
+
             <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3">
 
               <p className="mb-2 text-xs font-semibold text-emerald-900">
-                Vehicle Photo
+                {t("vehicle.photo.title")}
               </p>
 
               <PhotoUpload
-                title="Upload Vehicle Photo"
-                hint="JPG, PNG (Max 5MB)"
+                title={t("vehicle.photo.upload")}
+                hint={t("vehicle.photo.hint")}
                 file={data.photo}
                 onFile={(file) =>
-                  onChange('photo', file)
+                  handleFileChange("photo", file)
                 }
               />
 
               <p className="mt-2 text-[10px] text-slate-400">
-                Optional
+                {t("common.optional")}
               </p>
 
             </div>
 
           </div>
 
-          {/* SECTION FOOTER */}
           <div className="mt-4 flex justify-end border-t border-slate-100 pt-3">
+
             <button
               type="button"
-              onClick={() => setActiveSection('registration')}
+              onClick={() => setActiveSection("registration")}
               className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
             >
-              Next: Registration
+              {t("vehicle.nextRegistration")}
               <span>→</span>
             </button>
+
           </div>
 
         </SectionCard>
@@ -274,20 +329,21 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
       {/* =====================================================
           02. REGISTRATION & IDENTIFICATION
       ====================================================== */}
-      {activeSection === 'registration' && (
+
+      {activeSection === "registration" && (
         <SectionCard
-          title="Registration & Identification"
+          title={t("vehicle.registration.title")}
           right={
             <div className="flex items-center gap-2">
 
               <span className="hidden items-center gap-1.5 text-[11px] text-slate-500 lg:flex">
                 <InfoIcon className="h-3.5 w-3.5 text-emerald-700" />
-                Fetch details using registration number
+                {t("vehicle.registration.fetchHint")}
               </span>
 
               <OutlineButton onClick={onFetchVehicle}>
                 <RefreshIcon className="h-3.5 w-3.5" />
-                Fetch Vehicle
+                {t("vehicle.registration.fetchVehicle")}
               </OutlineButton>
 
             </div>
@@ -296,89 +352,102 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 
-            <Field label="RTO / Registration Location">
+            <Field label={t("vehicle.rtoLocation")}>
               <Select
                 options={RTO_LOCATIONS}
-                placeholder="Select RTO location"
-                value={data.rto}
-                onChange={set('rto')}
+                placeholder={t("vehicle.selectRtoLocation")}
+                translationKey="options.rtoLocations"
+                value={data.rto || ""}
+                onChange={set("rto")}
               />
             </Field>
 
-            <Field label="Date of Registration">
+            <Field label={t("vehicle.dateOfRegistration")}>
               <Input
                 type="date"
-                value={data.regDate}
-                onChange={set('regDate')}
+                value={data.regDate || ""}
+                onChange={set("regDate")}
               />
             </Field>
 
-            <Field label="Chassis Number">
+            <Field label={t("vehicle.chassisNumber")}>
               <Input
-                value={data.chassisNo}
-                onChange={set('chassisNo')}
-                placeholder="Enter chassis number"
+                value={data.chassisNo || ""}
+                onChange={set("chassisNo")}
+                placeholder={t("vehicle.enterChassisNumber")}
               />
             </Field>
 
-            <Field label="Engine Number">
+            <Field label={t("vehicle.engineNumber")}>
               <Input
-                value={data.engineNo}
-                onChange={set('engineNo')}
-                placeholder="Enter engine number"
+                value={data.engineNo || ""}
+                onChange={set("engineNo")}
+                placeholder={t("vehicle.enterEngineNumber")}
               />
             </Field>
 
           </div>
 
           {/* HYPOTHECATION */}
+
           <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[180px_1fr]">
 
-              <Field label="Hypothecation" required>
+              <Field label={t("vehicle.hypothecation")} required>
+
                 <RadioGroup
                   name="hypothecation"
                   options={YES_NO}
-                  value={data.hypothecation}
+                  translationKey="options.yesNo"
+                  value={data.hypothecation || ""}
                   onChange={(value) =>
-                    onChange('hypothecation', value)
+                    onChange("hypothecation", value)
                   }
                 />
+
               </Field>
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 
-                <Field label="Existing Financier">
+                <Field label={t("vehicle.existingFinancier")}>
+
                   <Select
                     options={FINANCIERS}
-                    placeholder="Select financier"
+                    placeholder={t("vehicle.selectFinancier")}
+                    translationKey="options.financiers"
                     disabled={!hypothecated}
-                    value={data.financier}
-                    onChange={set('financier')}
+                    value={data.financier || ""}
+                    onChange={set("financier")}
                   />
+
                 </Field>
 
-                <Field label="NOC Status">
+                <Field label={t("vehicle.nocStatus")}>
+
                   <Select
                     options={NOC_STATUSES}
-                    placeholder="Select status"
+                    placeholder={t("vehicle.selectStatus")}
+                    translationKey="options.nocStatuses"
                     disabled={!hypothecated}
-                    value={data.nocStatus}
-                    onChange={set('nocStatus')}
+                    value={data.nocStatus || ""}
+                    onChange={set("nocStatus")}
                   />
+
                 </Field>
 
-                <Field label="NOC Document">
+                <Field label={t("vehicle.nocDocument")}>
+
                   <UploadButton
-                    label="Upload NOC"
+                    label={t("vehicle.uploadNoc")}
                     icon={PlusIcon}
                     disabled={!hypothecated}
                     file={data.nocFile}
                     onFile={(file) =>
-                      onChange('nocFile', file)
+                      handleFileChange("nocFile", file)
                     }
                   />
+
                 </Field>
 
               </div>
@@ -387,23 +456,22 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
 
           </div>
 
-          {/* SECTION FOOTER */}
           <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
 
             <button
               type="button"
-              onClick={() => setActiveSection('vehicle')}
+              onClick={() => setActiveSection("vehicle")}
               className="text-xs font-medium text-slate-500 hover:text-slate-700"
             >
-              ← Vehicle Information
+              ← {t("vehicle.backVehicle")}
             </button>
 
             <button
               type="button"
-              onClick={() => setActiveSection('insurance')}
+              onClick={() => setActiveSection("insurance")}
               className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
             >
-              Next: Insurance
+              {t("vehicle.nextInsurance")}
               <span>→</span>
             </button>
 
@@ -415,99 +483,107 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
       {/* =====================================================
           03. INSURANCE & COMPLIANCE
       ====================================================== */}
-      {activeSection === 'insurance' && (
-        <SectionCard title="Insurance & Compliance">
+
+      {activeSection === "insurance" && (
+        <SectionCard title={t("vehicle.insurance.title")}>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 
-            <Field label="Tax Expiry">
+            <Field label={t("vehicle.taxExpiry")}>
               <Input
                 type="date"
-                value={data.taxExpiry}
-                onChange={set('taxExpiry')}
+                value={data.taxExpiry || ""}
+                onChange={set("taxExpiry")}
               />
             </Field>
 
-            <Field label="Insurance Company">
+            <Field label={t("vehicle.insuranceCompany")}>
               <Select
                 options={INSURANCE_COMPANIES}
-                placeholder="Select insurance company"
-                value={data.insuranceCompany}
-                onChange={set('insuranceCompany')}
+                placeholder={t("vehicle.selectInsuranceCompany")}
+                translationKey="options.insuranceCompanies"
+                value={data.insuranceCompany || ""}
+                onChange={set("insuranceCompany")}
               />
             </Field>
 
-            <Field label="Policy Number">
+            <Field label={t("vehicle.policyNumber")}>
               <Input
-                value={data.policyNo}
-                onChange={set('policyNo')}
-                placeholder="Enter policy number"
+                value={data.policyNo || ""}
+                onChange={set("policyNo")}
+                placeholder={t("vehicle.enterPolicyNumber")}
               />
             </Field>
 
-            <Field label="Insurance Expiry">
+            <Field label={t("vehicle.insuranceExpiry")}>
               <Input
                 type="date"
-                value={data.insuranceExpiry}
-                onChange={set('insuranceExpiry')}
+                value={data.insuranceExpiry || ""}
+                onChange={set("insuranceExpiry")}
               />
             </Field>
 
-            <Field label="Financier Endorsement" required>
+            <Field label={t("vehicle.financierEndorsement")} required>
+
               <RadioGroup
                 name="endorsement"
                 options={YES_NO}
-                value={data.financierEndorsement}
+                translationKey="options.yesNo"
+                value={data.financierEndorsement || ""}
                 onChange={(value) =>
-                  onChange(
-                    'financierEndorsement',
-                    value
-                  )
+                  onChange("financierEndorsement", value)
                 }
               />
+
             </Field>
 
-            <Field label="Insurance Document">
+            <Field label={t("vehicle.insuranceDocument")}>
+
               <UploadButton
-                label="Upload Insurance Document"
+                label={t("vehicle.uploadInsuranceDocument")}
                 icon={PlusIcon}
                 file={data.insuranceFile}
                 onFile={(file) =>
-                  onChange('insuranceFile', file)
+                  handleFileChange("insuranceFile", file)
                 }
               />
+
             </Field>
 
           </div>
 
           {/* REMARKS */}
+
           <div className="mt-3">
-            <Field label="Remarks">
+
+            <Field label={t("vehicle.remarks")}>
+
               <Textarea
                 rows={3}
-                value={data.remarks}
-                onChange={set('remarks')}
-                placeholder="Enter any additional remarks (optional)"
+                value={data.remarks || ""}
+                onChange={set("remarks")}
+                placeholder={t("vehicle.enterRemarks")}
                 className="resize-none"
               />
+
             </Field>
+
           </div>
 
-          {/* SECTION FOOTER */}
           <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
 
             <button
               type="button"
-              onClick={() => setActiveSection('registration')}
+              onClick={() => setActiveSection("registration")}
               className="text-xs font-medium text-slate-500 hover:text-slate-700"
             >
-              ← Registration
+              ← {t("vehicle.backRegistration")}
             </button>
 
             <div className="flex items-center gap-2">
 
               <span className="hidden text-[11px] text-emerald-600 sm:block">
-                ✓ Vehicle details completed
+                ✓ {t("vehicle.completed")}
               </span>
 
             </div>
@@ -518,7 +594,7 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
       )}
 
     </div>
-  )
-}
+  );
+};
 
-export default VehicleTab
+export default VehicleTab;
