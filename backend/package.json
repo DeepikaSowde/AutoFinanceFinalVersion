@@ -1,0 +1,21 @@
+{
+  "name": "autofinance-backend",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "REST API and SQLite database for the Auto Finance / Loan Management application.",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pg": "^8.23.0"
+  }
+}
