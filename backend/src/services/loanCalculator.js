@@ -4,43 +4,15 @@
 // authoritative implementation: the backend recalculates loan figures
 // from raw terms rather than trusting values submitted by a client.
 
+import {
+  getInterestYears,
+  getPaymentCount,
+  getPeriodicRate,
+  normaliseInterestType,
+} from "./loanTerms.js";
+
 export const roundMoney = (value) => {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-};
-
-const getTenureInMonths = (tenure = 0, tenureUnit = "Months") => {
-  const value = Number(tenure) || 0;
-
-  switch (tenureUnit) {
-    case "Years":
-      return value * 12;
-
-    case "Weeks":
-      return value / 4.345;
-
-    case "Days":
-      return value / 30.4375;
-
-    case "Months":
-    default:
-      return value;
-  }
-};
-
-const getPaymentCount = ({ tenure = 0, tenureUnit = "Months", frequency = "Monthly" }) => {
-  const months = getTenureInMonths(tenure, tenureUnit);
-
-  switch (frequency) {
-    case "Daily":
-      return Math.round(months * 30.4375);
-
-    case "Weekly":
-      return Math.round(months * 4.345);
-
-    case "Monthly":
-    default:
-      return Math.round(months);
-  }
 };
 
 export const calculateFlatInterest = ({
@@ -48,16 +20,15 @@ export const calculateFlatInterest = ({
   rate = 0,
   tenure = 0,
   tenureUnit = "Months",
+  frequency = "Monthly",
 }) => {
   const loanAmount = Number(principal) || 0;
   const interestRate = Number(rate) || 0;
-  const months = getTenureInMonths(tenure, tenureUnit);
+  const years = getInterestYears({ tenure, tenureUnit, frequency });
 
-  if (loanAmount <= 0 || interestRate <= 0 || months <= 0) {
+  if (loanAmount <= 0 || interestRate <= 0 || years <= 0) {
     return 0;
   }
-
-  const years = months / 12;
 
   return roundMoney(loanAmount * (interestRate / 100) * years);
 };
@@ -71,7 +42,7 @@ export const calculateFlatEMI = ({
 }) => {
   const loanAmount = Number(principal) || 0;
 
-  const interest = calculateFlatInterest({ principal: loanAmount, rate, tenure, tenureUnit });
+  const interest = calculateFlatInterest({ principal: loanAmount, rate, tenure, tenureUnit, frequency });
   const totalDue = loanAmount + interest;
   const paymentCount = getPaymentCount({ tenure, tenureUnit, frequency });
   const emi = paymentCount > 0 ? totalDue / paymentCount : 0;
@@ -94,7 +65,7 @@ export const calculateFlatPrincipalBased = ({
 }) => {
   const loanAmount = Number(principal) || 0;
 
-  const interest = calculateFlatInterest({ principal: loanAmount, rate, tenure, tenureUnit });
+  const interest = calculateFlatInterest({ principal: loanAmount, rate, tenure, tenureUnit, frequency });
   const paymentCount = getPaymentCount({ tenure, tenureUnit, frequency });
 
   const principalPerPayment = paymentCount > 0 ? loanAmount / paymentCount : 0;
@@ -110,20 +81,6 @@ export const calculateFlatPrincipalBased = ({
     paymentAmount: roundMoney(paymentAmount),
     paymentCount,
   };
-};
-
-const getPeriodicRate = ({ rate = 0, frequency = "Monthly" }) => {
-  const interestRate = Number(rate) || 0;
-
-  if (frequency === "Weekly") {
-    return interestRate / 100 / 52;
-  }
-
-  if (frequency === "Daily") {
-    return interestRate / 100 / 365;
-  }
-
-  return interestRate / 100 / 12;
 };
 
 export const calculateReducingEMI = ({
@@ -241,6 +198,8 @@ export const calculateLoan = ({
   repaymentMethod = "EMI",
   frequency = "Monthly",
 }) => {
+  interestType = normaliseInterestType(interestType);
+
   if (interestType === "Flat" && repaymentMethod === "EMI") {
     return calculateFlatEMI({ principal, rate, tenure, tenureUnit, frequency });
   }

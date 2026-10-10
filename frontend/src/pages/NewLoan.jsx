@@ -17,7 +17,7 @@ import {
   clearCustomerOnboarding
 } from '../utils/customerOnboardingStorage'
 
-import { calculateRepayment } from '../components/Loantab'
+import { getFundingSummary, principalOf, submitLoanApplication } from '../services/customerApi'
 import { CheckCircle2, X } from 'lucide-react'
 
 const STEPS = [
@@ -145,6 +145,7 @@ const NewLoan = () => {
 
   const [showSuccess, setShowSuccess] = useState(false)
   const [submittedLoan, setSubmittedLoan] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
 
   // TODO: connect these to your API
   const handleSaveDraft = () => console.log('Save draft', form)
@@ -190,106 +191,27 @@ const NewLoan = () => {
   };
 
   const handleSubmit = async () => {
+    if (submitting) return
+    setSubmitting(true)
     try {
-      // 1. Generate Loan ID
-      const customersList = JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]")
-      const loanCount = customersList.length + 1
-      const loanId = `LN${loanCount.toString().padStart(5, '0')}`
-      
-      const mobile = form.customer.mobile || ""
-      const customerId = `CUS-${mobile.slice(-5) || "000"}`
+      // Early, friendly check; the server re-checks inside the transaction
+      // that creates and funds the loan.
+      const principal = principalOf(form)
+      const { availableInvestmentBalance } = await getFundingSummary()
+      if (principal > availableInvestmentBalance) {
+        alert(`Insufficient available balance for this loan. Available: ₹${Number(availableInvestmentBalance).toLocaleString('en-IN')}.`)
+        return
+      }
 
-      // 2. Calculate EMI & Due Date
-      const vehicleAmount = form.loan.vehicleAmount !== null && form.loan.vehicleAmount !== '' ? Number(form.loan.vehicleAmount) : Number(form.vehicle.amount || 0)
-      const principal = Math.max(vehicleAmount - Number(form.loan.downPayment || 0), 0)
-      
-      // Calculate Total Available Pool
-      const investors = JSON.parse(localStorage.getItem('motoLendInvestors_data') || "[]")
-      const totalInvestedGlobal = investors.reduce((sum, inv) => {
-        const ob = inv.transactions?.find(t => t.type === "Opening Balance")?.amount || 0;
-        const newInv = inv.transactions?.filter(t => t.type === "New Investment" || t.type === "Re-Investment").reduce((s, t) => s + (t.amount || 0), 0) || 0;
-        return sum + ob + newInv;
-      }, 0);
-      
-      const totalDebitsGlobal = investors.reduce((sum, inv) => {
-        const debits = inv.transactions?.filter(t => t.type === "Debit").reduce((s, t) => s + (t.amount || 0), 0) || 0;
-        return sum + debits;
-      }, 0);
-      
-      const totalDeployedToLoans = customersList.reduce((sum, c) => sum + (c.loanAmount || 0), 0);
-      const totalAvailablePool = totalInvestedGlobal - totalDebitsGlobal - totalDeployedToLoans;
-      
-      if (principal > totalAvailablePool) {
-        alert("Insufficient available balance for this loan.");
-        return;
-      }
-      
-      const repayment = calculateRepayment({
-        principal: principal,
-        interestRate: form.loan.interestRate,
-        tenure: form.loan.tenure,
-        tenureUnit: form.loan.tenureUnit,
-        paymentFrequency: form.loan.paymentFrequency,
-        interestType: form.loan.interestType,
-        repaymentMethod: 'EMI'
-      })
-      
-      const emiAmount = repayment.emiAmount || 0
-      
-      // 3. Construct submitted data and compress images
-      let newEntry = {
-        ...form,
-        customerId: customerId,
-        loanId: loanId,
-        loanAmount: principal,
-        emiAmount: emiAmount,
-        paymentFrequency: form.loan.paymentFrequency,
-        nextDueDate: form.loan.firstDueDate,
-        status: "Active"
-      }
-      
-      newEntry = await compressObjectImages(newEntry);
-      
-      // 4. Update existing customer or create new
-      const existingCustomerIndex = customersList.findIndex(c => c.customerId === customerId || (c.customer && c.customer.mobile === mobile))
-      if (existingCustomerIndex >= 0) {
-        // If customer exists, don't duplicate identical image strings
-        const existing = customersList[existingCustomerIndex];
-        const clearDuplicateImages = (newObj, oldObj) => {
-          if (!newObj || !oldObj) return;
-          for (const key in newObj) {
-            if (typeof newObj[key] === 'string' && newObj[key].startsWith('data:image') && newObj[key] === oldObj[key]) {
-              newObj[key] = null; // Clear duplicate to save space
-            } else if (typeof newObj[key] === 'object' && newObj[key] !== null) {
-              clearDuplicateImages(newObj[key], oldObj[key]);
-            }
-          }
-        };
-        clearDuplicateImages(newEntry, existing);
-        
-        // Push a new record for the new loan instead of overwriting the previous loan
-        customersList.push(newEntry)
-      } else {
-        customersList.push(newEntry)
-      }
-      
-      // 5. Save to local storage
-      try {
-        localStorage.setItem("motoLendCustomersList_data", JSON.stringify(customersList))
-      } catch (storageError) {
-        if (storageError.name === 'QuotaExceededError' || storageError.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-          alert("Storage quota exceeded! Cannot save this loan application. Please reduce the size of uploaded documents or move to a larger storage solution.");
-          return;
-        }
-        throw storageError;
-      }
-      
-      // 6. Show Popup
-      setSubmittedLoan(newEntry)
+      const entry = await submitLoanApplication(await compressObjectImages(form))
+
+      setSubmittedLoan(entry)
       setShowSuccess(true)
     } catch (e) {
       console.error("Submission failed", e)
-      alert("Error submitting loan application.")
+      alert(e.message || "Error submitting loan application.")
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -386,7 +308,7 @@ const NewLoan = () => {
             )}
             <button type="button" onClick={handleSaveDraft} className={outlineBtn}>{t('app.saveDraft')}</button>
             {isLast ? (
-              <button type="button" onClick={handleSubmit} disabled={!verified} className={primaryBtn}>
+              <button type="button" onClick={handleSubmit} disabled={!verified || submitting} className={primaryBtn}>
                 {t('app.submitApplication')} <ArrowRight className="h-4 w-4" />
               </button>
             ) : (

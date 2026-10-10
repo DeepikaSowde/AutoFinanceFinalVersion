@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import LanguageSwitcher from './components/LanguageSwitcher'
@@ -15,9 +15,15 @@ import UserManagement from './pages/UserManagement'
 import Reminder from './pages/Reminder'
 import Login from './pages/auth/Login'
 import ProtectedRoute from './components/auth/ProtectedRoute'
+import { loadCustomerEntries } from './services/customerApi'
 
 function AppShell() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth >= 640 && window.innerWidth < 1024)
+
+  // Refresh the customer list the not-yet-migrated pages read from localStorage.
+  useEffect(() => {
+    loadCustomerEntries().catch(() => {})
+  }, [])
 
   return (
     <div className={`min-h-screen bg-slate-50 transition-all duration-300 ${isSidebarCollapsed ? 'sm:pl-20' : 'sm:pl-64'}`}>

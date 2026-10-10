@@ -7,6 +7,7 @@
 import { query, withTransaction } from "../db/connection.js";
 import { calculateLoan } from "./loanCalculator.js";
 import { generateRepaymentSchedule } from "./repaymentSchedule.js";
+import { fundLoanInTransaction } from "./investorRepository.js";
 import { describeInstallment, summariseOutstanding } from "./repaymentEngine.js";
 
 const pad = (number, length = 5) => String(number).padStart(length, "0");
@@ -474,6 +475,17 @@ export const insertLoan = async (client, customerPk, vehiclePk, loan = {}, optio
    CUSTOMER CRUD
 ========================================================= */
 
+// New Loan asks for the principal to be drawn from the investor pool; doing
+// it in the same transaction means an unfunded loan is never left behind.
+const fundIfRequested = (client, loanPk, loan = {}) =>
+  loan.fundFromPool
+    ? fundLoanInTransaction(client, {
+        amount: Number(loan.loanAmount) || 0,
+        loanPk,
+        date: loan.disbursementDate || new Date().toISOString().slice(0, 10),
+      })
+    : null;
+
 export const createCustomer = async (payload = {}) => {
   const customerId = await withTransaction(async (client) => {
     const result = await client.query(
@@ -500,7 +512,8 @@ export const createCustomer = async (payload = {}) => {
     const vehiclePk = await insertVehicle(client, customerPk, payload.vehicle);
     await insertRc(client, vehiclePk, payload.rc);
     await insertGuarantor(client, customerPk, payload.guarantor || { hasGuarantor: false });
-    await insertLoan(client, customerPk, vehiclePk, payload.loan || {});
+    const loanPk = await insertLoan(client, customerPk, vehiclePk, payload.loan || {});
+    await fundIfRequested(client, loanPk, payload.loan);
 
     return id;
   });
@@ -622,12 +635,13 @@ export const addLoanForCustomer = async (customerId, loan = {}) => {
     ]).then((r) => r.rows[0]),
   ]);
 
-  await withTransaction((client) =>
-    insertLoan(client, customerRow.pk, vehicleRow?.pk ?? null, loan, {
+  await withTransaction(async (client) => {
+    const loanPk = await insertLoan(client, customerRow.pk, vehicleRow?.pk ?? null, loan, {
       isPrimary: false,
       previousLoanPk: previousLoan?.pk ?? null,
-    })
-  );
+    });
+    await fundIfRequested(client, loanPk, loan);
+  });
 
   return getCustomerById(customerId);
 };

@@ -11,7 +11,7 @@ import {
   Eye,
 } from "lucide-react";
 
-import { getCustomerOnboarding } from "../../utils/customerOnboardingStorage";
+import { loadCustomerEntries } from "../../services/customerApi";
 import CustomerView from "./CustomerView";
 
 const formatCurrency = (value) => {
@@ -100,20 +100,26 @@ const Customer = () => {
   const [status, setStatus] = useState("All");
   const [statusOpen, setStatusOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    const loadCustomer = () => {
-      try {
-        const savedData = JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]");
-        console.log("Customer page data:", savedData);
-        setCustomerData(savedData);
-      } catch (error) {
-        console.error("Failed to load customer data:", error);
-        setCustomerData([]);
-      }
+    let active = true;
+
+    loadCustomerEntries()
+      .then((entries) => {
+        if (!active) return;
+        setCustomerData(entries);
+        setLoadError("");
+      })
+      .catch((error) => active && setLoadError(error.message))
+      .finally(() => active && setLoading(false));
+
+    return () => {
+      active = false;
     };
-    loadCustomer();
-  }, []);
+  }, [reloadKey]);
 
   const hasCustomer = customerData.length > 0;
 
@@ -123,8 +129,8 @@ const Customer = () => {
       const vehicle = data.vehicle || {};
       const loan = data.loan || {};
 
-      const customerId = getCustomerId(customer);
-      const loanId = getLoanId(customerId);
+      const customerId = data.customerId || getCustomerId(customer);
+      const loanId = data.loanId || getLoanId(customerId);
 
       const vehicleAmount = Number(vehicle.amount || 0);
       const loanVehicleAmount = loan.vehicleAmount !== null && loan.vehicleAmount !== undefined && loan.vehicleAmount !== ""
@@ -132,9 +138,9 @@ const Customer = () => {
         : vehicleAmount;
 
       const downPayment = Number(loan.downPayment || 0);
-      const loanAmount = Math.max(loanVehicleAmount - downPayment, 0);
-      const outstandingAmount = loanAmount;
-      const customerStatus = customer.name ? "Active" : "—";
+      const loanAmount = data.loanAmount ?? Math.max(loanVehicleAmount - downPayment, 0);
+      const outstandingAmount = data.outstandingAmount ?? loanAmount;
+      const customerStatus = data.status || (customer.name ? "Active" : "—");
 
       return {
         ...data,
@@ -178,7 +184,7 @@ const Customer = () => {
   };
 
   if (selectedCustomerId) {
-    return <CustomerView customerId={selectedCustomerId} onBack={() => setSelectedCustomerId(null)} />;
+    return <CustomerView customerId={selectedCustomerId} entries={customerData} onBack={() => setSelectedCustomerId(null)} />;
   }
 
   const totalCustomers = processedCustomers.length;
@@ -187,6 +193,22 @@ const Customer = () => {
 
   return (
     <div className="bg-white px-3 pb-6 sm:px-6 lg:px-8">
+      {loadError && (
+        <div role="alert" className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Could not load customers: {loadError}{" "}
+          <button
+            type="button"
+            className="font-semibold underline"
+            onClick={() => {
+              setLoading(true);
+              setReloadKey((key) => key + 1);
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {loading && !loadError && <p className="mt-2 text-sm text-slate-500">Loading customers…</p>}
 
       {/* =========================
           PAGE HEADER

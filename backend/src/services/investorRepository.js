@@ -552,6 +552,67 @@ export const freezeOpeningBalances = async () => {
  * each see enough balance and together overdraw the pool. The unique index
  * still backstops the one-allocation-per-loan rule.
  */
+/*
+ * Draws a loan's principal from the pool inside the caller's transaction, so
+ * creating a loan and funding it either both happen or neither does.
+ */
+export const fundLoanInTransaction = async (
+  client,
+  { amount, loanPk = null, loanId = "", loanNumber = "", date, notes = "Loan disbursement" } = {}
+) => {
+  const value = Number(amount);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new InvestorError("Loan amount must be greater than zero.");
+  }
+
+  if (!loanPk && !loanId && !loanNumber) {
+    throw new InvestorError("Loan identity is required for funding allocation.");
+  }
+
+  // Serialises every pool allocation for the length of this transaction.
+  await client.query("SELECT pg_advisory_xact_lock(hashtext('investment_pool'))");
+
+  const loanResult = await client.query(
+    "SELECT * FROM loans WHERE pk = $1 OR id = $2 OR loan_number = $3",
+    [loanPk ?? -1, loanId || "", loanNumber || ""]
+  );
+
+  const loanRow = loanResult.rows[0];
+
+  if (!loanRow) {
+    throw new InvestorError("Loan not found.", 404);
+  }
+
+  const existing = await client.query(
+    "SELECT COUNT(*)::int AS count FROM investor_transactions WHERE type = 'Loan Allocation' AND loan_pk = $1",
+    [loanRow.pk]
+  );
+
+  if (existing.rows[0].count > 0) {
+    throw new InvestorError("This loan already has an investor funding allocation.", 409);
+  }
+
+  const summary = await getFundingSummary(client);
+
+  if (summary.availableInvestmentBalance < value) {
+    throw new InvestorError(
+      `Insufficient available balance for this loan. Available funding: ₹${summary.availableInvestmentBalance.toLocaleString(
+        "en-IN"
+      )}.`
+    );
+  }
+
+  return insertTransaction(client, {
+    type: "Loan Allocation",
+    amount: value,
+    date,
+    notes,
+    loanPk: loanRow.pk,
+    loanNumber: loanRow.loan_number,
+  });
+};
+
 export const allocateInvestmentPoolToLoan = async ({
   amount,
   loanId,
@@ -559,59 +620,9 @@ export const allocateInvestmentPoolToLoan = async ({
   date,
   notes = "Loan disbursement",
 } = {}) => {
-  const value = Number(amount);
-
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new InvestorError("Loan amount must be greater than zero.");
-  }
-
-  if (!loanId && !loanNumber) {
-    throw new InvestorError("Loan identity is required for funding allocation.");
-  }
-
-  const transactionId = await withTransaction(async (client) => {
-    // Serialises every pool allocation for the length of this transaction.
-    await client.query("SELECT pg_advisory_xact_lock(hashtext('investment_pool'))");
-
-    const loanResult = await client.query(
-      "SELECT * FROM loans WHERE id = $1 OR loan_number = $2",
-      [loanId || "", loanNumber || ""]
-    );
-
-    const loanRow = loanResult.rows[0];
-
-    if (!loanRow) {
-      throw new InvestorError("Loan not found.", 404);
-    }
-
-    const existing = await client.query(
-      "SELECT COUNT(*)::int AS count FROM investor_transactions WHERE type = 'Loan Allocation' AND loan_pk = $1",
-      [loanRow.pk]
-    );
-
-    if (existing.rows[0].count > 0) {
-      throw new InvestorError("This loan already has an investor funding allocation.", 409);
-    }
-
-    const summary = await getFundingSummary(client);
-
-    if (summary.availableInvestmentBalance < value) {
-      throw new InvestorError(
-        `Insufficient investment balance. Available funding: ₹${summary.availableInvestmentBalance.toLocaleString(
-          "en-IN"
-        )}.`
-      );
-    }
-
-    return insertTransaction(client, {
-      type: "Loan Allocation",
-      amount: value,
-      date,
-      notes,
-      loanPk: loanRow.pk,
-      loanNumber: loanRow.loan_number,
-    });
-  });
+  const transactionId = await withTransaction((client) =>
+    fundLoanInTransaction(client, { amount, loanId, loanNumber, date, notes })
+  );
 
   const transactions = await getInvestorTransactions();
 

@@ -97,16 +97,11 @@ const TABS = [
   { id: 'activity', label: 'Activity' }
 ];
 
-export default function CustomerView({ customerId, onBack }) {
+export default function CustomerView({ customerId, entries = [], onBack }) {
   const [activeTab, setActiveTab] = useState('overview');
 
-  const allData = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]");
-    } catch (e) {
-      return [];
-    }
-  }, []);
+  // Loaded from the API by the Customers page.
+  const allData = entries;
 
   const customerLoans = useMemo(() => {
     return allData.filter(d => {
@@ -115,8 +110,8 @@ export default function CustomerView({ customerId, onBack }) {
     }).map(d => {
       const vehicleAmount = Number(d.loan?.vehicleAmount !== undefined && d.loan?.vehicleAmount !== "" ? d.loan.vehicleAmount : (d.vehicle?.amount || 0));
       const downPayment = Number(d.loan?.downPayment || 0);
-      const loanAmount = Math.max(vehicleAmount - downPayment, 0);
-      const outstandingAmount = loanAmount;
+      const loanAmount = d.loanAmount ?? Math.max(vehicleAmount - downPayment, 0);
+      const outstandingAmount = d.outstandingAmount ?? loanAmount;
       
       const cId = d.customerId || (d.customer?.mobile ? `CUS-${d.customer.mobile.slice(-5)}` : null);
       const lId = d.loanId || `LN-${cId?.replace("CUS-", "")}`;
@@ -126,7 +121,7 @@ export default function CustomerView({ customerId, onBack }) {
         loanAmount,
         outstandingAmount,
         loanId: lId,
-        status: 'Active'
+        status: d.status || 'Active'
       };
     });
   }, [allData, customerId]);

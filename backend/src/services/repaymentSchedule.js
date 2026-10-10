@@ -4,94 +4,16 @@
 // in lockstep with loanCalculator.js so persisted installments always
 // match the persisted loan calculation.
 
+import {
+  addPeriods,
+  getInterestYears,
+  getPaymentCount,
+  getPeriodicRate,
+  normaliseInterestType,
+} from "./loanTerms.js";
+
 export const roundMoney = (value) => {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-};
-
-const getPaymentCount = ({ tenure = 0, tenureUnit = "Months", frequency = "Monthly" }) => {
-  const value = Number(tenure) || 0;
-
-  if (value <= 0) {
-    return 0;
-  }
-
-  let months = value;
-
-  switch (tenureUnit) {
-    case "Years":
-      months = value * 12;
-      break;
-
-    case "Weeks":
-      months = value / 4.345;
-      break;
-
-    case "Days":
-      months = value / 30.4375;
-      break;
-
-    case "Months":
-    default:
-      months = value;
-      break;
-  }
-
-  switch (frequency) {
-    case "Daily":
-      return Math.max(1, Math.round(months * 30.4375));
-
-    case "Weekly":
-      return Math.max(1, Math.round(months * 4.345));
-
-    case "Monthly":
-    default:
-      return Math.max(1, Math.round(months));
-  }
-};
-
-const getPeriodicRate = ({ annualRate = 0, frequency = "Monthly" }) => {
-  const rate = Number(annualRate) || 0;
-
-  if (rate <= 0) {
-    return 0;
-  }
-
-  switch (frequency) {
-    case "Daily":
-      return rate / 100 / 365;
-
-    case "Weekly":
-      return rate / 100 / 52;
-
-    case "Monthly":
-    default:
-      return rate / 100 / 12;
-  }
-};
-
-const getNextDueDate = (date, frequency, period) => {
-  const nextDate = new Date(date);
-
-  if (Number.isNaN(nextDate.getTime())) {
-    return "";
-  }
-
-  switch (frequency) {
-    case "Daily":
-      nextDate.setDate(nextDate.getDate() + period);
-      break;
-
-    case "Weekly":
-      nextDate.setDate(nextDate.getDate() + period * 7);
-      break;
-
-    case "Monthly":
-    default:
-      nextDate.setMonth(nextDate.getMonth() + period);
-      break;
-  }
-
-  return nextDate.toISOString().split("T")[0];
 };
 
 /*
@@ -122,23 +44,6 @@ const reconcileFinalRow = (schedule, { loanAmount, totalInterest = null }) => {
   return schedule;
 };
 
-const getTenureInMonths = (tenure, tenureUnit) => {
-  switch (tenureUnit) {
-    case "Years":
-      return Number(tenure) * 12;
-
-    case "Weeks":
-      return Number(tenure) / 4.345;
-
-    case "Days":
-      return Number(tenure) / 30.4375;
-
-    case "Months":
-    default:
-      return Number(tenure);
-  }
-};
-
 const generateFlatEMI = ({ principal, rate, tenure, tenureUnit, frequency, firstDueDate }) => {
   const loanAmount = Number(principal) || 0;
   const paymentCount = getPaymentCount({ tenure, tenureUnit, frequency });
@@ -147,7 +52,7 @@ const generateFlatEMI = ({ principal, rate, tenure, tenureUnit, frequency, first
     return [];
   }
 
-  const years = getTenureInMonths(tenure, tenureUnit) / 12;
+  const years = getInterestYears({ tenure, tenureUnit, frequency });
   const totalInterest = loanAmount * ((Number(rate) || 0) / 100) * years;
   const principalPerPayment = loanAmount / paymentCount;
   const interestPerPayment = totalInterest / paymentCount;
@@ -169,7 +74,7 @@ const generateFlatEMI = ({ principal, rate, tenure, tenureUnit, frequency, first
 
     schedule.push({
       installmentNumber: period,
-      dueDate: getNextDueDate(firstDueDate, frequency, period - 1),
+      dueDate: addPeriods(firstDueDate, frequency, period - 1),
       openingBalance: roundMoney(remainingBalance + principalAmount),
       principal: roundMoney(principalAmount),
       interest: roundMoney(interestAmount),
@@ -191,7 +96,7 @@ const generateReducingEMI = ({ principal, rate, tenure, tenureUnit, frequency, f
     return [];
   }
 
-  const periodicRate = getPeriodicRate({ annualRate, frequency });
+  const periodicRate = getPeriodicRate({ rate: annualRate, frequency });
 
   let paymentAmount;
 
@@ -221,7 +126,7 @@ const generateReducingEMI = ({ principal, rate, tenure, tenureUnit, frequency, f
 
     schedule.push({
       installmentNumber: period,
-      dueDate: getNextDueDate(firstDueDate, frequency, period - 1),
+      dueDate: addPeriods(firstDueDate, frequency, period - 1),
       openingBalance: roundMoney(openingBalance),
       principal: roundMoney(principalAmount),
       interest: roundMoney(interestAmount),
@@ -244,7 +149,7 @@ const generateFlatPrincipal = ({ principal, rate, tenure, tenureUnit, frequency,
     return [];
   }
 
-  const years = getTenureInMonths(tenure, tenureUnit) / 12;
+  const years = getInterestYears({ tenure, tenureUnit, frequency });
   const totalInterest = loanAmount * ((Number(rate) || 0) / 100) * years;
   const principalPerPayment = loanAmount / paymentCount;
   const interestPerPayment = totalInterest / paymentCount;
@@ -266,7 +171,7 @@ const generateFlatPrincipal = ({ principal, rate, tenure, tenureUnit, frequency,
 
     schedule.push({
       installmentNumber: period,
-      dueDate: getNextDueDate(firstDueDate, frequency, period - 1),
+      dueDate: addPeriods(firstDueDate, frequency, period - 1),
       openingBalance: roundMoney(remainingBalance + principalAmount),
       principal: roundMoney(principalAmount),
       interest: roundMoney(interestAmount),
@@ -295,7 +200,7 @@ const generateReducingPrincipal = ({
     return [];
   }
 
-  const periodicRate = getPeriodicRate({ annualRate, frequency });
+  const periodicRate = getPeriodicRate({ rate: annualRate, frequency });
   const principalPerPayment = loanAmount / paymentCount;
 
   const schedule = [];
@@ -311,7 +216,7 @@ const generateReducingPrincipal = ({
 
     schedule.push({
       installmentNumber: period,
-      dueDate: getNextDueDate(firstDueDate, frequency, period - 1),
+      dueDate: addPeriods(firstDueDate, frequency, period - 1),
       openingBalance: roundMoney(openingBalance),
       principal: roundMoney(principalAmount),
       interest: roundMoney(interestAmount),
@@ -335,6 +240,8 @@ export const generateRepaymentSchedule = ({
   firstDueDate = "",
 }) => {
   const params = { principal, rate, tenure, tenureUnit, frequency, firstDueDate };
+
+  interestType = normaliseInterestType(interestType);
 
   if (interestType === "Flat" && repaymentMethod === "EMI") {
     return generateFlatEMI(params);
