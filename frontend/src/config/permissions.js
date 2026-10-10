@@ -26,3 +26,30 @@ export const ACTION_LABELS = {
 
 // Matches the server's default for a new staff account.
 export const DEFAULT_STAFF_PERMISSIONS = { collections: { view: true, add: true } }
+
+// The permission that opens each page, chosen so every API call the page
+// makes is allowed (e.g. the Ledger also reads investors, which ledger.view
+// covers). Admins open everything; /users is admin-only.
+export const PAGE_ACCESS = {
+  '/dashboard': ['dashboard.view'],
+  '/newloan': ['loans.add'],
+  '/collection': ['collections.view'],
+  '/customers': ['customers.view'],
+  '/ledger': ['ledger.view'],
+  '/investors': ['investor.view'],
+  '/vehicle': ['vehicles.view'],
+  '/reminders': ['reminders.view'],
+  '/users': [],
+}
+
+export const canOpen = (user, path) => {
+  if (user?.role === 'admin') return true
+  return (PAGE_ACCESS[path] || []).some((permission) => {
+    const [module, action] = permission.split('.')
+    return user?.permissions?.[module]?.[action] === true
+  })
+}
+
+// Where to land after sign-in: New Loan for admins, else the first page allowed.
+export const homePageFor = (user) =>
+  canOpen(user, '/newloan') ? '/newloan' : Object.keys(PAGE_ACCESS).find((path) => canOpen(user, path)) || null

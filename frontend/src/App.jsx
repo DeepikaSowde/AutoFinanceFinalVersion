@@ -15,9 +15,31 @@ import UserManagement from './pages/UserManagement'
 import Reminder from './pages/Reminder'
 import Login from './pages/auth/Login'
 import ProtectedRoute from './components/auth/ProtectedRoute'
+import { getSessionUser } from './services/api'
+import { canOpen, homePageFor } from './config/permissions'
+
+// Shown for a page the signed-in user's permissions don't cover. The server
+// refuses the data anyway; this just says so plainly.
+function NoAccess() {
+  return (
+    <div className="flex flex-1 items-center justify-center p-6">
+      <div className="max-w-md rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <h1 className="text-lg font-semibold text-slate-800">No access</h1>
+        <p className="mt-2 text-sm text-slate-500">
+          Your account can't open this page. Ask an admin to change your access in User Management.
+        </p>
+      </div>
+    </div>
+  )
+}
 
 function AppShell() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth >= 640 && window.innerWidth < 1024)
+
+  // Permissions come from the session, so an admin's change applies at the user's next sign-in.
+  const user = getSessionUser()
+  const home = homePageFor(user)
+  const gate = (path, page) => (canOpen(user, path) ? page : <NoAccess />)
 
   return (
     <div className={`min-h-screen bg-slate-50 transition-all duration-300 ${isSidebarCollapsed ? 'sm:pl-20' : 'sm:pl-64'}`}>
@@ -27,17 +49,17 @@ function AppShell() {
           <LanguageSwitcher />
         </header>
         <Routes>
-          <Route path="/" element={<Navigate to="/newloan" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/newloan" element={<NewLoan />} />
-          <Route path="/customers" element={<Customer />} />
-          <Route path="/investors" element={<Investors />} />
-          <Route path="/ledger" element={<Ledger />} />
-          <Route path="/collection" element={<Collection />} />
-          <Route path="/vehicle" element={<Vehicle />} />
-          <Route path="/users" element={<UserManagement />} />
-          <Route path="/reminders" element={<Reminder />} />
-          <Route path="*" element={<Navigate to="/newloan" replace />} />
+          <Route path="/" element={home ? <Navigate to={home} replace /> : <NoAccess />} />
+          <Route path="/dashboard" element={gate('/dashboard', <Dashboard />)} />
+          <Route path="/newloan" element={gate('/newloan', <NewLoan />)} />
+          <Route path="/customers" element={gate('/customers', <Customer />)} />
+          <Route path="/investors" element={gate('/investors', <Investors />)} />
+          <Route path="/ledger" element={gate('/ledger', <Ledger />)} />
+          <Route path="/collection" element={gate('/collection', <Collection />)} />
+          <Route path="/vehicle" element={gate('/vehicle', <Vehicle />)} />
+          <Route path="/users" element={gate('/users', <UserManagement />)} />
+          <Route path="/reminders" element={gate('/reminders', <Reminder />)} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>

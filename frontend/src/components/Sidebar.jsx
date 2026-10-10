@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { getSessionUser, logout } from '../services/api'
+import { canOpen } from '../config/permissions'
 import { useTranslation } from 'react-i18next'
 import {
   Menu,
@@ -98,7 +99,7 @@ const Sidebar = ({ onCollapsedChange }) => {
 
   const mainItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-  ]
+  ].filter((item) => canOpen(currentUser, item.path))
 
   const moduleItems = [
     { name: 'Loan', path: '/newloan', icon: HandCoins },
@@ -107,16 +108,15 @@ const Sidebar = ({ onCollapsedChange }) => {
     { name: 'Ledger', path: '/ledger', icon: ReceiptText },
     { name: 'Customer', path: '/customers', icon: UsersRound },
     { name: 'Investor', path: '/investors', icon: Landmark },
-  ]
+  ].filter((item) => canOpen(currentUser, item.path))
 
-  // Only admins manage users (the server enforces this too).
-  const userItems = isAdmin ? [
+  const userItems = [
     { name: 'User Management', path: '/users', icon: UserCog },
-  ] : []
+  ].filter((item) => canOpen(currentUser, item.path))
 
   const notificationItems = [
     { name: 'Reminder', path: '/reminders', icon: BellRing },
-  ]
+  ].filter((item) => canOpen(currentUser, item.path))
 
   return (
     <>
