@@ -15,7 +15,9 @@ import {
   User,
   Briefcase,
   TrendingDown,
-  Car
+  Car,
+  SlidersHorizontal,
+  X
 } from "lucide-react";
 
 const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
@@ -24,6 +26,7 @@ const Ledger = () => {
   const [filter, setFilter] = useState("Ledger");
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const investors = JSON.parse(window.localStorage.getItem("motoLendInvestors_data") || "[]");
   const customers = JSON.parse(window.localStorage.getItem("motoLendCustomersList_data") || "[]");
@@ -278,18 +281,26 @@ const Ledger = () => {
     <div className="flex flex-col h-[calc(100vh-3rem)] bg-slate-50 px-4 sm:px-6 lg:px-8 py-6 pb-8 overflow-y-auto overflow-x-hidden">
       
       {/* PAGE HEADER */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 sm:text-3xl">
-            {filter === 'Ledger' ? 'Ledger' : filter}
-          </h1>
-          <p className="mt-2 text-[15px] text-slate-500">
-            {filter === 'Ledger' && 'Track all money coming in and going out from your business.'}
-            {filter === 'Income' && 'Track all income received by the business.'}
-            {filter === 'Expense' && 'Track all business expenses and outgoing operating costs.'}
-          </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between shrink-0">
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 sm:text-3xl">
+              {filter === 'Ledger' ? 'Ledger' : filter}
+            </h1>
+            <p className="mt-2 text-[15px] text-slate-500 hidden sm:block">
+              {filter === 'Ledger' && 'Track all money coming in and going out from your business.'}
+              {filter === 'Income' && 'Track all income received by the business.'}
+              {filter === 'Expense' && 'Track all business expenses and outgoing operating costs.'}
+            </p>
+          </div>
+          <button 
+            onClick={() => setIsDrawerOpen(true)}
+            className="lg:hidden flex items-center justify-center p-2 rounded-lg bg-white border border-slate-200 text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+          >
+            <SlidersHorizontal className="h-5 w-5" />
+          </button>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="hidden lg:flex flex-wrap items-center gap-3">
           
           {/* Separated Navigation Buttons */}
           <div className="flex flex-wrap items-center gap-3 shrink-0">
@@ -331,8 +342,8 @@ const Ledger = () => {
 
       {filter === 'Ledger' && (
         <>
-          {/* KPI CARDS */}
-      <div className="mt-6 flex flex-row gap-4 shrink-0 overflow-x-auto pb-2">
+      {/* KPI CARDS */}
+      <div className="mt-6 grid grid-cols-2 max-[400px]:grid-cols-1 lg:flex lg:flex-row gap-3 sm:gap-4 shrink-0 pb-2">
         <SummaryCard 
           icon={Database} 
           title="Opening Balance" 
@@ -371,16 +382,16 @@ const Ledger = () => {
       </div>
 
       {/* TRANSACTIONS CARD */}
-      <div className="mt-6 flex-1 flex flex-col min-h-0 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="mt-6 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         
         {/* Header */}
-        <div className="flex justify-between items-center p-5 border-b border-slate-100 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 p-5 border-b border-slate-100 shrink-0">
           <div>
             <h2 className="text-lg font-bold text-slate-900 tracking-tight">Transactions</h2>
             <p className="text-[13px] text-slate-500 mt-0.5 font-medium">October 2026</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="relative w-full sm:w-[220px]">
+          <div className="flex w-full sm:w-auto items-center gap-3">
+            <div className="relative flex-1 sm:flex-none sm:w-[220px]">
               <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
@@ -397,7 +408,7 @@ const Ledger = () => {
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-x-auto overflow-y-auto">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[950px] text-left border-collapse">
             <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 shadow-[0_1px_0_0_#e2e8f0]">
               <tr>
@@ -616,6 +627,58 @@ const Ledger = () => {
         </div>
       )}
 
+      {/* MOBILE DRAWER (For KPI cards and actions) */}
+      {isDrawerOpen && (
+        <div className="fixed inset-0 z-[110] lg:hidden">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsDrawerOpen(false)} />
+          <div className="absolute right-0 top-0 h-full w-[300px] max-w-[85vw] bg-white shadow-2xl overflow-y-auto flex flex-col">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+              <h3 className="font-bold text-slate-900">Dashboard Panel</h3>
+              <button onClick={() => setIsDrawerOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-50">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="p-4 flex flex-col gap-6">
+              {/* Actions */}
+              <div className="flex flex-col gap-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Navigation</p>
+                {[
+                  { id: 'Ledger', label: 'Ledger' },
+                  { id: 'Income', label: 'Income' },
+                  { id: 'Expense', label: 'Expense' }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => { setFilter(tab.id); setCurrentPage(1); setIsDrawerOpen(false); }}
+                    className={`px-4 py-2.5 text-left text-[14px] font-bold rounded-lg transition-colors ${
+                      filter === tab.id 
+                        ? 'bg-emerald-50 text-emerald-700' 
+                        : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <button 
+                onClick={() => {
+                  setIsDrawerOpen(false);
+                  if (filter === 'Ledger') setShowTypeSelection(true);
+                  else if (filter === 'Income') setShowAddIncome(true);
+                  else if (filter === 'Expense') setShowAddExpense(true);
+                }}
+                className="flex items-center justify-center gap-2 rounded-xl bg-[#006052] p-3 text-[14px] font-bold text-white hover:bg-[#004d43] shadow-md transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                {filter === 'Ledger' ? 'Add Transaction' : `Add ${filter}`}
+              </button>
+
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -657,18 +720,18 @@ const getTypeBadgeStyle = (type) => {
   }
 };
 
-import { X } from 'lucide-react';
+
 
 // Sub-components
 const SummaryCard = ({ icon: Icon, title, value, valueColor = "text-slate-900", iconColor, iconBg, extraClass = "bg-white border-slate-200 shadow-sm" }) => (
-  <div className={`rounded-xl border p-5 transition-shadow ${extraClass}`}>
-    <div className="flex items-center gap-4">
-      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
-        <Icon className={`h-6 w-6 ${iconColor}`} strokeWidth={2} />
+  <div className={`rounded-xl border p-4 sm:p-5 transition-shadow flex flex-col justify-center h-full ${extraClass}`}>
+    <div className="flex items-center sm:items-start gap-3 sm:gap-4">
+      <div className={`flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+        <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${iconColor}`} strokeWidth={2} />
       </div>
-      <div className="min-w-0">
-        <p className="text-[14px] font-semibold text-slate-500">{title}</p>
-        <p className={`mt-1 truncate text-2xl font-bold tracking-tight ${valueColor}`}>{value}</p>
+      <div className="flex-1 min-w-0">
+        <p className="text-[12px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">{title}</p>
+        <p className={`mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight whitespace-nowrap ${valueColor}`}>{value}</p>
       </div>
     </div>
   </div>

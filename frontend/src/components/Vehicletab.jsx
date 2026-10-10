@@ -173,7 +173,7 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
       {activeSection === "vehicle" && (
         <SectionCard title={t("vehicle.information.title")}>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr_260px]">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-[1fr_1fr_260px]">
 
             {/* LEFT COLUMN */}
 
@@ -350,7 +350,7 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
           }
         >
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
 
             <Field label={t("vehicle.rtoLocation")}>
               <Select
@@ -408,7 +408,7 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
 
               </Field>
 
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
 
                 <Field label={t("vehicle.existingFinancier")}>
 
