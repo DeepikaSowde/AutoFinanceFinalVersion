@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { logout } from '../services/api'
+import { getSessionUser, logout } from '../services/api'
 import { useTranslation } from 'react-i18next'
 import {
   Menu,
@@ -27,6 +27,8 @@ const Sidebar = ({ onCollapsedChange }) => {
   const [isCollapsed, setIsCollapsed] = useState(() => window.innerWidth >= 640 && window.innerWidth < 1024)
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const currentUser = getSessionUser()
+  const isAdmin = currentUser?.role === 'admin'
 
   const handleSignOut = () => {
     logout()
@@ -107,9 +109,10 @@ const Sidebar = ({ onCollapsedChange }) => {
     { name: 'Investor', path: '/investors', icon: Landmark },
   ]
 
-  const userItems = [
+  // Only admins manage users (the server enforces this too).
+  const userItems = isAdmin ? [
     { name: 'User Management', path: '/users', icon: UserCog },
-  ]
+  ] : []
 
   const notificationItems = [
     { name: 'Reminder', path: '/reminders', icon: BellRing },
@@ -264,8 +267,8 @@ const Sidebar = ({ onCollapsedChange }) => {
                 </div>
                 {!isCollapsed && (
                   <div className="flex flex-col overflow-hidden">
-                    <span className="text-[12px] font-bold text-[#E8F5F1] leading-tight truncate">Admin</span>
-                    <span className="text-[10px] font-medium text-[#A8D5C8] truncate">Administrator</span>
+                    <span className="text-[12px] font-bold text-[#E8F5F1] leading-tight truncate">{currentUser?.name || 'User'}</span>
+                    <span className="text-[10px] font-medium text-[#A8D5C8] truncate">{isAdmin ? 'Administrator' : 'Staff'}</span>
                   </div>
                 )}
               </div>
