@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { Search, ChevronRight, X, Wallet, ArrowDownCircle, ArrowUpCircle, Database, FileText, Banknote, Landmark } from 'lucide-react';
+import { Search, ChevronRight, ChevronLeft, X, Wallet, ArrowDownCircle, ArrowUpCircle, Database, FileText, Banknote, Landmark } from 'lucide-react';
+import IncomeOverviewChart from './IncomeOverviewChart';
 
 const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
 
 const SummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "text-slate-900", iconColor, iconBg, extraClass = "bg-white border-slate-200 shadow-sm" }) => (
-  <div className={`rounded-xl border p-5 transition-shadow ${extraClass}`}>
-    <div className="flex items-center gap-4">
-      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
-        <Icon className={`h-6 w-6 ${iconColor}`} strokeWidth={2} />
+  <div className={`rounded-xl border p-4 sm:p-5 transition-shadow flex flex-col justify-center h-full ${extraClass}`}>
+    <div className="flex items-center sm:items-start gap-3 sm:gap-4">
+      <div className={`flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+        <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${iconColor}`} strokeWidth={2} />
       </div>
-      <div className="min-w-0">
-        <p className="text-[14px] font-semibold text-slate-500">{title}</p>
-        <p className={`mt-1 truncate text-2xl font-bold tracking-tight ${valueColor}`}>{value}</p>
-        {subtext && <p className="text-[12px] font-medium text-slate-400 mt-1">{subtext}</p>}
+      <div className="flex-1 min-w-0">
+        <p className="text-[12px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">{title}</p>
+        <p className={`mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight whitespace-nowrap ${valueColor}`}>{value}</p>
+        {subtext && <p className="text-[11px] sm:text-[12px] font-medium text-slate-400 mt-1 whitespace-normal break-words leading-tight">{subtext}</p>}
       </div>
     </div>
   </div>
@@ -75,35 +76,45 @@ const IncomeView = () => {
   const documentCharges = filteredIncome.filter(i => i.type === 'Document Charge').reduce((sum, i) => sum + i.displayAmount, 0);
   const totalIncome = filteredIncome.reduce((sum, i) => sum + i.displayAmount, 0);
 
+  const breakdownMap = filteredIncome.reduce((acc, inc) => {
+    const type = inc.type || 'Other';
+    acc[type] = (acc[type] || 0) + inc.displayAmount;
+    return acc;
+  }, {});
+
+  const incomeBreakdownData = Object.keys(breakdownMap)
+    .map(name => ({ name, value: breakdownMap[name] }))
+    .sort((a, b) => b.value - a.value);
+
   const PAGE_SIZE = 5;
   const totalPages = Math.max(1, Math.ceil(filteredIncome.length / PAGE_SIZE));
   const paginatedIncome = filteredIncome.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const getTypeBadgeStyle = (type) => {
-    switch(type) {
+    switch (type) {
       case 'Collection': return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'Document Charge': return 'bg-amber-50 text-amber-700 border-amber-200';
       default: return 'bg-purple-50 text-purple-700 border-purple-200';
     }
   };
-  
+
   const getTypeIcon = (type) => {
-    switch(type) {
+    switch (type) {
       case 'Collection': return Wallet;
       case 'Document Charge': return FileText;
       default: return Banknote;
     }
   };
-  
+
   const getTypeIconBg = (type) => {
-    switch(type) {
+    switch (type) {
       case 'Collection': return 'bg-blue-100';
       case 'Document Charge': return 'bg-amber-100';
       default: return 'bg-purple-100';
     }
   };
   const getTypeIconColor = (type) => {
-    switch(type) {
+    switch (type) {
       case 'Collection': return 'text-blue-600';
       case 'Document Charge': return 'text-amber-600';
       default: return 'text-purple-600';
@@ -113,66 +124,70 @@ const IncomeView = () => {
 
 
   return (
-    <div className="flex flex-col mt-6 h-full overflow-hidden">
-      
+    <div className="flex flex-col mt-6 space-y-6">
+
       {/* KPI GRID */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 shrink-0 pb-2 overflow-x-auto">
-        <SummaryCard 
-          icon={Wallet} 
-          title="Collection Credit" 
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 shrink-0 pb-2">
+        <SummaryCard
+          icon={Wallet}
+          title="Collection Credit"
           value={formatCurrency(collectionCredit)}
           subtext="Customer Collections"
           valueColor="text-emerald-700"
           iconColor="text-emerald-600"
           iconBg="bg-emerald-100"
+          extraClass="flex-1 min-w-[200px] bg-white border-slate-200 shadow-sm"
         />
-        <SummaryCard 
-          icon={Database} 
-          title="Principal Recovered" 
+        <SummaryCard
+          icon={Database}
+          title="Principal Recovered"
           value={formatCurrency(principalRecovered)}
           subtext="From Collections"
           iconColor="text-blue-600"
           iconBg="bg-blue-100"
+          extraClass="flex-1 min-w-[200px] bg-white border-slate-200 shadow-sm"
         />
-        <SummaryCard 
-          icon={ArrowDownCircle} 
-          title="Interest" 
+        <SummaryCard
+          icon={ArrowDownCircle}
+          title="Interest"
           value={formatCurrency(interestRecovered)}
           subtext="From Collections"
           valueColor="text-emerald-700"
           iconColor="text-emerald-600"
           iconBg="bg-emerald-100"
+          extraClass="flex-1 min-w-[200px] bg-white border-slate-200 shadow-sm"
         />
-        <SummaryCard 
-          icon={FileText} 
-          title="Document Charge" 
+        <SummaryCard
+          icon={FileText}
+          title="Document Charge"
           value={formatCurrency(documentCharges)}
           subtext="Document Charges"
           iconColor="text-amber-600"
           iconBg="bg-amber-100"
+          extraClass="flex-1 min-w-[200px] bg-white border-slate-200 shadow-sm"
         />
-        <SummaryCard 
-          icon={Landmark} 
-          title="Total Income" 
+        <SummaryCard
+          icon={Landmark}
+          title="Total Income"
           value={formatCurrency(totalIncome)}
           subtext="All Income"
           valueColor="text-[#006052]"
           iconColor="text-[#006052]"
           iconBg="bg-[#e5f0ef]"
-          extraClass="bg-emerald-50/50 border-emerald-200 shadow-sm"
+          extraClass="flex-1 min-w-[200px] bg-emerald-50/50 border-emerald-200 shadow-sm"
         />
       </div>
 
       {/* FILTERS */}
       <div className="mt-4 flex flex-col sm:flex-row gap-4 shrink-0">
-        <select value={dateFilter} onChange={e => {setDateFilter(e.target.value); setCurrentPage(1);}} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-medium text-slate-700 outline-none w-full sm:w-auto focus:border-[#006052] focus:ring-1 focus:ring-[#006052]">
+        <select value={dateFilter} onChange={e => { setDateFilter(e.target.value); setCurrentPage(1); }} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-medium text-slate-700 outline-none w-full sm:w-auto focus:border-[#006052] focus:ring-1 focus:ring-[#006052]">
           <option>Today</option>
           <option>This Week</option>
           <option>This Month</option>
           <option>Last Month</option>
           <option>Custom Range</option>
         </select>
-        <select value={typeFilter} onChange={e => {setTypeFilter(e.target.value); setCurrentPage(1);}} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-medium text-slate-700 outline-none w-full sm:w-auto focus:border-[#006052] focus:ring-1 focus:ring-[#006052]">
+        <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setCurrentPage(1); }} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-medium text-slate-700 outline-none w-full sm:w-auto focus:border-[#006052] focus:ring-1 focus:ring-[#006052]">
           <option>All</option>
           <option>Collection</option>
           <option>Document Charge</option>
@@ -182,21 +197,22 @@ const IncomeView = () => {
         </select>
         <div className="relative w-full sm:w-[260px]">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input type="text" value={search} onChange={e => {setSearch(e.target.value); setCurrentPage(1);}} placeholder="Search Customer, ID, Remarks..." className="h-9 w-full rounded-full border border-slate-300 bg-white pl-9 pr-4 text-[13px] outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm" />
+          <input type="text" value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} placeholder="Search Customer, ID, Remarks..." className="h-9 w-full rounded-full border border-slate-300 bg-white pl-9 pr-4 text-[13px] outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm" />
         </div>
       </div>
 
       {/* TABLE SECTION */}
-      <div className="mt-6 flex-1 flex flex-col min-h-0 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex-1 overflow-x-auto overflow-y-auto">
-          <table className="w-full min-w-[950px] text-left border-collapse">
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="lg:w-[60%] flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[800px] text-left border-collapse">
             <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 shadow-[0_1px_0_0_#e2e8f0]">
               <tr>
-                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[15%]">Date</th>
-                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[45%]">Description</th>
-                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[15%]">Amount</th>
-                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[15%]">Type</th>
-                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[10%]"></th>
+                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[18%]">Date</th>
+                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[35%]">Description</th>
+                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[22%]">Amount</th>
+                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[18%]">Type</th>
+                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[7%]"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -211,9 +227,9 @@ const IncomeView = () => {
                 const Icon = getTypeIcon(inc.type);
                 return (
                   <tr key={inc.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => setViewTransaction(inc)}>
-                    <td className="px-5 py-3.5">
+                    <td className="px-5 py-3.5 whitespace-nowrap">
                       <p className="font-semibold text-[14px] text-slate-800">
-                        {new Date(inc.date).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'})}
+                        {new Date(inc.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </p>
                       <p className="text-[13px] text-slate-500 mt-0.5">{inc.type}</p>
                     </td>
@@ -222,21 +238,21 @@ const IncomeView = () => {
                         <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${getTypeIconBg(inc.type)}`}>
                           <Icon className={`h-4 w-4 ${getTypeIconColor(inc.type)}`} />
                         </div>
-                        <div>
-                          <p className="font-semibold text-[14px] text-slate-800">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-[14px] text-slate-800 truncate">
                             {inc.type === 'Collection' ? `${inc.customerName} – EMI Collection` : (inc.type === 'Document Charge' ? `Document Charge – ${inc.customerName || 'Customer'}` : inc.remarks)}
                           </p>
-                          <p className="text-[13px] text-slate-500 mt-0.5 line-clamp-1">
+                          <p className="text-[13px] text-slate-500 mt-0.5 truncate">
                             {inc.type === 'Collection' ? `${inc.customerId} · Loan ID: ${inc.loanId}` : (inc.remarks || 'Income recorded')}
                           </p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-5 py-3.5 whitespace-nowrap">
                       <span className="font-bold text-[14px] text-emerald-600">{formatCurrency(inc.displayAmount)}</span>
                     </td>
-                    <td className="px-5 py-3.5">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${getTypeBadgeStyle(inc.type)}`}>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider whitespace-nowrap border ${getTypeBadgeStyle(inc.type)}`}>
                         {inc.type}
                       </span>
                     </td>
@@ -253,29 +269,39 @@ const IncomeView = () => {
         </div>
 
         {/* Pagination Controls */}
-        <div className="flex items-center justify-between border-t border-slate-200 bg-white px-5 py-3 shrink-0">
-          <span className="text-sm text-slate-500">
-            {filteredIncome.length === 0 
-              ? "Showing 0 results" 
-              : `Showing ${(currentPage - 1) * PAGE_SIZE + 1} to ${Math.min(currentPage * PAGE_SIZE, filteredIncome.length)} of ${filteredIncome.length} results`}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Previous
-            </button>
-            <span className="text-sm font-medium text-slate-700">Page {currentPage} of {totalPages}</span>
-            <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Next
-            </button>
+        {filteredIncome.length > 0 && (
+          <div className="flex items-center justify-between border-t border-slate-100 bg-white px-6 py-4">
+            <p className="text-[13px] font-medium text-slate-500">
+              Showing <span className="font-bold text-slate-700">{(currentPage - 1) * PAGE_SIZE + 1}</span> to <span className="font-bold text-slate-700">{Math.min(currentPage * PAGE_SIZE, filteredIncome.length)}</span> of <span className="font-bold text-slate-700">{filteredIncome.length}</span> results
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span className="sr-only">Previous</span>
+              </button>
+              <div className="flex h-8 min-w-[32px] items-center justify-center rounded-lg bg-emerald-50 px-3 text-[13px] font-bold text-[#006B52]">
+                {currentPage}
+              </div>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronRight className="h-4 w-4" />
+                <span className="sr-only">Next</span>
+              </button>
+            </div>
           </div>
+        )}
+        </div>
+
+        {/* INCOME OVERVIEW CHART */}
+        <div className="lg:w-[40%] flex flex-col">
+          <IncomeOverviewChart data={incomeBreakdownData} total={totalIncome} />
         </div>
       </div>
 
@@ -287,7 +313,7 @@ const IncomeView = () => {
               <h3 className="font-bold text-lg text-slate-900">Income Details</h3>
               <button onClick={() => setViewTransaction(null)}><X className="h-5 w-5 text-slate-400 hover:text-slate-600" /></button>
             </div>
-            
+
             <div className="p-6">
               {viewTransaction.type === 'Collection' ? (
                 <div className="space-y-4">

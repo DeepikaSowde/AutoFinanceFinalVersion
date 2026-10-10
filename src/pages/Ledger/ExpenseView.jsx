@@ -40,7 +40,7 @@ const ExpenseView = () => {
   const hasChitData = chitExpenses.length > 0;
 
   // Pagination
-  const PAGE_SIZE = 10;
+  const PAGE_SIZE = 5;
   const totalPages = Math.max(1, Math.ceil(filteredExpense.length / PAGE_SIZE));
   const paginatedExpenses = filteredExpense.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
@@ -68,59 +68,67 @@ const ExpenseView = () => {
   }).join(', ') : '';
 
   return (
-    <div className="flex flex-col mt-6 h-full space-y-6">
+    <div className="flex flex-col mt-6 space-y-6">
       
       {/* KPI CARDS */}
-      <div className="flex flex-row gap-4 shrink-0 overflow-x-auto pb-2">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 shrink-0 pb-2">
         {/* Total Expense */}
-        <div className="flex-1 min-w-[200px] flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
-            <Receipt className="h-6 w-6" strokeWidth={2} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[14px] font-semibold text-slate-500">Total Expense</p>
-            <p className="mt-1 truncate text-2xl font-bold tracking-tight text-red-600">
-              {totalExpense > 0 ? formatCurrency(totalExpense) : 'No data'}
-            </p>
+        <div className="flex flex-col justify-center rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm h-full">
+          <div className="flex items-center sm:items-start gap-3 sm:gap-4">
+            <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+              <Receipt className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">Total Expense</p>
+              <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-red-600 whitespace-nowrap">
+                {totalExpense > 0 ? formatCurrency(totalExpense) : 'No data'}
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Loan Amount */}
-        <div className="flex-1 min-w-[200px] flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-            <Banknote className="h-6 w-6" strokeWidth={2} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[14px] font-semibold text-slate-500">Loan Amount</p>
-            <p className="mt-1 truncate text-2xl font-bold tracking-tight text-slate-900">
-              {hasLoanData ? formatCurrency(loanAmountTotal) : 'No data'}
-            </p>
+        <div className="flex flex-col justify-center rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm h-full">
+          <div className="flex items-center sm:items-start gap-3 sm:gap-4">
+            <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+              <Banknote className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">Loan Amount</p>
+              <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-slate-900 whitespace-nowrap">
+                {hasLoanData ? formatCurrency(loanAmountTotal) : 'No data'}
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Party Commission */}
-        <div className="flex-1 min-w-[200px] flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-            <Users className="h-6 w-6" strokeWidth={2} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[14px] font-semibold text-slate-500">Party Commission</p>
-            <p className="mt-1 truncate text-2xl font-bold tracking-tight text-slate-900">
-              {hasCommissionData ? formatCurrency(partyCommissionTotal) : 'No data'}
-            </p>
+        <div className="flex flex-col justify-center rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm h-full">
+          <div className="flex items-center sm:items-start gap-3 sm:gap-4">
+            <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+              <Users className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">Party Commission</p>
+              <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-slate-900 whitespace-nowrap">
+                {hasCommissionData ? formatCurrency(partyCommissionTotal) : 'No data'}
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Chit Paid */}
-        <div className="flex-1 min-w-[200px] flex items-center gap-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#e5f0ef] text-[#006052]">
-            <CalendarCheck className="h-6 w-6" strokeWidth={2} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[14px] font-semibold text-slate-500">Chit Paid</p>
-            <p className="mt-1 truncate text-2xl font-bold tracking-tight text-[#006052]">
-              {hasChitData ? formatCurrency(chitPaidTotal) : 'No data'}
-            </p>
+        <div className="flex flex-col justify-center rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 sm:p-5 shadow-sm h-full">
+          <div className="flex items-center sm:items-start gap-3 sm:gap-4">
+            <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-[#e5f0ef] text-[#006052]">
+              <CalendarCheck className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">Chit Paid</p>
+              <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-[#006052] whitespace-nowrap">
+                {hasChitData ? formatCurrency(chitPaidTotal) : 'No data'}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -151,14 +159,14 @@ const ExpenseView = () => {
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6 min-h-0 flex-1">
+      <div className="flex flex-col lg:flex-row gap-6">
         
         {/* EXPENSE TRANSACTIONS TABLE CONTAINER */}
-        <div className="lg:w-[60%] flex flex-col min-h-0 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="lg:w-[60%] flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
 
 
-          <div className="flex-1 overflow-x-auto overflow-y-auto bg-white scrollbar-thin">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto bg-white scrollbar-thin">
+            <table className="w-full min-w-[800px] text-left border-collapse">
               <thead className="sticky top-0 z-10 bg-slate-50/90 backdrop-blur-sm border-b border-slate-200">
                 <tr>
                   <th className="w-[18%] px-6 py-5 text-[12px] font-bold uppercase tracking-wider text-[#172033] whitespace-nowrap">Date</th>
@@ -235,21 +243,21 @@ const ExpenseView = () => {
         </div>
 
         {/* EXPENSE OVERVIEW CHART */}
-        <div className="lg:w-[40%] flex flex-col min-h-0 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="lg:w-[40%] flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-100 shrink-0 bg-white">
             <h2 className="text-lg font-bold text-slate-900 tracking-tight">Expense Overview</h2>
             <p className="text-[13px] text-slate-500 mt-1">Expense breakdown for the selected month</p>
           </div>
           
-          <div className="flex-1 overflow-y-auto overflow-x-hidden p-5 bg-white flex flex-col items-center justify-center">
+          <div className="p-5 bg-white flex flex-col items-center justify-center">
             {totalFilteredExpense === 0 ? (
               <div className="text-center py-10">
                 <p className="text-[15px] font-medium text-slate-800">No expense data for this period</p>
               </div>
             ) : (
-              <div className="flex flex-col 2xl:flex-row items-center 2xl:items-start justify-center 2xl:justify-start w-full gap-6">
+              <div className="flex flex-col md:flex-row items-center md:items-start justify-center md:justify-start w-full gap-6">
                 {/* Donut Chart SVG Alternative using CSS */}
-                <div className="relative w-[160px] h-[160px] rounded-full shrink-0 shadow-sm mx-auto 2xl:mx-0" style={{ background: `conic-gradient(${conicStops})` }}>
+                <div className="relative w-[160px] h-[160px] rounded-full shrink-0 shadow-sm mx-auto md:mx-0" style={{ background: `conic-gradient(${conicStops})` }}>
                   <div className="absolute inset-[18px] rounded-full bg-white flex flex-col items-center justify-center shadow-inner">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Total</span>
                     <span className="text-[15px] font-extrabold tracking-tight text-red-600 leading-none">{formatCurrency(totalFilteredExpense)}</span>

@@ -62,36 +62,38 @@ const initialForm = () => ({
 
 /* ---------- stepper ---------- */
 const Stepper = ({ current, onStepClick, t }) => (
-  <ol className="flex items-start">
-    {STEPS.map((s, i) => {
-      const done = i < current
-      const active = i === current
-      return (
-        <li key={s.key} className="flex flex-1 items-start last:flex-none">
-          <button
-            type="button"
-            onClick={() => onStepClick(i)}
-            className="flex flex-col items-center gap-1 focus:outline-none"
-            aria-current={active ? 'step' : undefined}
-          >
-            <span
-              className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold ${
-                done || active
-                  ? 'border-emerald-800 bg-emerald-800 text-white'
-                  : 'border-slate-300 bg-white text-slate-500'
-              } ${active ? 'ring-4 ring-emerald-100' : ''}`}
+  <div className="overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+    <ol className="flex items-start min-w-[500px] sm:min-w-0">
+      {STEPS.map((s, i) => {
+        const done = i < current
+        const active = i === current
+        return (
+          <li key={s.key} className="flex flex-1 items-start last:flex-none">
+            <button
+              type="button"
+              onClick={() => onStepClick(i)}
+              className="flex flex-col items-center gap-1 focus:outline-none"
+              aria-current={active ? 'step' : undefined}
             >
-              {done ? '✓' : i + 1}
-            </span>
-            <span className={`text-[11px] sm:text-xs ${active ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{t(s.labelKey)}</span>
-          </button>
-          {i < STEPS.length - 1 && (
-            <span className={`mx-1 mt-3.5 h-0.5 flex-1 sm:mx-2 ${done ? 'bg-emerald-700' : 'bg-slate-200'}`} />
-          )}
-        </li>
-      )
-    })}
-  </ol>
+              <span
+                className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold ${
+                  done || active
+                    ? 'border-emerald-800 bg-emerald-800 text-white'
+                    : 'border-slate-300 bg-white text-slate-500'
+                } ${active ? 'ring-4 ring-emerald-100' : ''}`}
+              >
+                {done ? '✓' : i + 1}
+              </span>
+              <span className={`text-[11px] sm:text-xs whitespace-nowrap ${active ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{t(s.labelKey)}</span>
+            </button>
+            {i < STEPS.length - 1 && (
+              <span className={`mx-1 mt-3.5 h-0.5 flex-1 sm:mx-2 ${done ? 'bg-emerald-700' : 'bg-slate-200'}`} />
+            )}
+          </li>
+        )
+      })}
+    </ol>
+  </div>
 )
 
 /* ---------- page ---------- */
@@ -145,7 +147,47 @@ const NewLoan = () => {
   // TODO: connect these to your API
   const handleSaveDraft = () => console.log('Save draft', form)
   
-  const handleSubmit = () => {
+  const compressImage = (base64Str, maxWidth = 1000, maxHeight = 1000, quality = 0.6) => {
+    return new Promise((resolve) => {
+      if (!base64Str || typeof base64Str !== 'string' || !base64Str.startsWith('data:image')) {
+        return resolve(base64Str);
+      }
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = width * ratio;
+          height = height * ratio;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(base64Str);
+    });
+  };
+
+  const compressObjectImages = async (obj) => {
+    if (!obj) return obj;
+    const newObj = Array.isArray(obj) ? [] : {};
+    for (const key in obj) {
+      if (typeof obj[key] === 'string' && obj[key].startsWith('data:image')) {
+        newObj[key] = await compressImage(obj[key]);
+      } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+        newObj[key] = await compressObjectImages(obj[key]);
+      } else {
+        newObj[key] = obj[key];
+      }
+    }
+    return newObj;
+  };
+
+  const handleSubmit = async () => {
     try {
       // 1. Generate Loan ID
       const customersList = JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]")
@@ -192,8 +234,8 @@ const NewLoan = () => {
       
       const emiAmount = repayment.emiAmount || 0
       
-      // 3. Construct submitted data
-      const newEntry = {
+      // 3. Construct submitted data and compress images
+      let newEntry = {
         ...form,
         customerId: customerId,
         loanId: loanId,
@@ -204,19 +246,41 @@ const NewLoan = () => {
         status: "Active"
       }
       
+      newEntry = await compressObjectImages(newEntry);
+      
       // 4. Update existing customer or create new
       const existingCustomerIndex = customersList.findIndex(c => c.customerId === customerId || (c.customer && c.customer.mobile === mobile))
       if (existingCustomerIndex >= 0) {
-        customersList[existingCustomerIndex] = {
-          ...customersList[existingCustomerIndex],
-          ...newEntry
-        }
+        // If customer exists, don't duplicate identical image strings
+        const existing = customersList[existingCustomerIndex];
+        const clearDuplicateImages = (newObj, oldObj) => {
+          if (!newObj || !oldObj) return;
+          for (const key in newObj) {
+            if (typeof newObj[key] === 'string' && newObj[key].startsWith('data:image') && newObj[key] === oldObj[key]) {
+              newObj[key] = null; // Clear duplicate to save space
+            } else if (typeof newObj[key] === 'object' && newObj[key] !== null) {
+              clearDuplicateImages(newObj[key], oldObj[key]);
+            }
+          }
+        };
+        clearDuplicateImages(newEntry, existing);
+        
+        // Push a new record for the new loan instead of overwriting the previous loan
+        customersList.push(newEntry)
       } else {
         customersList.push(newEntry)
       }
       
       // 5. Save to local storage
-      localStorage.setItem("motoLendCustomersList_data", JSON.stringify(customersList))
+      try {
+        localStorage.setItem("motoLendCustomersList_data", JSON.stringify(customersList))
+      } catch (storageError) {
+        if (storageError.name === 'QuotaExceededError' || storageError.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+          alert("Storage quota exceeded! Cannot save this loan application. Please reduce the size of uploaded documents or move to a larger storage solution.");
+          return;
+        }
+        throw storageError;
+      }
       
       // 6. Show Popup
       setSubmittedLoan(newEntry)
@@ -256,7 +320,7 @@ const NewLoan = () => {
         </div>
 
         {/* Active tab */}
-        <div className="min-h-0 flex-1 overflow-hidden px-4 py-4 sm:px-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
           {step === 0 && (
             <div className="space-y-3">
               <div className="rounded-lg border border-slate-200 bg-white p-1.5">

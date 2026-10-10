@@ -97,7 +97,7 @@ const CustomerTab = ({ data, onChange }) => {
 
         <div className="xl:col-span-2">
           <SectionCard title={t("customer.details")}>
-            <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2 lg:grid-cols-3">
               {/* Application Date */}
               <Field label={t("customer.applicationDate")}>
                 <Input
