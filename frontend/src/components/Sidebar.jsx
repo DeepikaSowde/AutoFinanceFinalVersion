@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { logout } from '../services/api'
 import { useTranslation } from 'react-i18next'
 import {
   Menu,
@@ -25,6 +26,12 @@ const Sidebar = ({ onCollapsedChange }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const { t } = useTranslation()
+  const navigate = useNavigate()
+
+  const handleSignOut = () => {
+    logout()
+    navigate('/login', { replace: true })
+  }
 
   const toggleCollapsed = () => {
     setIsCollapsed((collapsed) => {
@@ -234,6 +241,7 @@ const Sidebar = ({ onCollapsedChange }) => {
           {/* Sign Out Button */}
           <button
             type="button"
+            onClick={handleSignOut}
             className={`flex items-center rounded-lg bg-[#EF1111] hover:bg-red-700 text-[#FFFFFF] transition-colors duration-200 shadow-sm ${isCollapsed ? 'justify-center p-2.5 mx-auto w-11 h-11' : 'justify-center px-3 py-2.5 w-full'
               }`}
             title={isCollapsed ? 'Sign Out' : undefined}
