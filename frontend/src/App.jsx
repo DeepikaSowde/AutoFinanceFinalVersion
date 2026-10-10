@@ -17,13 +17,13 @@ import Login from './pages/auth/Login'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 
 function AppShell() {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth >= 640 && window.innerWidth < 1024)
 
   return (
-    <div className={`h-screen overflow-hidden bg-slate-50 ${isSidebarCollapsed ? 'sm:pl-20' : 'sm:pl-64'}`}>
+    <div className={`min-h-screen bg-slate-50 transition-all duration-300 ${isSidebarCollapsed ? 'sm:pl-20' : 'sm:pl-64'}`}>
       <Sidebar onCollapsedChange={setIsSidebarCollapsed} />
-      <main className="h-screen overflow-hidden sm:pl-3">
-        <header className="flex h-12 items-center justify-end px-4 sm:px-6">
+      <main className="min-h-screen flex flex-col sm:pl-3">
+        <header className="flex h-12 shrink-0 items-center justify-end px-4 sm:px-6">
           <LanguageSwitcher />
         </header>
         <Routes>

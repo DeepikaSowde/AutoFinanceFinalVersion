@@ -10,9 +10,10 @@ import {
   RadioGroup,
   SectionCard,
   formatINR,
-  CalendarIcon ,
+  CalendarIcon,
   formatDate,
 } from './Formcontrols'
+// import RepaymentCalculator from './RepaymentCalculator'
 
 import {
   PAYMENT_FREQUENCIES,
@@ -932,6 +933,14 @@ const LoanTab = ({
           </div>
 
         </div>
+
+        {/* TEMPORARILY DISABLED: Repayment Calculator
+        <RepaymentCalculator 
+          loanData={data} 
+          repaymentSummary={repayment} 
+          onChange={onChange} 
+        />
+        */}
 
       </aside>
 

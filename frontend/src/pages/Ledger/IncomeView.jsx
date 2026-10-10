@@ -12,16 +12,21 @@ const SummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "text-sla
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[12px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">{title}</p>
-        <p className={`mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight whitespace-nowrap ${valueColor}`}>{value}</p>
+        <p className={`mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight whitespace-normal break-words ${valueColor}`}>{value}</p>
         {subtext && <p className="text-[11px] sm:text-[12px] font-medium text-slate-400 mt-1 whitespace-normal break-words leading-tight">{subtext}</p>}
       </div>
     </div>
   </div>
 );
 
+import { isDateInRange } from '../../utils/dateUtils';
+import DateRangeFilter from '../../components/DateRangeFilter';
+
 const IncomeView = () => {
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('This Month');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [viewTransaction, setViewTransaction] = useState(null);
@@ -60,6 +65,7 @@ const IncomeView = () => {
   ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const filteredIncome = allIncome.filter(inc => {
+    if (!isDateInRange(inc.date, dateFilter, customStart, customEnd)) return false;
     if (typeFilter !== 'All' && inc.type !== typeFilter) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -127,7 +133,7 @@ const IncomeView = () => {
     <div className="flex flex-col mt-6 space-y-6">
 
       {/* KPI GRID */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 shrink-0 pb-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 shrink-0 pb-2">
         <SummaryCard
           icon={Wallet}
           title="Collection Credit"
@@ -179,14 +185,7 @@ const IncomeView = () => {
       </div>
 
       {/* FILTERS */}
-      <div className="mt-4 flex flex-col sm:flex-row gap-4 shrink-0">
-        <select value={dateFilter} onChange={e => { setDateFilter(e.target.value); setCurrentPage(1); }} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-medium text-slate-700 outline-none w-full sm:w-auto focus:border-[#006052] focus:ring-1 focus:ring-[#006052]">
-          <option>Today</option>
-          <option>This Week</option>
-          <option>This Month</option>
-          <option>Last Month</option>
-          <option>Custom Range</option>
-        </select>
+      <div className="mt-4 flex flex-col sm:flex-row gap-4 shrink-0 flex-wrap">
         <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setCurrentPage(1); }} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-medium text-slate-700 outline-none w-full sm:w-auto focus:border-[#006052] focus:ring-1 focus:ring-[#006052]">
           <option>All</option>
           <option>Collection</option>
@@ -205,98 +204,98 @@ const IncomeView = () => {
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="lg:w-[60%] flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[800px] text-left border-collapse">
-            <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 shadow-[0_1px_0_0_#e2e8f0]">
-              <tr>
-                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[18%]">Date</th>
-                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[35%]">Description</th>
-                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[22%]">Amount</th>
-                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[18%]">Type</th>
-                <th className="px-5 py-4 text-left text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[7%]"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {paginatedIncome.length === 0 ? (
+            <table className="w-full text-left border-collapse table-fixed">
+              <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 shadow-[0_1px_0_0_#e2e8f0]">
                 <tr>
-                  <td colSpan={5} className="h-40 text-center text-[15px] text-slate-500">
-                    No income recorded
-                    <p className="text-[13px] font-normal mt-1">No income transactions found for the selected filters.</p>
-                  </td>
+                  <th className="px-2 sm:px-5 py-4 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[25%] sm:w-[20%]">Date</th>
+                  <th className="px-2 sm:px-5 py-4 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[40%] sm:w-[35%]">Description</th>
+                  <th className="px-2 sm:px-5 py-4 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[25%] sm:w-[20%]">Amount</th>
+                  <th className="hidden sm:table-cell px-2 sm:px-5 py-4 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 sm:w-[15%]">Type</th>
+                  <th className="px-1 sm:px-5 py-4 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[10%] sm:w-[10%]"></th>
                 </tr>
-              ) : paginatedIncome.map(inc => {
-                const Icon = getTypeIcon(inc.type);
-                return (
-                  <tr key={inc.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => setViewTransaction(inc)}>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <p className="font-semibold text-[14px] text-slate-800">
-                        {new Date(inc.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      </p>
-                      <p className="text-[13px] text-slate-500 mt-0.5">{inc.type}</p>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${getTypeIconBg(inc.type)}`}>
-                          <Icon className={`h-4 w-4 ${getTypeIconColor(inc.type)}`} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-semibold text-[14px] text-slate-800 truncate">
-                            {inc.type === 'Collection' ? `${inc.customerName} – EMI Collection` : (inc.type === 'Document Charge' ? `Document Charge – ${inc.customerName || 'Customer'}` : inc.remarks)}
-                          </p>
-                          <p className="text-[13px] text-slate-500 mt-0.5 truncate">
-                            {inc.type === 'Collection' ? `${inc.customerId} · Loan ID: ${inc.loanId}` : (inc.remarks || 'Income recorded')}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <span className="font-bold text-[14px] text-emerald-600">{formatCurrency(inc.displayAmount)}</span>
-                    </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider whitespace-nowrap border ${getTypeBadgeStyle(inc.type)}`}>
-                        {inc.type}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <button className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                        <ChevronRight className="h-5 w-5" />
-                      </button>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paginatedIncome.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="h-40 text-center text-[15px] text-slate-500">
+                      No income recorded
+                      <p className="text-[13px] font-normal mt-1">No income transactions found for the selected filters.</p>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination Controls */}
-        {filteredIncome.length > 0 && (
-          <div className="flex items-center justify-between border-t border-slate-100 bg-white px-6 py-4">
-            <p className="text-[13px] font-medium text-slate-500">
-              Showing <span className="font-bold text-slate-700">{(currentPage - 1) * PAGE_SIZE + 1}</span> to <span className="font-bold text-slate-700">{Math.min(currentPage * PAGE_SIZE, filteredIncome.length)}</span> of <span className="font-bold text-slate-700">{filteredIncome.length}</span> results
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                <span className="sr-only">Previous</span>
-              </button>
-              <div className="flex h-8 min-w-[32px] items-center justify-center rounded-lg bg-emerald-50 px-3 text-[13px] font-bold text-[#006B52]">
-                {currentPage}
-              </div>
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ChevronRight className="h-4 w-4" />
-                <span className="sr-only">Next</span>
-              </button>
-            </div>
+                ) : paginatedIncome.map(inc => {
+                  const Icon = getTypeIcon(inc.type);
+                  return (
+                    <tr key={inc.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => setViewTransaction(inc)}>
+                      <td className="px-2 sm:px-5 py-3.5 whitespace-nowrap">
+                        <p className="font-semibold text-[12px] sm:text-[14px] text-slate-800">
+                          {new Date(inc.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
+                        </p>
+                        <p className="text-[11px] sm:text-[13px] text-slate-500 mt-0.5 sm:hidden">{inc.type}</p>
+                      </td>
+                      <td className="px-2 sm:px-5 py-3.5">
+                        <div className="flex items-start gap-2 sm:gap-3">
+                          <div className={`mt-0.5 hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${getTypeIconBg(inc.type)}`}>
+                            <Icon className={`h-4 w-4 ${getTypeIconColor(inc.type)}`} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[12px] sm:text-[14px] text-slate-800 truncate">
+                              {inc.type === 'Collection' ? `${inc.customerName} – EMI Collection` : (inc.type === 'Document Charge' ? `Document Charge – ${inc.customerName || 'Customer'}` : inc.remarks)}
+                            </p>
+                            <p className="text-[11px] sm:text-[13px] text-slate-500 mt-0.5 truncate">
+                              {inc.type === 'Collection' ? `${inc.customerId} · Loan ID: ${inc.loanId}` : (inc.remarks || 'Income recorded')}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-2 sm:px-5 py-3.5 whitespace-nowrap">
+                        <span className="font-bold text-[12px] sm:text-[14px] text-emerald-600">{formatCurrency(inc.displayAmount)}</span>
+                      </td>
+                      <td className="hidden sm:table-cell px-2 sm:px-5 py-3.5 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider whitespace-nowrap border ${getTypeBadgeStyle(inc.type)}`}>
+                          {inc.type}
+                        </span>
+                      </td>
+                      <td className="px-1 sm:px-5 py-3.5 text-right">
+                        <button className="p-1 sm:p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors opacity-0 group-hover:opacity-100">
+                          <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        )}
+
+          {/* Pagination Controls */}
+          {filteredIncome.length > 0 && (
+            <div className="flex items-center justify-between border-t border-slate-100 bg-white px-6 py-4">
+              <p className="text-[13px] font-medium text-slate-500">
+                Showing <span className="font-bold text-slate-700">{(currentPage - 1) * PAGE_SIZE + 1}</span> to <span className="font-bold text-slate-700">{Math.min(currentPage * PAGE_SIZE, filteredIncome.length)}</span> of <span className="font-bold text-slate-700">{filteredIncome.length}</span> results
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span className="sr-only">Previous</span>
+                </button>
+                <div className="flex h-8 min-w-[32px] items-center justify-center rounded-lg bg-emerald-50 px-3 text-[13px] font-bold text-[#006B52]">
+                  {currentPage}
+                </div>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                  <span className="sr-only">Next</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* INCOME OVERVIEW CHART */}

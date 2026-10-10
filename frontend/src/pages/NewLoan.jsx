@@ -5,6 +5,7 @@ import VehicleTab from '../components/Vehicletab'
 import GuarantorTab from '../components/Guarantortab'
 import LoanTab from '../components/Loantab'
 import ReviewTab from '../components/Reviewtab'
+import RepaymentScheduleModal from '../components/RepaymentScheduleModal'
 
 import { ArrowLeft, ArrowRight } from '../components/Formcontrols'
 
@@ -108,6 +109,7 @@ const NewLoan = () => {
   })
 
   const [verified, setVerified] = useState(false)
+  const [showScheduleModal, setShowScheduleModal] = useState(false)
 
   useEffect(() => {
     saveCustomerOnboarding(form)
@@ -301,15 +303,15 @@ const NewLoan = () => {
     setVerified(false)
   }
 
-  const handleViewSchedule = () => console.log('View repayment schedule')
+  const handleViewSchedule = () => setShowScheduleModal(true)
   const handleFetchVehicle = () => console.log('Fetch vehicle details', form.vehicle.regNo)
 
   const outlineBtn = 'rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:border-emerald-700 hover:text-emerald-800'
   const primaryBtn = 'inline-flex items-center justify-center gap-2 rounded-md bg-emerald-800 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50'
 
   return (
-    <div className="mx-auto h-[calc(100vh-3rem)] w-full max-w-5xl p-2 sm:p-4">
-      <div className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm [zoom:0.85] sm:[zoom:0.9]">
+    <div className="mx-auto w-full max-w-5xl p-2 sm:p-4 h-[calc(100vh-72px)] lg:h-full flex flex-col">
+      <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm flex-1 min-h-0">
         {/* Header */}
         <div className="shrink-0 space-y-3 px-4 pt-4 sm:px-6">
           <div>
@@ -320,7 +322,7 @@ const NewLoan = () => {
         </div>
 
         {/* Active tab */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 min-h-0 bg-white">
           {step === 0 && (
             <div className="space-y-3">
               <div className="rounded-lg border border-slate-200 bg-white p-1.5">
@@ -366,7 +368,7 @@ const NewLoan = () => {
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 flex-col gap-3 border-t border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="flex shrink-0 flex-col gap-3 border-t border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 bg-slate-50">
           <div>
             {!isFirst && (
               <button type="button" onClick={goBack} className={`${outlineBtn} inline-flex w-full items-center justify-center gap-2 sm:w-auto`}>
@@ -461,6 +463,13 @@ const NewLoan = () => {
           </div>
         </div>
       )}
+
+      {/* REPAYMENT SCHEDULE MODAL */}
+      <RepaymentScheduleModal 
+        isOpen={showScheduleModal} 
+        onClose={() => setShowScheduleModal(false)} 
+        loanDetails={form.loan} 
+      />
     </div>
   )
 }

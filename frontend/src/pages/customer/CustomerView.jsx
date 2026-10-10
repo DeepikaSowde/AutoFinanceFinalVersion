@@ -1,0 +1,805 @@
+import React, { useState, useMemo } from 'react';
+import { 
+  ArrowLeft, Edit, Search, FileText, Coins, Landmark, 
+  Clock, CheckCircle2, AlertTriangle, Car, Shield, Activity, Users, CreditCard,
+  FileCheck, FileText as FileTextIcon, Download, X, UserCheck, Wallet, ShieldCheck
+} from 'lucide-react';
+import RepaymentScheduleTable from '../../components/RepaymentScheduleTable';
+import { calculateRepayment } from '../../components/Loantab';
+
+const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
+
+const formatDate = (dateString) => {
+  if (!dateString) return '—';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return dateString;
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const FieldValue = ({ label, value }) => (
+  <div>
+    <p className="text-xs text-slate-500 mb-0.5">{label}</p>
+    <p className="font-medium text-slate-900">{value || 'Not provided'}</p>
+  </div>
+);
+
+const StatusBadge = ({ status }) => {
+  const styles = {
+    Active: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    Closed: "bg-slate-100 text-slate-600 border-slate-200",
+    Overdue: "bg-red-100 text-red-700 border-red-200",
+  };
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider border ${styles[status] || styles.Closed}`}>
+      {status || 'Unknown'}
+    </span>
+  );
+};
+
+const PhotoPlaceholder = ({ src, icon: Icon, alt, className = "h-16 w-16 rounded-full" }) => {
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  return (
+    <>
+      <div 
+        onClick={() => setIsPreviewOpen(true)}
+        className={`relative flex items-center justify-center bg-slate-100 border border-slate-200 text-slate-400 shrink-0 cursor-pointer overflow-hidden hover:ring-2 hover:ring-emerald-500 hover:ring-offset-2 transition-all ${className}`}
+      >
+        {src ? (
+          <img src={src} alt={alt} className="h-full w-full object-cover" />
+        ) : (
+          <Icon className="h-1/2 w-1/2 opacity-50" />
+        )}
+      </div>
+
+      {isPreviewOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/80 p-4 sm:p-6 backdrop-blur-sm" onClick={() => setIsPreviewOpen(false)}>
+          <div className="relative flex flex-col items-center max-w-4xl max-h-[90vh] w-full" onClick={e => e.stopPropagation()}>
+            <button 
+              onClick={() => setIsPreviewOpen(false)}
+              className="absolute -top-12 right-0 rounded-full p-2 text-white hover:bg-white/20 transition-colors"
+              aria-label="Close preview"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            
+            {src ? (
+              <>
+                <img src={src} alt={alt} className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl bg-slate-900" />
+                <div className="mt-6 flex justify-center">
+                  <a 
+                    href={src} 
+                    download={`${alt.replace(/\s+/g, '_')}.jpg`}
+                    className="inline-flex items-center gap-2 rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-slate-900 shadow-lg hover:bg-slate-100 transition-colors"
+                  >
+                    <Download className="h-4 w-4" /> Download Image
+                  </a>
+                </div>
+              </>
+            ) : (
+              <div className="flex h-64 w-64 items-center justify-center rounded-2xl bg-white shadow-2xl">
+                <Icon className="h-24 w-24 text-slate-300" />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+const TABS = [
+  { id: 'overview', label: 'Personal Info' },
+  { id: 'vehicle', label: 'Vehicle' },
+  { id: 'loan', label: 'Loan & Schedule' },
+  { id: 'guarantor', label: 'Guarantor' },
+  { id: 'payments', label: 'Payments' },
+  { id: 'activity', label: 'Activity' }
+];
+
+export default function CustomerView({ customerId, onBack }) {
+  const [activeTab, setActiveTab] = useState('overview');
+
+  const allData = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]");
+    } catch (e) {
+      return [];
+    }
+  }, []);
+
+  const customerLoans = useMemo(() => {
+    return allData.filter(d => {
+      const cId = d.customerId || (d.customer?.mobile ? `CUS-${d.customer.mobile.slice(-5)}` : null);
+      return cId === customerId;
+    }).map(d => {
+      const vehicleAmount = Number(d.loan?.vehicleAmount !== undefined && d.loan?.vehicleAmount !== "" ? d.loan.vehicleAmount : (d.vehicle?.amount || 0));
+      const downPayment = Number(d.loan?.downPayment || 0);
+      const loanAmount = Math.max(vehicleAmount - downPayment, 0);
+      const outstandingAmount = loanAmount;
+      
+      const cId = d.customerId || (d.customer?.mobile ? `CUS-${d.customer.mobile.slice(-5)}` : null);
+      const lId = d.loanId || `LN-${cId?.replace("CUS-", "")}`;
+
+      return {
+        ...d,
+        loanAmount,
+        outstandingAmount,
+        loanId: lId,
+        status: 'Active'
+      };
+    });
+  }, [allData, customerId]);
+
+  const primaryCustomer = customerLoans[0]?.customer || {};
+  const mobile = primaryCustomer.mobile ? `${primaryCustomer.countryCode || ''} ${primaryCustomer.mobile}` : '—';
+  const customerSince = primaryCustomer.applicationDate || new Date().toISOString().slice(0, 10);
+
+  const totalLoans = customerLoans.length;
+  const activeLoans = customerLoans.filter(l => l.status === 'Active').length;
+  const totalOutstanding = customerLoans.reduce((sum, l) => sum + l.outstandingAmount, 0);
+  const totalOverdue = 0;
+
+  const [selectedLoanId, setSelectedLoanId] = useState(customerLoans[0]?.loanId);
+  const selectedLoanData = customerLoans.find(l => l.loanId === selectedLoanId) || customerLoans[0] || {};
+  
+  const loanSummary = useMemo(() => {
+    if (!selectedLoanData.loan) return null;
+    return calculateRepayment({
+      principal: selectedLoanData.loanAmount,
+      interestRate: selectedLoanData.loan.interestRate,
+      tenure: selectedLoanData.loan.tenure,
+      tenureUnit: selectedLoanData.loan.tenureUnit,
+      paymentFrequency: selectedLoanData.loan.paymentFrequency,
+      interestType: selectedLoanData.loan.interestType,
+      repaymentMethod: selectedLoanData.loan.repaymentMethod,
+    });
+  }, [selectedLoanData]);
+
+  return (
+    <div className="bg-slate-50">
+      
+      <div className="bg-white border-b border-slate-200 px-4 py-4 sm:px-6 lg:px-8">
+        <button 
+          onClick={onBack}
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 mb-4 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to Customers
+        </button>
+        
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <PhotoPlaceholder 
+              src={primaryCustomer.photoFile || null} 
+              icon={Users} 
+              alt={primaryCustomer.name || 'Customer'} 
+              className="h-16 w-16 rounded-full"
+            />
+            <div>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-bold text-slate-900">{primaryCustomer.name || 'Unknown Customer'}</h1>
+                <StatusBadge status="Active" />
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 font-medium">
+                <div className="flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" /> {customerId}</div>
+                <div className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> {mobile}</div>
+                <div className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> Customer since {formatDate(customerSince)}</div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50 hover:border-emerald-200">
+              <Edit className="h-4 w-4" /> View / Edit
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-4 py-6 sm:px-6 lg:px-8 space-y-6 w-full mx-auto">
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-4">
+            <div className="bg-emerald-50 text-emerald-600 p-2.5 rounded-lg shrink-0"><FileText className="h-4 w-4" /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5 whitespace-normal break-words leading-tight">Total Loans</p>
+              <p className="text-xl font-bold text-slate-900 whitespace-normal break-words leading-tight">{totalLoans}</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-4">
+            <div className="bg-emerald-50 text-emerald-600 p-2.5 rounded-lg shrink-0"><Coins className="h-4 w-4" /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5 whitespace-normal break-words leading-tight">Active Loans</p>
+              <p className="text-xl font-bold text-slate-900 whitespace-normal break-words leading-tight">{activeLoans}</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-4">
+            <div className="bg-emerald-50 text-emerald-600 p-2.5 rounded-lg shrink-0"><Landmark className="h-4 w-4" /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5 whitespace-normal break-words leading-tight">Total Outstanding</p>
+              <p className="text-xl font-bold text-slate-900 whitespace-normal break-words leading-tight">{formatCurrency(totalOutstanding)}</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-4">
+            <div className="bg-slate-50 text-slate-600 p-2.5 rounded-lg shrink-0"><Clock className="h-4 w-4" /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5 whitespace-normal break-words leading-tight">Total Overdue</p>
+              <p className="text-xl font-bold text-slate-900 whitespace-normal break-words leading-tight">{formatCurrency(totalOverdue)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Loan Accounts</h2>
+              <p className="text-xs text-slate-500 mt-0.5">View and manage customer's loan details. Select a loan to view specifics.</p>
+            </div>
+            <div className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
+              {customerLoans.length} Loan{customerLoans.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+          
+          <div className="divide-y divide-slate-100">
+            {customerLoans.map(loan => (
+              <div 
+                key={loan.loanId} 
+                onClick={() => setSelectedLoanId(loan.loanId)}
+                className={`p-5 flex flex-col lg:flex-row lg:items-center gap-6 cursor-pointer transition-colors ${selectedLoanId === loan.loanId ? 'bg-emerald-50/30' : 'hover:bg-slate-50'}`}
+              >
+                <div className="flex items-center gap-4 lg:w-1/4">
+                  <div className="bg-emerald-100 p-3 rounded-xl text-emerald-700 shrink-0">
+                    <Car className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-900">{loan.loanId}</span>
+                      <StatusBadge status={loan.status} />
+                    </div>
+                    <p className="text-sm font-medium text-slate-700 mt-1">{loan.vehicle?.brand} {loan.vehicle?.model}</p>
+                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Car className="h-3 w-3"/> {loan.vehicle?.regNo || 'Unregistered'}</p>
+                  </div>
+                </div>
+
+                <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Loan Amount</p>
+                    <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(loan.loanAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Outstanding</p>
+                    <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(loan.outstandingAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Interest</p>
+                    <p className="font-bold text-slate-900 mt-0.5">{loan.loan?.interestRate ? `${loan.loan.interestRate}%` : '—'} <span className="text-[10px] font-normal text-slate-500">({loan.loan?.interestType === 'Reducing Balance EMI-Based' ? 'Red. EMI' : loan.loan?.interestType === 'Reducing Balance Principal-Based' ? 'Red. Prin' : 'Flat'})</span></p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Next Due Date</p>
+                    <p className="font-bold text-slate-900 mt-0.5">{formatDate(loan.loan?.firstDueDate)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Overdue</p>
+                    <p className="font-bold text-red-600 mt-0.5">₹0</p>
+                  </div>
+                  <div className="col-span-2 md:col-span-5 mt-1">
+                    <div className="flex justify-between text-[10px] font-semibold mb-1">
+                      <span className="text-emerald-700">0% Paid</span>
+                      <span className="text-slate-500">100% Pending</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: '0%' }}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {customerLoans.length === 0 && (
+              <div className="p-8 text-center text-slate-500">No loans found for this customer.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-8 border-b border-slate-200">
+          <nav className="-mb-px flex space-x-6 overflow-x-auto">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-semibold text-sm transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-emerald-600 text-emerald-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        <div className="py-4">
+          
+          {/* OVERVIEW TAB */}
+          {activeTab === 'overview' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100">
+                  <div className="flex items-center gap-2 font-bold text-slate-900">
+                    <Users className="h-5 w-5 text-[#087F5B]" /> General Information
+                  </div>
+                </div>
+                <div className="p-4 sm:p-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
+                    <FieldValue label="Customer Name" value={selectedLoanData.customer?.name} />
+                    <FieldValue label="Application Date" value={formatDate(selectedLoanData.customer?.applicationDate)} />
+                    <FieldValue label="Mobile Number" value={selectedLoanData.customer?.mobile ? `${selectedLoanData.customer.countryCode || ''} ${selectedLoanData.customer.mobile}` : null} />
+                    <FieldValue label="PIN Code" value={selectedLoanData.customer?.pincode} />
+                    <FieldValue label="Area" value={selectedLoanData.customer?.area} />
+                    <FieldValue label="Landmark" value={selectedLoanData.customer?.landmark} />
+                    <div className="col-span-1 sm:col-span-2 border-t border-slate-100 pt-4 mt-1">
+                      <FieldValue label="Full Address" value={[selectedLoanData.customer?.address, selectedLoanData.customer?.area, selectedLoanData.customer?.landmark, selectedLoanData.customer?.pincode].filter(Boolean).join(', ')} />
+                    </div>
+                    <div className="col-span-1 sm:col-span-2 border-t border-slate-100 pt-4 mt-1">
+                      <FieldValue label="Referred By" value={selectedLoanData.loan?.referredBy} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100">
+                  <div className="flex items-center gap-2 font-bold text-slate-900">
+                    <Shield className="h-5 w-5 text-[#087F5B]" /> KYC & Identity Documents
+                  </div>
+                </div>
+                <div className="p-4 sm:p-5 space-y-4">
+                  {['aadhaar', 'pan', 'dl', 'voter', 'otherKyc'].map(kycType => {
+                    const noKey = `${kycType}No`;
+                    const fileKey = `${kycType}File`;
+                    const hasValue = !!selectedLoanData.customer?.[noKey];
+                    const hasFile = !!selectedLoanData.customer?.[fileKey];
+                    
+                    if (!hasValue && !hasFile) return null;
+                    
+                    const labels = { aadhaar: 'Aadhaar Number', pan: 'PAN Number', dl: 'Driving Licence Number', voter: 'Voter ID Number', otherKyc: 'Other KYC' };
+                    
+                    return (
+                      <div key={kycType} className="flex items-center justify-between border-b border-slate-100 pb-4 last:border-0 last:pb-0">
+                        <div className="flex items-center gap-4">
+                          {hasFile ? (
+                            <PhotoPlaceholder 
+                              src={selectedLoanData.customer[fileKey]} 
+                              icon={FileCheck} 
+                              alt={labels[kycType]} 
+                              className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-14 items-center justify-center rounded bg-slate-50 border border-slate-100 text-slate-300">
+                              <FileTextIcon className="h-5 w-5" />
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-semibold text-slate-900">{labels[kycType]}</p>
+                            <p className="text-sm text-slate-500 mt-0.5">{selectedLoanData.customer[noKey] || 'Not provided'}</p>
+                          </div>
+                        </div>
+                        <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${hasFile ? 'bg-emerald-50 text-[#087F5B]' : 'bg-slate-100 text-slate-600'}`}>
+                          {hasFile ? 'Uploaded' : 'No Document'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {!['aadhaar', 'pan', 'dl', 'voter', 'otherKyc'].some(k => selectedLoanData.customer?.[`${k}No`] || selectedLoanData.customer?.[`${k}File`]) && (
+                    <div className="text-slate-500 text-sm">No KYC documents uploaded.</div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* LOAN & SCHEDULE TAB */}
+          {activeTab === 'loan' && (
+            <div className="space-y-6">
+              {selectedLoanData.loan ? (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Loan Summary */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div className="px-5 py-3 border-b border-slate-100 font-bold text-slate-900 flex items-center justify-between">
+                        Loan Summary
+                      </div>
+                      <div className="p-5 space-y-4">
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Loan ID</span>
+                          <span className="text-sm font-semibold text-slate-900">{selectedLoanId}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Loan Status</span>
+                          <StatusBadge status={selectedLoanData.status} />
+                        </div>
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Application Date</span>
+                          <span className="text-sm font-semibold text-slate-900">{formatDate(selectedLoanData.customer?.applicationDate)}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Loan Amount</span>
+                          <span className="text-sm font-semibold text-slate-900">{formatCurrency(selectedLoanData.loanAmount)}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Outstanding Principal</span>
+                          <span className="text-sm font-semibold text-slate-900">{formatCurrency(selectedLoanData.outstandingAmount)}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Total Interest</span>
+                          <span className="text-sm font-semibold text-slate-900">{loanSummary ? formatCurrency(loanSummary.totalInterest) : '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-slate-500">Total Repayment</span>
+                          <span className="text-sm font-semibold text-emerald-700">{loanSummary ? formatCurrency(loanSummary.totalAmount) : '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Loan Terms */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div className="px-5 py-3 border-b border-slate-100 font-bold text-slate-900">
+                        Loan Terms
+                      </div>
+                      <div className="p-5 space-y-4">
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Interest Type</span>
+                          <span className="text-sm font-semibold text-slate-900">{selectedLoanData.loan.interestType || 'Flat'}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Interest Rate</span>
+                          <span className="text-sm font-semibold text-slate-900">{selectedLoanData.loan.interestRate ? `${selectedLoanData.loan.interestRate}%` : '—'}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Repayment Frequency</span>
+                          <span className="text-sm font-semibold text-slate-900">{selectedLoanData.loan.paymentFrequency || 'Monthly'}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Original Tenure</span>
+                          <span className="text-sm font-semibold text-slate-900">{selectedLoanData.loan.tenure} {selectedLoanData.loan.tenureUnit}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">Total Installments</span>
+                          <span className="text-sm font-semibold text-slate-900">{loanSummary ? loanSummary.numberOfPayments : '—'}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-100 pb-2">
+                          <span className="text-sm text-slate-500">First Due Date</span>
+                          <span className="text-sm font-semibold text-slate-900">{formatDate(selectedLoanData.loan.firstDueDate)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-slate-500">Expected Installment</span>
+                          <span className="text-sm font-semibold text-emerald-700">{loanSummary ? formatCurrency(loanSummary.emiAmount) : '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Repayment Progress */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                      <div className="px-5 py-3 border-b border-slate-100 font-bold text-slate-900">
+                        Repayment Progress
+                      </div>
+                      <div className="p-5 flex-1 flex flex-col justify-center">
+                        <div className="text-center mb-6">
+                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Total Paid</p>
+                          <p className="text-3xl font-black text-emerald-700">₹0</p>
+                          <p className="text-xs text-slate-500 mt-1">out of {loanSummary ? formatCurrency(loanSummary.totalAmount) : '—'}</p>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs font-semibold">
+                            <span className="text-emerald-700">0% Paid</span>
+                            <span className="text-slate-500">100% Pending</span>
+                          </div>
+                          <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: '0%' }}></div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mt-6">
+                          <div className="bg-slate-50 rounded-lg p-3 text-center">
+                            <p className="text-[10px] text-slate-500 uppercase font-semibold">Paid Inst.</p>
+                            <p className="text-lg font-bold text-slate-900 mt-0.5">0</p>
+                          </div>
+                          <div className="bg-slate-50 rounded-lg p-3 text-center">
+                            <p className="text-[10px] text-slate-500 uppercase font-semibold">Pending Inst.</p>
+                            <p className="text-lg font-bold text-slate-900 mt-0.5">{loanSummary ? loanSummary.numberOfPayments : '—'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mt-6">
+                    <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-emerald-600"/> Repayment Schedule</h3>
+                    <RepaymentScheduleTable loanDetails={selectedLoanData.loan} />
+                  </div>
+                </>
+              ) : (
+                <div className="bg-white rounded-xl border border-slate-200 p-8 shadow-sm text-center text-slate-500">
+                  <AlertTriangle className="h-8 w-8 mx-auto mb-3 text-amber-500" />
+                  <p className="font-medium">No loan terms available.</p>
+                  <p className="text-sm mt-1">This application might be incomplete.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* VEHICLE TAB */}
+          {activeTab === 'vehicle' && (
+            <div className="space-y-6">
+              
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100 flex items-center gap-2 font-bold text-slate-900">
+                  <Car className="h-5 w-5 text-[#087F5B]" /> Vehicle Information
+                </div>
+                <div className="p-4 sm:p-5 flex flex-col md:flex-row gap-6 items-start">
+                   <div className="shrink-0 w-full md:w-auto flex justify-center md:justify-start">
+                     <PhotoPlaceholder 
+                       src={selectedLoanData.vehicle?.photoFile || null} 
+                       icon={Car} 
+                       alt={`${selectedLoanData.vehicle?.brand || 'Vehicle'} ${selectedLoanData.vehicle?.model || ''}`} 
+                       className="h-32 w-32 rounded-xl border-4 border-slate-50 shadow-sm"
+                     />
+                   </div>
+                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-4 gap-x-4 flex-1 w-full">
+                      <FieldValue label="Brand / Make" value={selectedLoanData.vehicle?.brand} />
+                      <FieldValue label="Model" value={selectedLoanData.vehicle?.model} />
+                      <FieldValue label="Variant" value={selectedLoanData.vehicle?.variant} />
+                      <FieldValue label="Vehicle Type" value={selectedLoanData.vehicle?.type} />
+                      <FieldValue label="Fuel Type" value={selectedLoanData.vehicle?.fuelType} />
+                      <FieldValue label="Colour" value={selectedLoanData.vehicle?.colour} />
+                      <FieldValue label="Year" value={selectedLoanData.vehicle?.year} />
+                      <FieldValue label="Vehicle Amount" value={selectedLoanData.vehicle?.amount ? formatCurrency(selectedLoanData.vehicle.amount) : null} />
+                      <FieldValue label="Hypothecation" value={selectedLoanData.vehicle?.hypothecation} />
+                      <FieldValue label="Existing Financier" value={selectedLoanData.vehicle?.financier} />
+                   </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100 flex items-center gap-2 font-bold text-slate-900">
+                    <FileTextIcon className="h-5 w-5 text-[#087F5B]" /> Registration & Identification
+                  </div>
+                  <div className="p-4 sm:p-5">
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
+                        <FieldValue label="Registration No." value={selectedLoanData.vehicle?.regNo} />
+                        <FieldValue label="Reg. Location (RTO)" value={selectedLoanData.vehicle?.rto} />
+                        <FieldValue label="Reg. Date" value={formatDate(selectedLoanData.vehicle?.regDate)} />
+                        <FieldValue label="Chassis Number" value={selectedLoanData.vehicle?.chassisNo} />
+                        <div className="col-span-1 sm:col-span-2">
+                          <FieldValue label="Engine Number" value={selectedLoanData.vehicle?.engineNo} />
+                        </div>
+                     </div>
+                     <div className="border-t border-slate-100 pt-4 mt-5">
+                       <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-4">
+                           {selectedLoanData.vehicle?.rcFile ? (
+                              <PhotoPlaceholder 
+                                src={selectedLoanData.vehicle.rcFile} 
+                                icon={FileCheck} 
+                                alt="RC Document"
+                                className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
+                              />
+                           ) : (
+                              <div className="flex h-10 w-14 items-center justify-center rounded bg-slate-50 border border-slate-100 text-slate-300">
+                                <FileTextIcon className="h-5 w-5" />
+                              </div>
+                           )}
+                           <div>
+                             <p className="font-semibold text-slate-900">RC Document</p>
+                             <p className="text-sm text-slate-500 mt-0.5">Vehicle Registration</p>
+                           </div>
+                         </div>
+                         <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${selectedLoanData.vehicle?.rcFile ? 'bg-emerald-50 text-[#087F5B]' : 'bg-slate-100 text-slate-600'}`}>
+                           {selectedLoanData.vehicle?.rcFile ? 'Uploaded' : 'Not Provided'}
+                         </span>
+                       </div>
+                     </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100 flex items-center gap-2 font-bold text-slate-900">
+                    <FileCheck className="h-5 w-5 text-[#087F5B]" /> Insurance & Compliance
+                  </div>
+                  <div className="p-4 sm:p-5">
+                    {(() => {
+                      const v = selectedLoanData.vehicle || {};
+                      
+                      const isMeaningful = (val) => {
+                        if (val === null || val === undefined || val === '') return false;
+                        if (typeof val === 'string') {
+                          const lower = val.toLowerCase().trim();
+                          if (lower === 'no' || lower === 'n/a') return false;
+                        }
+                        return true;
+                      };
+
+                      const hasInsuranceData = 
+                        isMeaningful(v.insuranceCompany) || 
+                        isMeaningful(v.policyNo) || 
+                        isMeaningful(v.insuranceExpiry) || 
+                        isMeaningful(v.taxExpiry) || 
+                        isMeaningful(v.financierEndorsement) || 
+                        isMeaningful(v.nocStatus) || 
+                        !!v.insuranceFile || 
+                        !!v.nocFile;
+                      
+                      if (!hasInsuranceData) {
+                        return (
+                          <div className="flex flex-col items-center justify-center py-8 text-center">
+                            <div className="bg-emerald-50 h-16 w-16 rounded-full flex items-center justify-center mb-4 border border-emerald-100 shadow-sm">
+                              <ShieldCheck className="h-8 w-8 text-emerald-600" />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900">No Insurance Details Available</h3>
+                            <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto">No insurance or compliance details have been provided for this vehicle.</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
+                              {v.insuranceCompany && (
+                                <div className="col-span-1 sm:col-span-2">
+                                  <FieldValue label="Insurance Company" value={v.insuranceCompany} />
+                                </div>
+                              )}
+                              {v.policyNo && <FieldValue label="Policy Number" value={v.policyNo} />}
+                              {v.insuranceExpiry && <FieldValue label="Insurance Expiry" value={formatDate(v.insuranceExpiry)} />}
+                              {v.taxExpiry && <FieldValue label="Tax Expiry" value={formatDate(v.taxExpiry)} />}
+                              {v.financierEndorsement && <FieldValue label="Fin. Endorsement" value={v.financierEndorsement} />}
+                              {v.nocStatus && <FieldValue label="NOC Status" value={v.nocStatus} />}
+                           </div>
+                           
+                           {(v.insuranceFile || v.nocFile) && (
+                             <div className="border-t border-slate-100 pt-4 mt-5 flex flex-col gap-4">
+                               {v.insuranceFile && (
+                                 <div className="flex items-center justify-between">
+                                   <div className="flex items-center gap-4">
+                                      <PhotoPlaceholder 
+                                        src={v.insuranceFile} 
+                                        icon={FileCheck} 
+                                        alt="Insurance Document"
+                                        className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
+                                      />
+                                     <div>
+                                       <p className="font-semibold text-slate-900">Insurance Policy</p>
+                                     </div>
+                                   </div>
+                                   <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-[#087F5B]">
+                                     Uploaded
+                                   </span>
+                                 </div>
+                               )}
+                               
+                               {v.nocFile && (
+                                 <div className="flex items-center justify-between">
+                                   <div className="flex items-center gap-4">
+                                      <PhotoPlaceholder 
+                                        src={v.nocFile} 
+                                        icon={FileCheck} 
+                                        alt="NOC Document"
+                                        className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
+                                      />
+                                     <div>
+                                       <p className="font-semibold text-slate-900">NOC Document</p>
+                                     </div>
+                                   </div>
+                                   <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-[#087F5B]">
+                                     Uploaded
+                                   </span>
+                                 </div>
+                               )}
+                             </div>
+                           )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+              
+            </div>
+          )}
+
+          {/* GUARANTOR TAB */}
+          {activeTab === 'guarantor' && (
+             <>
+               {selectedLoanData.guarantor?.required === 'Yes' ? (
+                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden max-w-2xl">
+                   <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900">Guarantor Details</div>
+                   <div className="p-5">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-6 gap-x-4">
+                        <FieldValue label="Name" value={selectedLoanData.guarantor.name} />
+                        <FieldValue label="Mobile Number" value={selectedLoanData.guarantor.mobile ? `${selectedLoanData.guarantor.countryCode || ''} ${selectedLoanData.guarantor.mobile}` : null} />
+                        <FieldValue label="Relationship" value={selectedLoanData.guarantor.relationship} />
+                        <div className="col-span-2 sm:col-span-3">
+                          <FieldValue label="Address" value={selectedLoanData.guarantor.address} />
+                        </div>
+                      </div>
+                   </div>
+                 </div>
+               ) : (
+                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 flex flex-col items-center justify-center text-center">
+                    <div className="bg-emerald-50 h-16 w-16 rounded-full flex items-center justify-center mb-4 border border-emerald-100 shadow-sm">
+                      <UserCheck className="h-8 w-8 text-emerald-600" />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900">No Guarantor Added</h3>
+                    <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">No guarantor information has been added to this loan yet.</p>
+                 </div>
+               )}
+             </>
+          )}
+
+          {/* PAYMENTS TAB */}
+          {activeTab === 'payments' && (
+             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 flex flex-col items-center justify-center text-center">
+                <div className="bg-emerald-50 h-16 w-16 rounded-full flex items-center justify-center mb-4 border border-emerald-100 shadow-sm">
+                  <Wallet className="h-8 w-8 text-emerald-600" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">No Payments Recorded</h3>
+                <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">Payment history for this loan will appear here once payments are recorded.</p>
+             </div>
+          )}
+
+          {/* ACTIVITY TAB */}
+          {activeTab === 'activity' && (() => {
+            // Combine mock loan creation with any future activity logs
+            const activities = [
+              ...(selectedLoanData.activities || []),
+              {
+                id: 'loan_created',
+                title: 'Loan Application Created',
+                description: `Initial loan profile was created for ${selectedLoanData.customer?.name || 'the customer'}.`,
+                date: selectedLoanData.customer?.applicationDate,
+                icon: FileTextIcon,
+                colorClass: 'text-[#087F5B]',
+                bgClass: 'bg-emerald-50',
+                borderClass: 'border-emerald-100'
+              }
+            ];
+
+            return (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8">
+                <h3 className="text-lg font-bold text-slate-900 mb-8 flex items-center gap-2">
+                  <Activity className="h-5 w-5 text-[#087F5B]" /> Activity Log
+                </h3>
+                
+                <div className="relative border-l-2 border-slate-100 ml-3 sm:ml-4 space-y-8 pb-4">
+                  {activities.map((act, index) => {
+                    const Icon = act.icon || CheckCircle2;
+                    return (
+                      <div key={act.id || index} className="relative pl-6 sm:pl-8">
+                        <div className={`absolute -left-[17px] top-0 h-8 w-8 rounded-full border ${act.borderClass || 'border-slate-200'} ${act.bgClass || 'bg-slate-50'} flex items-center justify-center ring-4 ring-white`}>
+                          <Icon className={`h-4 w-4 ${act.colorClass || 'text-slate-500'}`} />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-slate-900">{act.title}</h4>
+                          <p className="text-sm text-slate-500 mt-1">{act.description}</p>
+                          <p className="text-xs text-slate-400 mt-2 font-medium flex items-center gap-1.5">
+                            <Clock className="h-3 w-3" />
+                            {act.date ? new Date(act.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date not recorded'}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+        </div>
+      </div>
+    </div>
+  );
+}
