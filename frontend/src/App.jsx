@@ -16,13 +16,15 @@ import Reminder from './pages/Reminder'
 import Login from './pages/auth/Login'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import { loadCustomerEntries } from './services/customerApi'
+import { loadPayments } from './services/collectionApi'
+import { loadInvestorData } from './services/investorApi'
 
 function AppShell() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth >= 640 && window.innerWidth < 1024)
 
-  // Refresh the customer list the not-yet-migrated pages read from localStorage.
+  // Refresh the copies the not-yet-migrated pages (Ledger, Dashboard) read from localStorage.
   useEffect(() => {
-    loadCustomerEntries().catch(() => {})
+    Promise.allSettled([loadCustomerEntries(), loadPayments(), loadInvestorData()])
   }, [])
 
   return (

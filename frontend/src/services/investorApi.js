@@ -38,6 +38,18 @@ const formatFreezeDate = (isoDate) => {
     .replace(/ /g, '-')
 }
 
+/*
+ * Ledger and Dashboard still read investors from localStorage; keep a copy
+ * there until they are moved to the API.
+ */
+const writeLegacyMirror = (investors) => {
+  try {
+    localStorage.setItem('motoLendInvestors_data', JSON.stringify(investors))
+  } catch {
+    // Quota or private mode: those pages simply show stale data.
+  }
+}
+
 export const loadInvestorData = async () => {
   const [investors, transactions, summary] = await Promise.all([
     apiGet('/investors'),
@@ -45,8 +57,11 @@ export const loadInvestorData = async () => {
     apiGet('/investors/summary'),
   ])
 
+  const mapped = investors.map((investor) => toInvestor(investor, transactions))
+  writeLegacyMirror(mapped)
+
   return {
-    investors: investors.map((investor) => toInvestor(investor, transactions)),
+    investors: mapped,
     freezeInfo: {
       frozen: Boolean(summary.openingFreeze?.frozen),
       date: formatFreezeDate(summary.openingFreeze?.date),

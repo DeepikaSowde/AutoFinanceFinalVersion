@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from "react";
 import { Search, Calendar as CalendarIcon, CheckCircle2, X, Wallet, AlertCircle, CheckCircle, ChevronDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { loadCustomerEntries } from "../../services/customerApi";
+import { loadPayments, recordCollection } from "../../services/collectionApi";
 
 const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -41,6 +43,12 @@ const Collection = () => {
   const [date, setDate] = useState(new Date().toISOString().slice(0,10));
 
   const [customers, setCustomers] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [clientRef, setClientRef] = useState("");
   
   // Modal state
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -49,10 +57,22 @@ const Collection = () => {
   const [remarks, setRemarks] = useState("");
 
   useEffect(() => {
-    // Load actual data, do not invent mock overdue data
-    const list = JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]");
-    setCustomers(list);
-  }, []);
+    let active = true;
+
+    Promise.all([loadCustomerEntries(), loadPayments()])
+      .then(([entries, posted]) => {
+        if (!active) return;
+        setCustomers(entries);
+        setPayments(posted);
+        setLoadError("");
+      })
+      .catch((error) => active && setLoadError(error.message))
+      .finally(() => active && setLoading(false));
+
+    return () => {
+      active = false;
+    };
+  }, [reloadKey]);
 
   // Compute processed data
   const processedCustomers = useMemo(() => {
@@ -131,7 +151,7 @@ const Collection = () => {
   const totalTodayDueAmount = todayList.reduce((sum, c) => sum + c.totalDueToday, 0);
   const totalOverdueAmount = overdueList.reduce((sum, c) => sum + c.totalOverdue, 0);
   
-  const paymentHistory = JSON.parse(localStorage.getItem("motoLendPaymentHistory") || "[]");
+  const paymentHistory = payments;
   const todaysPayments = paymentHistory.filter(p => p.date && p.date.startsWith(date));
   const collectedTodayAmount = todaysPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
   const collectedTodayCount = todaysPayments.length;
@@ -141,89 +161,35 @@ const Collection = () => {
     setCollectAmount(c.currentTotalDue || "");
     setPaymentMode("Cash");
     setRemarks("");
+    setClientRef(crypto.randomUUID());
   };
 
-  const handleFinalSave = () => {
+  // The server splits the payment across installments (oldest first,
+  // interest before principal) and updates the schedule in one step.
+  const handleFinalSave = async () => {
     if (!collectAmount || isNaN(collectAmount) || Number(collectAmount) <= 0) {
       alert("Please enter a valid amount.");
       return;
     }
-    const amount = Number(collectAmount);
-    
-    // 1. Update Schedule (FIFO)
-    let remainingToAllocate = amount;
-    let principalRecovered = 0;
-    let interestEarned = 0;
-    
-    const updatedSchedule = selectedCustomer.schedule.map(s => {
-      if (remainingToAllocate <= 0) return s;
-      if (s.status === 'Collected') return s;
-      
-      const due = s.emi - s.amountPaid;
-      if (due <= 0) return s;
-      
-      const alloc = Math.min(due, remainingToAllocate);
-      remainingToAllocate -= alloc;
-      
-      // Interest vs Principal split for this installment
-      const interestDue = s.interest - (s.interestPaid || 0);
-      const intAlloc = Math.min(interestDue, alloc);
-      const prinAlloc = alloc - intAlloc;
-      
-      interestEarned += intAlloc;
-      principalRecovered += prinAlloc;
-      
-      const newAmountPaid = s.amountPaid + alloc;
-      return {
-        ...s,
-        amountPaid: newAmountPaid,
-        interestPaid: (s.interestPaid || 0) + intAlloc,
-        principalPaid: (s.principalPaid || 0) + prinAlloc,
-        status: newAmountPaid >= s.emi ? 'Collected' : 'Partial'
-      };
-    });
-    
-    const advanceAmount = remainingToAllocate > 0 ? remainingToAllocate : 0;
-    
-    // 2. Update Customer
-    const updatedCustomer = {
-      ...selectedCustomer,
-      repaymentSchedule: updatedSchedule,
-      outstandingAmount: Math.max(0, (selectedCustomer.outstandingAmount || selectedCustomer.loanAmount) - principalRecovered),
-      advanceBalance: (selectedCustomer.advanceBalance || 0) + advanceAmount
-    };
-    
-    const newList = customers.map(c => c.loanId === selectedCustomer.loanId ? updatedCustomer : c);
-    setCustomers(newList);
-    localStorage.setItem("motoLendCustomersList_data", JSON.stringify(newList));
-    
-    // 3. Ledger Update
-    const investors = JSON.parse(localStorage.getItem('motoLendInvestors_data') || "[]");
-    if (investors.length > 0) {
-      // Just put the transaction in the first investor for ledger reading simplicity, 
-      // or we can store it in a generic ledger array. Currently Ledger reads from customers and investors.
-      // We will push to customer's payment history!
+    if (saving) return;
+
+    setSaving(true);
+    try {
+      await recordCollection({
+        entry: selectedCustomer,
+        amount: Number(collectAmount),
+        paymentMode,
+        remarks,
+        dueAmount: selectedCustomer.currentTotalDue,
+        clientRef,
+      });
+      setSelectedCustomer(null);
+      setReloadKey((key) => key + 1);
+    } catch (error) {
+      alert(error.message || "Could not save the payment.");
+    } finally {
+      setSaving(false);
     }
-    
-    // Store in a global payments array or attach to customer
-    const history = JSON.parse(localStorage.getItem("motoLendPaymentHistory") || "[]");
-    history.push({
-      id: `PAY-${Date.now()}`,
-      customerId: selectedCustomer.customerId,
-      loanId: selectedCustomer.loanId,
-      date: new Date().toISOString(),
-      amount: amount,
-      principal: principalRecovered,
-      interest: interestEarned,
-      advance: advanceAmount,
-      mode: paymentMode,
-      remarks
-    });
-    localStorage.setItem("motoLendPaymentHistory", JSON.stringify(history));
-
-    localStorage.setItem("motoLendPaymentHistory", JSON.stringify(history));
-
-    setSelectedCustomer(null);
   };
 
   const handleView = (c) => {
@@ -232,6 +198,23 @@ const Collection = () => {
 
   return (
     <div className="flex flex-col flex-1 h-full bg-slate-50 px-4 sm:px-6 lg:px-8 py-6 pb-8">
+      {loadError && (
+        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Could not load collections: {loadError}{" "}
+          <button
+            type="button"
+            className="font-semibold underline"
+            onClick={() => {
+              setLoading(true);
+              setReloadKey((key) => key + 1);
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {loading && !loadError && <p className="mb-4 text-sm text-slate-500">Loading collections…</p>}
+
       {/* HEADER + SEARCH + DATE ROW */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between shrink-0 mb-6 gap-4">
         <div>
@@ -627,10 +610,10 @@ const Collection = () => {
                 </button>
                 <button 
                   onClick={handleFinalSave} 
-                  disabled={!isValid}
+                  disabled={!isValid || saving}
                   className="flex-1 rounded-lg bg-[#006052] py-3 text-[14px] font-bold text-white shadow-sm hover:bg-[#004d43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Collect Payment
+                  {saving ? "Saving…" : "Collect Payment"}
                 </button>
               </div>
 

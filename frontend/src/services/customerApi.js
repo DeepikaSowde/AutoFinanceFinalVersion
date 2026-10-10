@@ -193,6 +193,22 @@ const fromKyc = (kyc = {}, uploads = []) => ({
 
 const docAsFile = (meta) => (meta?.fileName ? { name: meta.fileName, type: meta.fileType, size: meta.fileSize, data: '' } : null)
 
+// Installments in the shape the Collection screen works with.
+const SCHEDULE_STATUS = { Paid: 'Collected', 'Partially Paid': 'Partial' }
+
+const toUiSchedule = (rows = []) =>
+  rows.map((row) => ({
+    installmentNumber: row.installmentNumber,
+    dueDate: row.dueDate,
+    emi: row.paymentAmount,
+    amountPaid: row.paidAmount,
+    principal: row.principal,
+    interest: row.interest,
+    principalPaid: row.paidPrincipal,
+    interestPaid: row.paidInterest,
+    status: SCHEDULE_STATUS[row.status] || 'Due',
+  }))
+
 const nextDueDateOf = (loan) => {
   const unpaid = (loan.repaymentSchedule || []).find((row) => row.status !== 'Paid')
   return unpaid?.dueDate || ''
@@ -296,7 +312,7 @@ const toEntry = (record, loan) => {
     outstandingAmount: loan.outstandingAmount ?? 0,
     paymentFrequency: loan.repayment?.frequency || '',
     nextDueDate: nextDueDateOf(loan),
-    repaymentSchedule: loan.repaymentSchedule || [],
+    repaymentSchedule: toUiSchedule(loan.repaymentSchedule),
     paymentHistory: loan.paymentHistory || [],
     status: loan.status || 'Active',
     createdAt: loan.createdAt,
