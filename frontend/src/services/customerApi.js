@@ -307,6 +307,7 @@ const toEntry = (record, loan) => {
     customerId: record.customer.id,
     loanId: loan.id,
     loanAmount: loan.loanAmount,
+    referredByCommission: Number(charges.referral?.commission) || 0,
     emiAmount: loan.calculation?.emiAmount || loan.calculation?.paymentAmount || 0,
     totalPayable: loan.calculation?.totalDue || 0,
     outstandingAmount: loan.outstandingAmount ?? 0,

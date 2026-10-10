@@ -87,7 +87,21 @@ export const getExpenseById = async (expenseId) => {
   return result.rows[0] ? mapExpense(result.rows[0]) : null;
 };
 
+const invalid = (message) => Object.assign(new Error(message), { statusCode: 400 });
+
+const validate = (expense) => {
+  if (!(roundMoney(expense.amount) > 0)) {
+    throw invalid("Amount must be greater than zero.");
+  }
+
+  if (!String(expense.category || "").trim()) {
+    throw invalid("Category is required.");
+  }
+};
+
 export const addExpense = async (expense = {}) => {
+  validate(expense);
+
   const expenseId = await withTransaction(async (client) => {
     const result = await client.query(
       `INSERT INTO expenses

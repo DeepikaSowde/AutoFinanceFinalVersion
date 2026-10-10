@@ -18,13 +18,14 @@ import ProtectedRoute from './components/auth/ProtectedRoute'
 import { loadCustomerEntries } from './services/customerApi'
 import { loadPayments } from './services/collectionApi'
 import { loadInvestorData } from './services/investorApi'
+import { loadExpenses, loadIncomes } from './services/ledgerApi'
 
 function AppShell() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth >= 640 && window.innerWidth < 1024)
 
-  // Refresh the copies the not-yet-migrated pages (Ledger, Dashboard) read from localStorage.
+  // Refresh the copies the not-yet-migrated Dashboard reads from localStorage.
   useEffect(() => {
-    Promise.allSettled([loadCustomerEntries(), loadPayments(), loadInvestorData()])
+    Promise.allSettled([loadCustomerEntries(), loadPayments(), loadInvestorData(), loadIncomes(), loadExpenses()])
   }, [])
 
   return (

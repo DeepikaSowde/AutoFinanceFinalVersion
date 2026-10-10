@@ -6,7 +6,7 @@ const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN
 import { isDateInRange } from '../../utils/dateUtils';
 import DateRangeFilter from '../../components/DateRangeFilter';
 
-const ExpenseView = () => {
+const ExpenseView = ({ data }) => {
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('This Month');
   const [customStart, setCustomStart] = useState('');
@@ -15,8 +15,8 @@ const ExpenseView = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [viewTransaction, setViewTransaction] = useState(null);
 
-  const expenseData = JSON.parse(window.localStorage.getItem('motoLendExpense_data') || '[]');
-  const customersList = JSON.parse(window.localStorage.getItem('motoLendCustomersList_data') || '[]');
+  // Loaded from the API by the Ledger page.
+  const { expenseData, customers: customersList } = data;
 
   const filteredExpense = expenseData.filter(exp => {
     if (!isDateInRange(exp.date, dateFilter, customStart, customEnd)) return false;

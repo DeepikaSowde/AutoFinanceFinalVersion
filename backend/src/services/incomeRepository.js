@@ -84,7 +84,21 @@ export const getIncomeById = async (incomeId) => {
   return result.rows[0] ? mapIncome(result.rows[0]) : null;
 };
 
+const invalid = (message) => Object.assign(new Error(message), { statusCode: 400 });
+
+const validate = (income) => {
+  if (!(roundMoney(income.amount) > 0)) {
+    throw invalid("Amount must be greater than zero.");
+  }
+
+  if (!String(income.category || "").trim()) {
+    throw invalid("Category is required.");
+  }
+};
+
 export const addIncome = async (income = {}) => {
+  validate(income);
+
   const incomeId = await withTransaction(async (client) => {
     const result = await client.query(
       `INSERT INTO incomes

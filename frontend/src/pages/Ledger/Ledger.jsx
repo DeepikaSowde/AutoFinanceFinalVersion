@@ -1,4 +1,5 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { addExpense, addIncome, loadLedgerData } from "../../services/ledgerApi";
 import IncomeView from "./IncomeView";
 import ExpenseView from "./ExpenseView";
 import {
@@ -34,17 +35,34 @@ const Ledger = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  const investors = JSON.parse(window.localStorage.getItem("motoLendInvestors_data") || "[]");
-  const customers = JSON.parse(window.localStorage.getItem("motoLendCustomersList_data") || "[]");
-  const payments = JSON.parse(window.localStorage.getItem("motoLendPaymentHistory") || "[]");
-  const incomeData = JSON.parse(window.localStorage.getItem("motoLendIncome_data") || "[]");
-  const expenseData = JSON.parse(window.localStorage.getItem("motoLendExpense_data") || "[]");
+  const [data, setData] = useState({ investors: [], customers: [], payments: [], incomeData: [], expenseData: [] });
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const { investors, customers, payments, incomeData, expenseData } = data;
 
   // State to trigger modals
   const [showTypeSelection, setShowTypeSelection] = useState(false);
   const [showAddIncome, setShowAddIncome] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [triggerRefresh, setTriggerRefresh] = useState(0); // To force refresh when sub-view adds data
+
+  useEffect(() => {
+    let active = true;
+
+    loadLedgerData()
+      .then((loaded) => {
+        if (!active) return;
+        setData(loaded);
+        setLoadError("");
+      })
+      .catch((error) => active && setLoadError(error.message))
+      .finally(() => active && setLoading(false));
+
+    return () => {
+      active = false;
+    };
+  }, [triggerRefresh]);
 
   // Income Form States
   const [incomeType, setIncomeType] = useState('Other Income');
@@ -60,42 +78,52 @@ const Ledger = () => {
   const [expenseMode, setExpenseMode] = useState('Cash');
   const [expenseRemarks, setExpenseRemarks] = useState('');
 
-  const handleIncomeSubmit = (e) => {
+  const handleIncomeSubmit = async (e) => {
     e.preventDefault();
     if (!incomeAmount || isNaN(incomeAmount) || Number(incomeAmount) <= 0) return alert('Invalid amount');
-    const newIncome = {
-      id: `INC${Date.now()}`,
-      type: incomeType,
-      amount: Number(incomeAmount),
-      date: incomeDate,
-      mode: incomeMode,
-      remarks: incomeRemarks,
-    };
-    const updated = [...incomeData, newIncome];
-    window.localStorage.setItem('motoLendIncome_data', JSON.stringify(updated));
-    setShowAddIncome(false);
-    setIncomeAmount('');
-    setIncomeRemarks('');
-    setTriggerRefresh(prev => prev + 1);
+    if (saving) return;
+    setSaving(true);
+    try {
+      await addIncome({
+        type: incomeType,
+        amount: Number(incomeAmount),
+        date: incomeDate,
+        mode: incomeMode,
+        remarks: incomeRemarks,
+      });
+      setShowAddIncome(false);
+      setIncomeAmount('');
+      setIncomeRemarks('');
+      setTriggerRefresh(prev => prev + 1);
+    } catch (error) {
+      alert(error.message || 'Could not save the income.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleExpenseSubmit = (e) => {
+  const handleExpenseSubmit = async (e) => {
     e.preventDefault();
     if (!expenseAmount || isNaN(expenseAmount) || Number(expenseAmount) <= 0) return alert('Invalid amount');
-    const newExpense = {
-      id: `EXP${Date.now()}`,
-      category: expenseCategory,
-      amount: Number(expenseAmount),
-      date: expenseDate,
-      mode: expenseMode,
-      remarks: expenseRemarks,
-    };
-    const updated = [...expenseData, newExpense];
-    window.localStorage.setItem('motoLendExpense_data', JSON.stringify(updated));
-    setShowAddExpense(false);
-    setExpenseAmount('');
-    setExpenseRemarks('');
-    setTriggerRefresh(prev => prev + 1);
+    if (saving) return;
+    setSaving(true);
+    try {
+      await addExpense({
+        category: expenseCategory,
+        amount: Number(expenseAmount),
+        date: expenseDate,
+        mode: expenseMode,
+        remarks: expenseRemarks,
+      });
+      setShowAddExpense(false);
+      setExpenseAmount('');
+      setExpenseRemarks('');
+      setTriggerRefresh(prev => prev + 1);
+    } catch (error) {
+      alert(error.message || 'Could not save the expense.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Flatten all transactions from investors
@@ -343,8 +371,24 @@ const Ledger = () => {
         </div>
       </div>
 
-      {filter === 'Income' && <IncomeView />}
-      {filter === 'Expense' && <ExpenseView />}
+      {loadError && (
+        <div role="alert" className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 sm:mx-6 lg:mx-8">
+          Could not load the ledger: {loadError}{" "}
+          <button
+            type="button"
+            className="font-semibold underline"
+            onClick={() => {
+              setLoading(true);
+              setTriggerRefresh((prev) => prev + 1);
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {loading && !loadError && <p className="mx-4 mt-4 text-sm text-slate-500 sm:mx-6 lg:mx-8">Loading ledger…</p>}
+      {filter === 'Income' && <IncomeView data={data} />}
+      {filter === 'Expense' && <ExpenseView data={data} />}
 
       {filter === 'Ledger' && (
         <>

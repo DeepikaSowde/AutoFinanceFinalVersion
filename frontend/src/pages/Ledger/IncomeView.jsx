@@ -22,7 +22,7 @@ const SummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "text-sla
 import { isDateInRange } from '../../utils/dateUtils';
 import DateRangeFilter from '../../components/DateRangeFilter';
 
-const IncomeView = () => {
+const IncomeView = ({ data }) => {
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('This Month');
   const [customStart, setCustomStart] = useState('');
@@ -31,9 +31,8 @@ const IncomeView = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [viewTransaction, setViewTransaction] = useState(null);
 
-  const incomeData = JSON.parse(window.localStorage.getItem('motoLendIncome_data') || '[]');
-  const payments = JSON.parse(window.localStorage.getItem('motoLendPaymentHistory') || '[]');
-  const customers = JSON.parse(window.localStorage.getItem('motoLendCustomersList_data') || '[]');
+  // Loaded from the API by the Ledger page.
+  const { incomeData, payments, customers } = data;
 
   const allIncome = [
     ...incomeData.map(inc => ({
