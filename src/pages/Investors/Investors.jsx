@@ -263,7 +263,7 @@ const Investors = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3rem)] bg-white px-4 sm:px-6 lg:px-8 py-6 pb-8 overflow-hidden">
+    <div className="flex flex-col bg-white px-4 sm:px-6 lg:px-8 py-6 pb-8">
       
       {/* PAGE HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between shrink-0">
@@ -299,7 +299,7 @@ const Investors = () => {
       </div>
 
       {/* KPI CARDS */}
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3 shrink-0">
+      <div className="mt-6 grid grid-cols-1 max-[400px]:grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-row gap-3 sm:gap-4 shrink-0">
         <SummaryCard icon={Users} title="Total Investors" value={filteredInvestors.length} />
         <SummaryCard icon={Database} title="Total Amount Invested" value={formatCurrency(totalInvestedGlobal)} />
         <SummaryCard icon={Wallet} title="Total Available Balance" value={formatCurrency(totalAvailableBalance)} />
@@ -747,14 +747,14 @@ const FormSection = ({ title, children }) => (
 );
 
 const SummaryCard = ({ icon: Icon, title, value }) => (
-  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
-    <div className="flex items-center gap-4">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#e5f0ef] text-[#006052]">
-        <Icon className="h-6 w-6" strokeWidth={2.5} />
+  <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow flex-1 min-w-[200px]">
+    <div className="flex items-center gap-3 sm:gap-4">
+      <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-[#e5f0ef] text-[#006052]">
+        <Icon className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2.5} />
       </div>
       <div className="min-w-0">
-        <p className="text-[14px] font-semibold text-slate-500">{title}</p>
-        <p className="mt-1 truncate text-2xl font-bold tracking-tight text-slate-900">{value}</p>
+        <p className="text-[13px] sm:text-[14px] font-semibold text-slate-500">{title}</p>
+        <p className="mt-0.5 sm:mt-1 truncate text-xl sm:text-2xl font-bold tracking-tight text-slate-900">{value}</p>
       </div>
     </div>
   </div>

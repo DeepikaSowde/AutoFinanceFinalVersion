@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { getCustomerOnboarding } from "../../utils/customerOnboardingStorage";
+import CustomerView from "./CustomerView";
 
 const formatCurrency = (value) => {
   const amount = Number(value || 0);
@@ -98,6 +99,7 @@ const Customer = () => {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("All");
   const [statusOpen, setStatusOpen] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 
   useEffect(() => {
     const loadCustomer = () => {
@@ -172,15 +174,19 @@ const Customer = () => {
   };
 
   const handleView = (item) => {
-    console.log("Customer:", item);
+    setSelectedCustomerId(item.customerId);
   };
+
+  if (selectedCustomerId) {
+    return <CustomerView customerId={selectedCustomerId} onBack={() => setSelectedCustomerId(null)} />;
+  }
 
   const totalCustomers = processedCustomers.length;
   const totalAmountDeployed = processedCustomers.reduce((sum, item) => sum + item.loanAmount, 0);
   const totalOutstanding = processedCustomers.reduce((sum, item) => sum + item.outstandingAmount, 0);
 
   return (
-    <div className="h-[calc(100vh-3rem)] overflow-y-auto bg-white px-3 pb-6 sm:px-6 lg:px-8">
+    <div className="bg-white px-3 pb-6 sm:px-6 lg:px-8">
 
       {/* =========================
           PAGE HEADER

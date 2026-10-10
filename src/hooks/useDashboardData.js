@@ -30,14 +30,7 @@ export const useDashboardData = () => {
         let totalRepaid = 0;
 
         customers.forEach(cust => {
-            const loan = cust.loan || {};
-            const vehicleAmount = Number(cust.vehicle?.amount || 0);
-            const loanVehicleAmount = loan.vehicleAmount !== null && loan.vehicleAmount !== undefined && loan.vehicleAmount !== "" 
-                ? Number(loan.vehicleAmount) 
-                : vehicleAmount;
-            const downPayment = Number(loan.downPayment || 0);
-            const loanAmount = Math.max(loanVehicleAmount - downPayment, 0);
-            totalDisbursed += loanAmount;
+            totalDisbursed += Number(cust.loanAmount || 0);
         });
 
         payments.forEach(pay => {
@@ -52,21 +45,27 @@ export const useDashboardData = () => {
         let totalExpense = 0;
         expenseData.forEach(exp => totalExpense += Number(exp.amount || 0));
         
-        let investorCapital = 0;
+        let totalOpeningBalance = 0;
+        let investorMoneyIn = 0;
+        let investorMoneyOut = 0;
+
         investors.forEach(inv => {
+            const openingTx = inv.transactions?.find(t => t.type === "Opening Balance");
+            totalOpeningBalance += Number(openingTx?.amount || 0);
+
             if (inv.transactions) {
                 inv.transactions.forEach(tx => {
-                    if (tx.type === 'Add') investorCapital += Number(tx.amount || 0);
-                    if (tx.type === 'Withdraw') investorCapital -= Number(tx.amount || 0);
+                    if (tx.type === "New Investment" || tx.type === "Re-Investment") investorMoneyIn += Number(tx.amount || 0);
+                    if (tx.type === "Debit") investorMoneyOut += Number(tx.amount || 0);
                 });
             }
         });
 
-        // Credit: Repayments + Manual Income + Investor Capital Added
-        const totalCredit = totalRepaid + totalIncome + investorCapital;
+        // Credit: Repayments + Manual Income + Investor Capital (New Investment + Re-Investment) + Opening Balance
+        const totalCredit = totalOpeningBalance + investorMoneyIn + totalRepaid + totalIncome;
 
-        // Debit: Disbursed Loans + Manual Expenses
-        const totalDebit = totalDisbursed + totalExpense;
+        // Debit: Disbursed Loans + Manual Expenses + Investor Withdrawals
+        const totalDebit = totalDisbursed + totalExpense + investorMoneyOut;
 
         const closingBalance = totalCredit - totalDebit;
 
@@ -86,8 +85,7 @@ export const useDashboardData = () => {
         };
 
         customers.forEach(cust => {
-            const loan = cust.loan || {};
-            const loanAmount = Math.max(Number(loan.vehicleAmount || cust.vehicle?.amount || 0) - Number(loan.downPayment || 0), 0);
+            const loanAmount = Number(cust.loanAmount || 0);
             processDate(cust.customer?.applicationDate, loanAmount, 'debit');
         });
         expenseData.forEach(exp => processDate(exp.date, exp.amount, 'debit'));
@@ -96,8 +94,8 @@ export const useDashboardData = () => {
         investors.forEach(inv => {
             if (inv.transactions) {
                 inv.transactions.forEach(tx => {
-                    if (tx.type === 'Add') processDate(tx.date, tx.amount, 'credit');
-                    if (tx.type === 'Withdraw') processDate(tx.date, tx.amount, 'debit');
+                    if (tx.type === 'Opening Balance' || tx.type === "New Investment" || tx.type === "Re-Investment") processDate(tx.date, tx.amount, 'credit');
+                    if (tx.type === 'Debit') processDate(tx.date, tx.amount, 'debit');
                 });
             }
         });
@@ -131,9 +129,10 @@ export const useDashboardData = () => {
             .map(([name, value]) => ({ name, value }));
 
         // Capital Position
+        const investorCapital = totalOpeningBalance + investorMoneyIn - investorMoneyOut;
         const capitalData = {
             totalCapital: investorCapital,
-            openingCapital: 0, // Simplified for now
+            openingCapital: totalOpeningBalance,
             deployed: totalDisbursed,
             available: investorCapital - totalDisbursed > 0 ? investorCapital - totalDisbursed : 0,
             closingBalance: closingBalance
