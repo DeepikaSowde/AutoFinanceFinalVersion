@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import {
   Users,
   Database,
@@ -16,29 +16,55 @@ import {
   Wallet
 } from "lucide-react";
 
-const STORAGE_KEY = "motoLendInvestors_data";
-const FREEZE_KEY = "motoLendInvestors_freeze_info";
+import {
+  addInvestor,
+  debitInvestor,
+  freezeOpeningBalances,
+  loadInvestorData,
+  reinvest,
+} from "../../services/investorApi";
 
 const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
 
 const Investors = () => {
   const [search, setSearch] = useState("");
   
-  const [investors, setInvestors] = useState(() => {
+  const [investors, setInvestors] = useState([]);
+  const [freezeInfo, setFreezeInfo] = useState({ frozen: false, date: null });
+  const [availablePool, setAvailablePool] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const applyData = useCallback((data) => {
+    setInvestors(data.investors);
+    setFreezeInfo(data.freezeInfo);
+    setAvailablePool(data.availablePool);
+    setLoadError("");
+  }, []);
+
+  const refresh = useCallback(async () => {
     try {
-      return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]");
-    } catch {
-      return [];
+      applyData(await loadInvestorData());
+    } catch (error) {
+      setLoadError(error.message);
+    } finally {
+      setLoading(false);
     }
-  });
-  
-  const [freezeInfo, setFreezeInfo] = useState(() => {
-    try {
-      return JSON.parse(window.localStorage.getItem(FREEZE_KEY) || '{"frozen": false, "date": null}');
-    } catch {
-      return { frozen: false, date: null };
-    }
-  });
+  }, [applyData]);
+
+  useEffect(() => {
+    let active = true;
+
+    loadInvestorData()
+      .then((data) => active && applyData(data))
+      .catch((error) => active && setLoadError(error.message))
+      .finally(() => active && setLoading(false));
+
+    return () => {
+      active = false;
+    };
+  }, [applyData]);
 
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -49,15 +75,6 @@ const Investors = () => {
   // Forms state
   const [form, setForm] = useState({});
   const [formError, setFormError] = useState("");
-
-  const saveState = (newInvestors, newFreezeInfo = freezeInfo) => {
-    setInvestors(newInvestors);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(newInvestors));
-    if (newFreezeInfo.frozen !== freezeInfo.frozen) {
-      setFreezeInfo(newFreezeInfo);
-      window.localStorage.setItem(FREEZE_KEY, JSON.stringify(newFreezeInfo));
-    }
-  };
 
   const showSuccess = (msg) => {
     setSuccessMessage(msg);
@@ -102,10 +119,28 @@ const Investors = () => {
   const totalOpeningBalance = openingInvestors.reduce((sum, inv) => sum + getOpeningBalance(inv), 0);
 
   const totalInvestedGlobal = investors.reduce((sum, inv) => sum + getTotalAmountInvested(inv), 0);
-  const totalDebitsGlobal = investors.reduce((sum, inv) => sum + getInvestorDebits(inv), 0);
-  const customersList = JSON.parse(window.localStorage.getItem("motoLendCustomersList_data") || "[]");
-  const totalAllocatedToLoans = customersList.reduce((sum, c) => sum + (c.loanAmount || 0), 0);
-  const totalAvailableBalance = totalInvestedGlobal - totalDebitsGlobal - totalAllocatedToLoans;
+  // The server owns the pool balance: invested less withdrawals less loans funded.
+  const totalAvailableBalance = availablePool;
+
+  // Runs a write, reloads from the server, and reports the outcome. The
+  // server re-checks every rule, so its message is what the user sees.
+  const runAction = async (action, message, { keepModal = false } = {}) => {
+    if (saving) return false;
+    setSaving(true);
+    setFormError("");
+    try {
+      await action();
+      await refresh();
+      showSuccess(message);
+      if (!keepModal) closeModal();
+      return true;
+    } catch (error) {
+      setFormError(error.message);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleAddOpeningInvestor = (e) => {
     e.preventDefault();
@@ -113,29 +148,13 @@ const Investors = () => {
       setFormError("Please complete all required fields.");
       return;
     }
-    const newInv = {
-      id: `INV${String(investors.length + 1).padStart(3, "0")}`,
-      name: form.name.trim(),
-      mobile: form.mobile || "",
-      email: form.email || "",
-      aadhaar: form.aadhaar || "",
-      pan: form.pan || "",
-      accountNumber: form.accountNumber || "",
-      accountHolder: form.accountHolder || "",
-      type: "Opening",
-      status: "Active",
-      transactions: [{
-        id: `tx-${Date.now()}`,
-        type: "Opening Balance",
-        amount: Number(form.openingBalance),
-        date: form.openingDate,
-        locked: false
-      }],
-      createdAt: new Date().toISOString(),
-    };
-    saveState([...investors, newInv]);
-    showSuccess(`${newInv.name} added to Opening Balance list.`);
-    setActiveModal('openingSetup'); 
+    runAction(
+      () => addInvestor({ origin: "Opening", form }),
+      `${form.name.trim()} added to Opening Balance list.`,
+      { keepModal: true }
+    ).then((saved) => {
+      if (saved) setActiveModal("openingSetup");
+    });
   };
 
   const handleAddNewInvestor = (e) => {
@@ -144,29 +163,7 @@ const Investors = () => {
       setFormError("Please complete all required fields.");
       return;
     }
-    const newInv = {
-      id: `INV${String(investors.length + 1).padStart(3, "0")}`,
-      name: form.name.trim(),
-      mobile: form.mobile || "",
-      email: form.email || "",
-      aadhaar: form.aadhaar || "",
-      pan: form.pan || "",
-      accountNumber: form.accountNumber || "",
-      accountHolder: form.accountHolder || "",
-      type: "New Investor",
-      status: "Active",
-      transactions: [{
-        id: `tx-${Date.now()}`,
-        type: "New Investment",
-        amount: Number(form.investmentAmount),
-        date: form.investmentDate,
-        transferMode: form.transferMode
-      }],
-      createdAt: new Date().toISOString(),
-    };
-    saveState([...investors, newInv]);
-    showSuccess(`${newInv.name} added successfully.`);
-    closeModal();
+    runAction(() => addInvestor({ origin: "New Investor", form }), `${form.name.trim()} added successfully.`);
   };
 
   const handleReinvest = (e) => {
@@ -175,24 +172,10 @@ const Investors = () => {
       setFormError("Please complete all required fields.");
       return;
     }
-    const updated = investors.map(inv => {
-      if (inv.id === selectedInvestor.id) {
-        return {
-          ...inv,
-          transactions: [...inv.transactions, {
-            id: `tx-${Date.now()}`,
-            type: "Re-Investment",
-            amount: Number(form.investmentAmount),
-            date: form.investmentDate,
-            transferMode: form.transferMode
-          }]
-        };
-      }
-      return inv;
-    });
-    saveState(updated);
-    showSuccess(`Re-investment added for ${selectedInvestor.name}.`);
-    closeModal();
+    runAction(
+      () => reinvest(selectedInvestor.id, form),
+      `Re-investment added for ${selectedInvestor.name}.`
+    );
   };
 
   const handleDebit = (e) => {
@@ -201,7 +184,7 @@ const Investors = () => {
       setFormError("Please complete all required fields.");
       return;
     }
-    
+
     const debitAmount = Number(form.debitAmount);
     if (debitAmount <= 0) {
       setFormError("Debit amount must be greater than zero.");
@@ -219,47 +202,14 @@ const Investors = () => {
       return;
     }
 
-    const updated = investors.map(inv => {
-      if (inv.id === selectedInvestor.id) {
-        return {
-          ...inv,
-          transactions: [...inv.transactions, {
-            id: `tx-${Date.now()}`,
-            type: "Debit",
-            amount: debitAmount,
-            date: form.debitDate,
-            paymentMode: form.paymentMode,
-            reason: form.reason,
-            remarks: form.remarks || ""
-          }]
-        };
-      }
-      return inv;
-    });
-    
-    saveState(updated);
-    showSuccess(`Debit of ₹${debitAmount.toLocaleString("en-IN")} processed for ${selectedInvestor.name}.`);
-    closeModal();
+    runAction(
+      () => debitInvestor(selectedInvestor.id, form),
+      `Debit of ₹${debitAmount.toLocaleString("en-IN")} processed for ${selectedInvestor.name}.`
+    );
   };
 
   const handleFreeze = () => {
-    const updated = investors.map(inv => {
-      if (inv.type === "Opening") {
-        return {
-          ...inv,
-          transactions: inv.transactions.map(t => t.type === "Opening Balance" ? { ...t, locked: true } : t)
-        };
-      }
-      return inv;
-    });
-    const todayDate = new Date().toISOString().slice(0, 10);
-    // Formatting date to dd-MMM-yyyy like '01-Oct-2026'
-    const formatter = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const formattedDate = formatter.format(new Date(todayDate)).replace(/ /g, '-');
-    
-    saveState(updated, { frozen: true, date: formattedDate });
-    showSuccess("Opening Balance Setup has been frozen.");
-    closeModal();
+    runAction(() => freezeOpeningBalances(), "Opening Balance Setup has been frozen.");
   };
 
   return (
@@ -382,6 +332,14 @@ const Investors = () => {
           </table>
         </div>
       </div>
+
+      {loadError && (
+        <div role="alert" className="mt-4 shrink-0 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Could not load investors: {loadError}{" "}
+          <button type="button" className="font-semibold underline" onClick={refresh}>Retry</button>
+        </div>
+      )}
+      {loading && !loadError && <p className="mt-4 shrink-0 text-sm text-slate-500">Loading investors…</p>}
 
       {successMessage && (
         <div className="fixed right-6 bottom-6 z-[70] rounded-lg bg-[#006052] px-5 py-3.5 text-sm font-medium text-white shadow-xl flex items-center gap-3 border border-[#004d43] animate-in fade-in slide-in-from-bottom-5">

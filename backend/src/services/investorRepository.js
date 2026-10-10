@@ -36,6 +36,10 @@ const mapTransaction = (row) => ({
   date: row.date || "",
   reference: row.reference || "",
   investmentMode: row.investment_mode || "",
+  kind: row.kind || "",
+  paymentMode: row.payment_mode || "",
+  reason: row.reason || "",
+  locked: Boolean(row.locked),
   notes: row.notes || "",
   loanId: row.loan_id || "",
   loanNumber: row.loan_number || "",
@@ -60,7 +64,8 @@ const SELECT_INVESTORS_WITH_TOTALS = `
   SELECT
     investors.*,
     COALESCE(SUM(t.amount) FILTER (WHERE t.type = 'Investment'), 0) AS total_invested,
-    COALESCE(SUM(t.amount) FILTER (WHERE t.type = 'Loan Allocation'), 0) AS total_allocated
+    COALESCE(SUM(t.amount) FILTER (WHERE t.type = 'Loan Allocation'), 0) AS total_allocated,
+    COALESCE(SUM(t.amount) FILTER (WHERE t.type = 'Withdrawal'), 0) AS total_withdrawn
   FROM investors
   LEFT JOIN investor_transactions t ON t.investor_pk = investors.pk
 `;
@@ -68,6 +73,8 @@ const SELECT_INVESTORS_WITH_TOTALS = `
 const mapInvestor = (row) => {
   const totalInvested = roundMoney(row.total_invested);
   const allocatedAmount = roundMoney(row.total_allocated);
+  const withdrawnAmount = roundMoney(row.total_withdrawn);
+  const remainingCapital = roundMoney(Math.max(0, totalInvested - withdrawnAmount));
 
   return {
     id: row.id,
@@ -85,7 +92,9 @@ const mapInvestor = (row) => {
       ...(row.investment ?? {}),
       totalInvested,
       allocatedAmount,
-      availableBalance: roundMoney(Math.max(0, totalInvested - allocatedAmount)),
+      withdrawnAmount,
+      remainingCapital,
+      availableBalance: remainingCapital,
     },
     status: row.status,
     remarks: row.remarks || "",
@@ -140,6 +149,7 @@ export const getFundingSummary = async (client) => {
     `SELECT
        COALESCE(SUM(amount) FILTER (WHERE type = 'Investment'), 0) AS invested,
        COALESCE(SUM(amount) FILTER (WHERE type = 'Loan Allocation'), 0) AS allocated,
+       COALESCE(SUM(amount) FILTER (WHERE type = 'Withdrawal'), 0) AS withdrawn,
        (SELECT COUNT(*)::int FROM investors) AS investor_count
      FROM investor_transactions`
   );
@@ -147,12 +157,19 @@ export const getFundingSummary = async (client) => {
   const row = result.rows[0];
   const totalInvestment = roundMoney(row.invested);
   const distributedToLoans = roundMoney(row.allocated);
+  const withdrawn = roundMoney(row.withdrawn);
+
+  const freeze = await run("SELECT value FROM app_settings WHERE key = 'opening_freeze'");
 
   return {
     totalInvestors: row.investor_count,
     totalInvestment,
+    withdrawn,
     distributedToLoans,
-    availableInvestmentBalance: roundMoney(Math.max(0, totalInvestment - distributedToLoans)),
+    availableInvestmentBalance: roundMoney(
+      Math.max(0, totalInvestment - withdrawn - distributedToLoans)
+    ),
+    openingFreeze: freeze.rows[0]?.value ?? { frozen: false, date: null },
   };
 };
 
@@ -201,12 +218,26 @@ const validateInvestor = (input) => {
 
 const insertTransaction = async (
   client,
-  { investorPk = null, type, amount, date, reference = "", investmentMode = "", notes = "", loanPk = null, loanNumber = "" }
+  {
+    investorPk = null,
+    type,
+    amount,
+    date,
+    reference = "",
+    investmentMode = "",
+    notes = "",
+    loanPk = null,
+    loanNumber = "",
+    kind = "",
+    paymentMode = "",
+    reason = "",
+  }
 ) => {
   const result = await client.query(
     `INSERT INTO investor_transactions
-      (id, investor_pk, type, amount, date, reference, investment_mode, notes, loan_pk, loan_number)
-     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9)
+      (id, investor_pk, type, amount, date, reference, investment_mode, notes, loan_pk, loan_number,
+       kind, payment_mode, reason)
+     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING pk`,
     [
       investorPk,
@@ -218,6 +249,9 @@ const insertTransaction = async (
       notes,
       loanPk,
       loanNumber,
+      kind,
+      paymentMode,
+      reason,
     ]
   );
 
@@ -298,6 +332,7 @@ export const addInvestorInvestment = async ({
   reference = "",
   investmentMode = "Bank Transfer",
   notes = "Additional investment",
+  kind = "Re-Investment",
 } = {}) => {
   const value = Number(amount);
 
@@ -325,6 +360,7 @@ export const addInvestorInvestment = async ({
       reference,
       investmentMode,
       notes,
+      kind,
     })
   );
 
@@ -334,6 +370,178 @@ export const addInvestorInvestment = async ({
     transaction: transactions.find((item) => item.id === transactionId),
     investor: await getInvestorById(investorId),
   };
+};
+
+/*
+ * Lenient investor creation used by the Investors screen: an "Opening"
+ * investor carries the balance brought forward, a "New Investor" a fresh
+ * investment. Only the name, amount and date are mandatory.
+ */
+export const createInvestorEntry = async (input = {}) => {
+  const origin = input.origin === "Opening" ? "Opening" : "New Investor";
+  const name = String(input.name || "").trim();
+  const amount = Number(input.amount);
+
+  if (!name) {
+    throw new InvestorError("Investor name is required.");
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new InvestorError("Amount must be greater than zero.");
+  }
+
+  if (!input.date) {
+    throw new InvestorError("Date is required.");
+  }
+
+  if (input.pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/i.test(String(input.pan).trim())) {
+    throw new InvestorError("Enter a valid PAN.");
+  }
+
+  const investorId = await withTransaction(async (client) => {
+    if (origin === "Opening") {
+      const frozen = await client.query("SELECT value FROM app_settings WHERE key = 'opening_freeze'");
+
+      if (frozen.rows[0]?.value?.frozen) {
+        throw new InvestorError("Opening Balance Setup is frozen.", 409);
+      }
+    }
+
+    const result = await client.query(
+      `INSERT INTO investors
+        (id, name, mobile_number, email, pan, bank_details, investment, status)
+       VALUES ('', $1, $2, $3, $4, $5, $6, 'Active')
+       RETURNING pk`,
+      [
+        name,
+        String(input.mobileNumber || "").trim(),
+        String(input.email || "").trim(),
+        String(input.pan || "").trim().toUpperCase(),
+        JSON.stringify({
+          accountName: String(input.accountHolder || "").trim(),
+          accountNumber: String(input.accountNumber || "").trim(),
+        }),
+        JSON.stringify({
+          origin,
+          aadhaar: String(input.aadhaar || "").trim(),
+          initialAmount: roundMoney(amount),
+          investmentDate: input.date,
+        }),
+      ]
+    );
+
+    const investorPk = result.rows[0].pk;
+    const id = `INV-${pad(investorPk)}`;
+
+    await client.query("UPDATE investors SET id = $1 WHERE pk = $2", [id, investorPk]);
+
+    await insertTransaction(client, {
+      investorPk,
+      type: "Investment",
+      amount,
+      date: input.date,
+      investmentMode: input.transferMode || "",
+      kind: origin === "Opening" ? "Opening Balance" : "New Investment",
+      notes: origin === "Opening" ? "Opening balance" : "Initial investment",
+    });
+
+    return id;
+  });
+
+  return getInvestorById(investorId);
+};
+
+/*
+ * Pays capital back to an investor. Checked against both the investor's own
+ * remaining capital and the pool's available balance, under the same lock
+ * that serialises loan funding so the pool cannot be overdrawn.
+ */
+export const debitInvestor = async ({
+  investorId,
+  amount,
+  date,
+  paymentMode = "",
+  reason = "",
+  remarks = "",
+} = {}) => {
+  const value = Number(amount);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new InvestorError("Debit amount must be greater than zero.");
+  }
+
+  if (!date || !paymentMode || !String(reason).trim()) {
+    throw new InvestorError("Date, payment mode and reason are required.");
+  }
+
+  const transactionId = await withTransaction(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('investment_pool'))");
+
+    const result = await client.query(
+      `${SELECT_INVESTORS_WITH_TOTALS} WHERE investors.id = $1 GROUP BY investors.pk`,
+      [investorId]
+    );
+
+    if (!result.rows[0]) {
+      throw new InvestorError("Investor not found.", 404);
+    }
+
+    const investor = mapInvestor(result.rows[0]);
+    const fmt = (n) => n.toLocaleString("en-IN");
+
+    if (value > investor.investment.remainingCapital) {
+      throw new InvestorError(
+        `Debit amount (₹${fmt(value)}) exceeds the investor's remaining capital (₹${fmt(
+          investor.investment.remainingCapital
+        )}).`
+      );
+    }
+
+    const summary = await getFundingSummary(client);
+
+    if (value > summary.availableInvestmentBalance) {
+      throw new InvestorError(
+        `Debit amount (₹${fmt(value)}) exceeds the total available pool (₹${fmt(
+          summary.availableInvestmentBalance
+        )}).`
+      );
+    }
+
+    return insertTransaction(client, {
+      investorPk: result.rows[0].pk,
+      type: "Withdrawal",
+      amount: value,
+      date,
+      paymentMode,
+      reason: String(reason).trim(),
+      notes: String(remarks || "").trim(),
+      kind: "Debit",
+    });
+  });
+
+  const transactions = await getInvestorTransactions(investorId);
+
+  return {
+    transaction: transactions.find((item) => item.id === transactionId),
+    investor: await getInvestorById(investorId),
+    summary: await getFundingSummary(),
+  };
+};
+
+/* Locks every opening balance; no more opening investors can be added. */
+export const freezeOpeningBalances = async () => {
+  const freeze = { frozen: true, date: new Date().toISOString().slice(0, 10) };
+
+  await withTransaction(async (client) => {
+    await client.query("UPDATE investor_transactions SET locked = true WHERE kind = 'Opening Balance'");
+    await client.query(
+      `INSERT INTO app_settings (key, value) VALUES ('opening_freeze', $1)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify(freeze)]
+    );
+  });
+
+  return getFundingSummary();
 };
 
 /*

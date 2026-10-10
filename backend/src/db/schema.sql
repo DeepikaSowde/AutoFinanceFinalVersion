@@ -343,6 +343,21 @@ CREATE TABLE IF NOT EXISTS investor_transactions (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Opening balances, re-investments and investor withdrawals (debits).
+ALTER TABLE investor_transactions ADD COLUMN IF NOT EXISTS kind TEXT;
+ALTER TABLE investor_transactions ADD COLUMN IF NOT EXISTS payment_mode TEXT;
+ALTER TABLE investor_transactions ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE investor_transactions ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE investor_transactions DROP CONSTRAINT IF EXISTS investor_transactions_type_check;
+ALTER TABLE investor_transactions ADD CONSTRAINT investor_transactions_type_check
+  CHECK (type IN ('Investment', 'Loan Allocation', 'Withdrawal'));
+
+-- Small key/value settings (e.g. whether the opening-balance setup is frozen).
+CREATE TABLE IF NOT EXISTS app_settings (
+  key    TEXT PRIMARY KEY,
+  value  JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
 CREATE INDEX IF NOT EXISTS idx_investor_tx_investor ON investor_transactions (investor_pk);
 CREATE INDEX IF NOT EXISTS idx_investor_tx_type ON investor_transactions (type);
 

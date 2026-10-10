@@ -6,6 +6,9 @@ import { Router } from "express";
 
 import {
   addInvestorInvestment,
+  createInvestorEntry,
+  debitInvestor,
+  freezeOpeningBalances,
   allocateInvestmentPoolToLoan,
   createInvestor,
   getFundingSummary,
@@ -114,6 +117,32 @@ investorsRouter.post(
     res
       .status(201)
       .json(await addInvestorInvestment({ ...(req.body || {}), investorId: req.params.investorId }));
+  })
+);
+
+investorsRouter.post(
+  "/entries",
+  requirePermission("investor.add"),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await createInvestorEntry(req.body || {}));
+  })
+);
+
+investorsRouter.post(
+  "/freeze-opening",
+  requirePermission("investor.add"),
+  asyncHandler(async (req, res) => {
+    res.json(await freezeOpeningBalances());
+  })
+);
+
+investorsRouter.post(
+  "/:investorId/debits",
+  requirePermission("investor.add"),
+  asyncHandler(async (req, res) => {
+    res
+      .status(201)
+      .json(await debitInvestor({ ...(req.body || {}), investorId: req.params.investorId }));
   })
 );
 
