@@ -23,7 +23,7 @@ export const useDashboardData = () => {
 
     const fetchData = async () => {
       try {
-        const { customers, payments, investors, incomeData, expenseData } = await loadLedgerData();
+        const { customers, payments, investors, incomeData, expenseData, vehicleSales } = await loadLedgerData();
         if (!active) return;
 
         let totalDisbursed = 0;
@@ -43,6 +43,8 @@ export const useDashboardData = () => {
 
         let totalIncome = 0;
         incomeData.forEach(inc => totalIncome += Number(inc.amount || 0));
+        // Net proceeds from sold repossessed vehicles count as money in.
+        const vehicleSaleProceeds = vehicleSales.reduce((sum, sale) => sum + Number(sale.amount || 0), 0);
 
         let totalExpense = 0;
         expenseData.forEach(exp => totalExpense += Number(exp.amount || 0));
@@ -64,7 +66,7 @@ export const useDashboardData = () => {
         });
 
         // Credit: Repayments + Manual Income + Investor Capital (New Investment + Re-Investment) + Opening Balance
-        const totalCredit = totalOpeningBalance + investorMoneyIn + totalRepaid + totalIncome;
+        const totalCredit = totalOpeningBalance + investorMoneyIn + totalRepaid + totalIncome + vehicleSaleProceeds;
 
         // Debit: Disbursed Loans + Manual Expenses + Investor Withdrawals
         const totalDebit = totalDisbursed + totalExpense + investorMoneyOut;
@@ -93,6 +95,7 @@ export const useDashboardData = () => {
         expenseData.forEach(exp => processDate(exp.date, exp.amount, 'debit'));
         payments.forEach(pay => processDate(pay.date, pay.amount, 'credit'));
         incomeData.forEach(inc => processDate(inc.date, inc.amount, 'credit'));
+        vehicleSales.forEach(sale => processDate(sale.date, sale.amount, 'credit'));
         investors.forEach(inv => {
             if (inv.transactions) {
                 inv.transactions.forEach(tx => {
@@ -107,6 +110,7 @@ export const useDashboardData = () => {
         // Income Breakdown
         const incomeBreakdownMap = {
             'Repayment': totalRepaid,
+            'Vehicle Sales': vehicleSaleProceeds,
         };
         incomeData.forEach(inc => {
             const type = inc.type || 'Other';

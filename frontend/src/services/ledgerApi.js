@@ -32,16 +32,30 @@ export const loadExpenses = async () => {
   return (await apiGet('/expenses')).map(toExpense)
 }
 
+// A sold repossessed vehicle brings its net proceeds (price less sale costs) back in.
+export const loadVehicleSales = async () =>
+  (await apiGet('/vehicles?status=SOLD')).map((vehicle) => ({
+    id: `SALE-${vehicle.id}`,
+    date: vehicle.sale?.soldAt || vehicle.sale?.updatedAt,
+    amount: Number(vehicle.sale?.netSaleProceeds || 0),
+    salePrice: Number(vehicle.sale?.salePrice || 0),
+    saleExpenses: Number(vehicle.sale?.saleExpenses || 0),
+    regNo: vehicle.registrationNumber,
+    customerName: vehicle.customerName,
+    loanId: vehicle.loanId,
+  }))
+
 export const loadLedgerData = async () => {
-  const [investorData, customers, payments, incomeData, expenseData] = await Promise.all([
+  const [investorData, customers, payments, incomeData, expenseData, vehicleSales] = await Promise.all([
     loadInvestorData(),
     loadCustomerEntries(),
     loadPayments(),
     loadIncomes(),
     loadExpenses(),
+    loadVehicleSales(),
   ])
 
-  return { investors: investorData.investors, customers, payments, incomeData, expenseData }
+  return { investors: investorData.investors, customers, payments, incomeData, expenseData, vehicleSales }
 }
 
 export const addIncome = ({ type, amount, date, mode, remarks }) =>

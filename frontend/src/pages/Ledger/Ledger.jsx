@@ -35,11 +35,11 @@ const Ledger = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  const [data, setData] = useState({ investors: [], customers: [], payments: [], incomeData: [], expenseData: [] });
+  const [data, setData] = useState({ investors: [], customers: [], payments: [], incomeData: [], expenseData: [], vehicleSales: [] });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
-  const { investors, customers, payments, incomeData, expenseData } = data;
+  const { investors, customers, payments, incomeData, expenseData, vehicleSales } = data;
 
   // State to trigger modals
   const [showTypeSelection, setShowTypeSelection] = useState(false);
@@ -183,6 +183,22 @@ const Ledger = () => {
     });
   });
 
+  // Flatten sold vehicles (net sale proceeds)
+  vehicleSales.forEach(sale => {
+    rawTransactions.push({
+      id: sale.id,
+      date: sale.date,
+      amount: sale.amount,
+      type: "Vehicle Sale",
+      source: 'sold',
+      customerName: sale.customerName,
+      loanId: sale.loanId,
+      regNo: sale.regNo,
+      salePrice: sale.salePrice,
+      saleExpenses: sale.saleExpenses
+    });
+  });
+
   // Flatten manual expense
   expenseData.forEach(exp => {
     rawTransactions.push({
@@ -231,6 +247,12 @@ const Ledger = () => {
       typeDesc = "Income";
       subDesc = `${tx.description}${tx.remarks ? ` - ${tx.remarks}` : ''}`;
       name = "Manual Income";
+    } else if (tx.source === 'sold') {
+      amountIn = Number(tx.amount || 0);
+      runningBalance += amountIn;
+      typeDesc = "Vehicle Sale";
+      subDesc = `${tx.regNo} · Loan ID: ${tx.loanId} · Sold for ₹${Number(tx.salePrice).toLocaleString('en-IN')}${tx.saleExpenses ? ` less ₹${Number(tx.saleExpenses).toLocaleString('en-IN')} costs` : ''}`;
+      name = tx.customerName;
     } else if (tx.source === 'expense') {
       amountOut = Number(tx.amount || 0);
       runningBalance -= amountOut;
@@ -286,7 +308,7 @@ const Ledger = () => {
   const totalMoneyIn = investors.reduce((sum, inv) => {
     const newInvTxs = inv.transactions?.filter(t => t.type === "New Investment" || t.type === "Re-Investment") || [];
     return sum + newInvTxs.reduce((s, t) => s + Number(t.amount || 0), 0);
-  }, 0) + payments.reduce((sum, p) => sum + Number(p.amount || 0), 0) + incomeData.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+  }, 0) + payments.reduce((sum, p) => sum + Number(p.amount || 0), 0) + incomeData.reduce((sum, i) => sum + Number(i.amount || 0), 0) + vehicleSales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
 
   const totalMoneyOut = investors.reduce((sum, inv) => {
     const debitTxs = inv.transactions?.filter(t => t.type === "Debit") || [];
