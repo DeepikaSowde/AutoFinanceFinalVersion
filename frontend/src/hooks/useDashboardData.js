@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { loadLedgerData } from '../services/ledgerApi';
 
 export const useDashboardData = () => {
   const [data, setData] = useState({
@@ -18,13 +19,12 @@ export const useDashboardData = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchData = () => {
+    let active = true;
+
+    const fetchData = async () => {
       try {
-        const customers = JSON.parse(window.localStorage.getItem("motoLendCustomersList_data") || "[]");
-        const payments = JSON.parse(window.localStorage.getItem("motoLendPaymentHistory") || "[]");
-        const investors = JSON.parse(window.localStorage.getItem("motoLendInvestors_data") || "[]");
-        const incomeData = JSON.parse(window.localStorage.getItem("motoLendIncome_data") || "[]");
-        const expenseData = JSON.parse(window.localStorage.getItem("motoLendExpense_data") || "[]");
+        const { customers, payments, investors, incomeData, expenseData } = await loadLedgerData();
+        if (!active) return;
 
         let totalDisbursed = 0;
         let totalRepaid = 0;
@@ -37,7 +37,9 @@ export const useDashboardData = () => {
             totalRepaid += Number(pay.amount || 0);
         });
 
-        const totalOutstanding = Math.max(totalDisbursed - totalRepaid, 0);
+        // What borrowers still owe (principal + interest), from each loan's schedule.
+        const totalOutstanding = customers.reduce((sum, cust) => sum + Number(cust.outstandingAmount || 0), 0);
+        const interestEarned = payments.reduce((sum, pay) => sum + Number(pay.interest || 0), 0);
 
         let totalIncome = 0;
         incomeData.forEach(inc => totalIncome += Number(inc.amount || 0));
@@ -142,7 +144,7 @@ export const useDashboardData = () => {
             totalOutstanding,
             totalCredit,
             totalDebit,
-            interestEarned: 0, // No specific interest data available in the schema
+            interestEarned,
             closingBalance,
             monthlyData,
             incomeBreakdown,
@@ -161,11 +163,15 @@ export const useDashboardData = () => {
       } catch (error) {
         console.error("Error calculating dashboard data:", error);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
     fetchData();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   return { data, loading };

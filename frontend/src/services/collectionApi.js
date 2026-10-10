@@ -4,8 +4,6 @@ import { apiGet, apiPost } from './api'
 // loan's installments (oldest first, interest before principal) in the same
 // transaction that saves it, so the schedule is always in step.
 
-const LEGACY_PAYMENTS_KEY = 'motoLendPaymentHistory'
-
 const toPayment = (collection) => ({
   id: collection.id,
   customerId: collection.customerId,
@@ -20,24 +18,10 @@ const toPayment = (collection) => ({
   remarks: collection.remarks,
 })
 
-/*
- * Ledger and Dashboard still read payments from localStorage; keep a copy
- * there until they are moved to the API.
- */
-const writeLegacyMirror = (payments) => {
-  try {
-    localStorage.setItem(LEGACY_PAYMENTS_KEY, JSON.stringify(payments))
-  } catch {
-    // Quota or private mode: those pages simply show stale data.
-  }
-}
-
 // Posted payments only; reversed or rejected collections moved no money.
 export const loadPayments = async () => {
   const collections = await apiGet('/collections')
-  const payments = collections.filter((item) => item.status === 'Approved').map(toPayment)
-  writeLegacyMirror(payments)
-  return payments
+  return collections.filter((item) => item.status === 'Approved').map(toPayment)
 }
 
 // clientRef is made once per payment attempt (when the dialog opens) so a

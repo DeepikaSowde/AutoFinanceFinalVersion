@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import './App.css'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import LanguageSwitcher from './components/LanguageSwitcher'
@@ -15,18 +15,9 @@ import UserManagement from './pages/UserManagement'
 import Reminder from './pages/Reminder'
 import Login from './pages/auth/Login'
 import ProtectedRoute from './components/auth/ProtectedRoute'
-import { loadCustomerEntries } from './services/customerApi'
-import { loadPayments } from './services/collectionApi'
-import { loadInvestorData } from './services/investorApi'
-import { loadExpenses, loadIncomes } from './services/ledgerApi'
 
 function AppShell() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth >= 640 && window.innerWidth < 1024)
-
-  // Refresh the copies the not-yet-migrated Dashboard reads from localStorage.
-  useEffect(() => {
-    Promise.allSettled([loadCustomerEntries(), loadPayments(), loadInvestorData(), loadIncomes(), loadExpenses()])
-  }, [])
 
   return (
     <div className={`min-h-screen bg-slate-50 transition-all duration-300 ${isSidebarCollapsed ? 'sm:pl-20' : 'sm:pl-64'}`}>

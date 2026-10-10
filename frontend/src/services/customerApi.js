@@ -10,8 +10,6 @@ import { apiGet, apiPost } from './api'
 // Uploaded KYC documents keep their metadata only; the server does not store
 // document images. The vehicle photo is kept in full.
 
-const LEGACY_MIRROR_KEY = 'motoLendCustomersList_data'
-
 /* ---------- files ---------- */
 
 const fileMeta = (file, type) =>
@@ -322,24 +320,9 @@ const toEntry = (record, loan) => {
 
 const loansOf = (record) => [record.loan, ...(record.loans || [])].filter((loan) => loan?.id)
 
-/*
- * Pages not yet moved to the API (Collection, Ledger, Dashboard) still read
- * the old localStorage list, so keep a copy there until they are wired.
- * The vehicle photo is left out to stay within the browser's storage quota.
- */
-const writeLegacyMirror = (entries) => {
-  try {
-    const slim = entries.map((entry) => ({ ...entry, vehicle: { ...entry.vehicle, photo: null } }))
-    localStorage.setItem(LEGACY_MIRROR_KEY, JSON.stringify(slim))
-  } catch {
-    // Quota or private mode: those pages simply show stale data.
-  }
-}
-
 export const loadCustomerEntries = async () => {
   const records = await apiGet('/customers')
   const entries = records.flatMap((record) => loansOf(record).map((loan) => toEntry(record, loan)))
-  writeLegacyMirror(entries)
   return entries
 }
 
