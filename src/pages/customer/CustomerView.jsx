@@ -4,8 +4,9 @@ import {
   Clock, CheckCircle2, AlertTriangle, Car, Shield, Activity, Users, CreditCard,
   FileCheck, FileText as FileTextIcon, Download, X, UserCheck, Wallet, ShieldCheck
 } from 'lucide-react';
-import RepaymentScheduleTable from '../../components/RepaymentScheduleTable';
+import RepaymentScheduleTable, { generateSchedule, computeEffectiveSchedule } from '../../components/RepaymentScheduleTable';
 import { calculateRepayment } from '../../components/Loantab';
+import { calculateLoanOutstanding } from '../../utils/loanCalculations';
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -168,32 +169,14 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
         return cId.toLowerCase() === targetCId;
       })
       .map((d, index) => {
-        const vehicleAmount = Number(
-          d.loan?.vehicleAmount !== undefined && d.loan?.vehicleAmount !== ""
-            ? d.loan.vehicleAmount
-            : (d.vehicle?.amount || 0)
-        );
-        const downPayment = Number(d.loan?.downPayment || 0);
-        const calculatedPrincipal = Math.max(vehicleAmount - downPayment, 0);
-        const loanAmount = Number(d.loanAmount || calculatedPrincipal || 0);
-        
         const lId = extractRecordLoanId(d) || `LN-${String(index + 1).padStart(3, "0")}`;
         const cId = extractRecordCustomerId(d) || customerId;
 
-        // Calculate collections for this specific loan from payment history
-        const paymentsForLoan = allPayments.filter(
-          p => p.loanId === lId && p.status !== "Failed" && p.status !== "Cancelled" && p.status !== "Reversed"
-        );
-        const totalPaidForLoan = paymentsForLoan.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-
-        let outstandingAmount = loanAmount;
-        if (d.outstandingAmount !== undefined && d.outstandingAmount !== null && !isNaN(Number(d.outstandingAmount))) {
-          outstandingAmount = Number(d.outstandingAmount);
-        } else if (totalPaidForLoan > 0) {
-          outstandingAmount = Math.max(0, loanAmount - totalPaidForLoan);
-        }
-
-        const status = d.status || (outstandingAmount <= 0.01 && loanAmount > 0 ? 'Closed' : 'Active');
+        const loanCalc = calculateLoanOutstanding(d, allPayments);
+        const loanAmount = loanCalc.principal;
+        const outstandingAmount = loanCalc.outstandingAmount;
+        const status = d.status || loanCalc.status;
+        const totalPaidForLoan = loanCalc.totalRepaid;
 
         return {
           ...d,
@@ -202,7 +185,8 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
           outstandingAmount,
           loanId: lId,
           status,
-          totalPaidForLoan
+          totalPaidForLoan,
+          loanCalculations: loanCalc
         };
       });
   }, [allData, allPayments, customerId]);
@@ -281,13 +265,41 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
   const selectedLoanPayments = useMemo(() => {
     if (!activeSelectedLoanId) return [];
     return allPayments.filter(
-      p => p.loanId === activeSelectedLoanId && p.status !== "Failed" && p.status !== "Cancelled" && p.status !== "Reversed"
+      p => (p.loanId ? p.loanId === activeSelectedLoanId : p.customerId === customerId) &&
+           p.status !== "Failed" && p.status !== "Cancelled" && p.status !== "Reversed"
     );
-  }, [allPayments, activeSelectedLoanId]);
+  }, [allPayments, activeSelectedLoanId, customerId]);
+
+  // Base schedule for the selected loan
+  const selectedLoanBaseSchedule = useMemo(() => {
+    if (selectedLoanData?.repaymentSchedule && selectedLoanData.repaymentSchedule.length > 0) {
+      return selectedLoanData.repaymentSchedule;
+    }
+    if (selectedLoanData?.loanAmount && selectedLoanData.loan?.interestRate && selectedLoanData.loan?.tenure) {
+      return generateSchedule({
+        loanAmount: selectedLoanData.loanAmount,
+        interestRate: selectedLoanData.loan.interestRate,
+        tenure: selectedLoanData.loan.tenure,
+        tenureUnit: selectedLoanData.loan.tenureUnit || "Months",
+        paymentFrequency: selectedLoanData.loan.paymentFrequency || "Monthly",
+        interestType: selectedLoanData.loan.interestType || "Reducing Balance",
+        repaymentMethod: selectedLoanData.loan.repaymentMethod || "EMI",
+        firstDueDate: selectedLoanData.loan.firstDueDate,
+      });
+    }
+    return [];
+  }, [selectedLoanData]);
+
+  // Effective authoritative schedule reconciled with actual recorded transactions
+  const effectiveCustomerLoanSchedule = useMemo(() => {
+    return computeEffectiveSchedule(selectedLoanBaseSchedule, selectedLoanPayments);
+  }, [selectedLoanBaseSchedule, selectedLoanPayments]);
 
   const totalPaidForSelectedLoan = useMemo(() => {
-    return selectedLoanPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  }, [selectedLoanPayments]);
+    const fromPayments = selectedLoanPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const fromSchedule = effectiveCustomerLoanSchedule.reduce((sum, s) => sum + (Number(s.amountPaid) || 0), 0);
+    return selectedLoanPayments.length > 0 ? fromPayments : fromSchedule;
+  }, [selectedLoanPayments, effectiveCustomerLoanSchedule]);
 
   return (
     <div className="bg-slate-50">
@@ -627,19 +639,25 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                       </div>
                       <div className="p-5 flex-1 flex flex-col justify-center">
                         {(() => {
-                          const totalRepay = loanSummary?.totalAmount || selectedLoanData.loanAmount || 0;
+                          const totalRepay = effectiveCustomerLoanSchedule.length > 0
+                            ? effectiveCustomerLoanSchedule.reduce((sum, s) => sum + Number(s.emi || 0), 0)
+                            : (loanSummary?.totalAmount || selectedLoanData.loanAmount || 0);
                           const paid = totalPaidForSelectedLoan || 0;
                           const pct = totalRepay > 0 ? Math.min(100, Math.round((paid / totalRepay) * 100)) : 0;
                           const pendingPct = Math.max(0, 100 - pct);
-                          const paidInst = loanSummary?.emiAmount && loanSummary.emiAmount > 0 ? Math.min(loanSummary.numberOfPayments || 0, Math.floor(paid / loanSummary.emiAmount)) : 0;
-                          const pendingInst = Math.max(0, (loanSummary?.numberOfPayments || 0) - paidInst);
+
+                          const totalInstCount = effectiveCustomerLoanSchedule.length || loanSummary?.numberOfPayments || 0;
+                          const paidInst = effectiveCustomerLoanSchedule.filter(
+                            (s) => s.status === 'Paid' || s.status === 'Collected'
+                          ).length;
+                          const pendingInst = Math.max(0, totalInstCount - paidInst);
 
                           return (
                             <>
                               <div className="text-center mb-6">
                                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Total Paid</p>
                                 <p className="text-3xl font-black text-emerald-700">{formatCurrency(paid)}</p>
-                                <p className="text-xs text-slate-500 mt-1">out of {loanSummary ? formatCurrency(totalRepay) : '—'}</p>
+                                <p className="text-xs text-slate-500 mt-1">out of {formatCurrency(totalRepay)}</p>
                               </div>
                               
                               <div className="space-y-2">
@@ -671,10 +689,13 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mt-6">
                     <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-emerald-600"/> Repayment Schedule</h3>
-                    <RepaymentScheduleTable loanDetails={{
-                      ...selectedLoanData.loan,
-                      loanAmount: selectedLoanData.loanAmount
-                    }} />
+                    <RepaymentScheduleTable
+                      schedule={effectiveCustomerLoanSchedule}
+                      loanDetails={{
+                        ...selectedLoanData.loan,
+                        loanAmount: selectedLoanData.loanAmount
+                      }}
+                    />
                   </div>
                 </>
               ) : (
@@ -933,7 +954,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                             {formatCurrency(p.amount)}
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                            {p.paymentMethod || p.method || 'Cash'}
+                            {p.paymentMethod || p.method || p.mode || 'Cash'}
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 text-center">
                             <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">

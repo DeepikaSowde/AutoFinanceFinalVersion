@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { calculateTotalPortfolioOutstanding } from '../utils/loanCalculations.js';
 
 export const useDashboardData = () => {
   const [data, setData] = useState({
@@ -37,7 +38,9 @@ export const useDashboardData = () => {
             totalRepaid += Number(pay.amount || 0);
         });
 
-        const totalOutstanding = Math.max(totalDisbursed - totalRepaid, 0);
+        // Calculate Total Outstanding across all loans (Remaining Principal + Remaining Interest)
+        const portfolio = calculateTotalPortfolioOutstanding(customers, payments);
+        const totalOutstanding = portfolio.totalOutstanding;
 
         let totalIncome = 0;
         incomeData.forEach(inc => totalIncome += Number(inc.amount || 0));
@@ -193,6 +196,8 @@ export const useDashboardData = () => {
     };
 
     fetchData();
+    window.addEventListener("storage", fetchData);
+    return () => window.removeEventListener("storage", fetchData);
   }, []);
 
   return { data, loading };

@@ -13,6 +13,7 @@ import {
 
 import { getCustomerOnboarding } from "../../utils/customerOnboardingStorage";
 import CustomerView from "./CustomerView";
+import { calculateLoanOutstanding } from "../../utils/loanCalculations";
 
 const formatCurrency = (value) => {
   const amount = Math.round(Number(value || 0));
@@ -94,6 +95,7 @@ const SummaryCard = ({ icon: Icon, title, value }) => {
 
 const Customer = () => {
   const [customerData, setCustomerData] = useState([]);
+  const [allPayments, setAllPayments] = useState([]);
 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("All");
@@ -111,8 +113,17 @@ const Customer = () => {
         console.error("Failed to load customer data:", error);
         setCustomerData([]);
       }
+      try {
+        const savedPayments = JSON.parse(localStorage.getItem("motoLendPaymentHistory") || "[]");
+        setAllPayments(savedPayments);
+      } catch (error) {
+        console.error("Failed to load payments data:", error);
+        setAllPayments([]);
+      }
     };
     loadCustomer();
+    window.addEventListener("storage", loadCustomer);
+    return () => window.removeEventListener("storage", loadCustomer);
   }, []);
 
   const hasCustomer = customerData.length > 0;
@@ -126,15 +137,10 @@ const Customer = () => {
       const customerId = getCustomerId(data);
       const loanId = getLoanId(data, customerId);
 
-      const vehicleAmount = Number(vehicle.amount || 0);
-      const loanVehicleAmount = loan.vehicleAmount !== null && loan.vehicleAmount !== undefined && loan.vehicleAmount !== ""
-        ? Number(loan.vehicleAmount)
-        : vehicleAmount;
-
-      const downPayment = Number(loan.downPayment || 0);
-      const loanAmount = Math.max(loanVehicleAmount - downPayment, 0);
-      const outstandingAmount = loanAmount;
-      const customerStatus = customer.name ? "Active" : "—";
+      const loanCalc = calculateLoanOutstanding(data, allPayments);
+      const loanAmount = loanCalc.principal;
+      const outstandingAmount = loanCalc.outstandingAmount;
+      const customerStatus = data.status || (customer.name ? "Active" : "—");
 
       return {
         ...data,
@@ -148,7 +154,7 @@ const Customer = () => {
         status: customerStatus
       };
     });
-  }, [customerData]);
+  }, [customerData, allPayments]);
 
   const filteredCustomers = useMemo(() => {
     if (!hasCustomer) return [];

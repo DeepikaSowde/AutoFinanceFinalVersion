@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { 
   Search, 
   Calendar as CalendarIcon, 
@@ -89,6 +89,7 @@ const Collection = () => {
   const [paymentMode, setPaymentMode] = useState("Cash");
   const [remarks, setRemarks] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   // Amount Collected Successfully Modal state
   const [confirmedTransaction, setConfirmedTransaction] = useState(null);
@@ -298,7 +299,7 @@ const Collection = () => {
 
   // Handle Confirm Payment Submission
   const handleConfirmPayment = () => {
-    if (isSubmitting) return;
+    if (submittingRef.current || isSubmitting) return;
 
     if (!collectAmount || isNaN(collectAmount) || Number(collectAmount) <= 0) {
       alert("Please enter a valid payment amount greater than 0.");
@@ -307,6 +308,7 @@ const Collection = () => {
 
     if (!selectedCustomer) return;
 
+    submittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -384,11 +386,29 @@ const Collection = () => {
         loanStatus = "Active";
       }
 
-      // 1. Update customer record
+      // 1. Clean customer record and update schedule & balances
+      const {
+        fullSchedule,
+        overdueInstalls,
+        todayInstalls,
+        allUnpaidInstalls,
+        isDueToday,
+        isOverdue,
+        overdueCount,
+        totalDueToday,
+        totalOverdue,
+        totalUnpaidInstallmentAmount,
+        originalDueToday,
+        originalOverdue,
+        currentTotalDue,
+        statusText,
+        ...cleanCustomer
+      } = selectedCustomer;
+
       const updatedCustomer = {
-        ...selectedCustomer,
+        ...cleanCustomer,
         repaymentSchedule: schedule,
-        outstandingAmount: totalPrincipalOutstanding,
+        outstandingAmount: totalLoanOutstanding,
         totalPrincipalOutstanding,
         totalInterestOutstanding,
         totalLoanOutstanding,
@@ -399,7 +419,9 @@ const Collection = () => {
 
       const existingCustomers = JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]");
       const updatedCustomersList = existingCustomers.map((c) =>
-        c.loanId === selectedCustomer.loanId ? updatedCustomer : c
+        (c.loanId && c.loanId.trim().toLowerCase() === selectedCustomer.loanId?.trim().toLowerCase())
+          ? updatedCustomer
+          : c
       );
       localStorage.setItem("motoLendCustomersList_data", JSON.stringify(updatedCustomersList));
 
@@ -412,6 +434,7 @@ const Collection = () => {
         customerId: selectedCustomer.customerId,
         customerName: selectedCustomer.customer?.name || "Customer",
         loanId: selectedCustomer.loanId,
+        installmentNumber: appliedAllocations[0]?.installmentNumber,
         date: paymentDate || new Date().toISOString(),
         amount: amt,
         principal: totalPrincipalRecovered,
@@ -450,6 +473,7 @@ const Collection = () => {
       console.error("Payment failed to process:", error);
       alert("Payment processing failed. No changes were made.");
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
