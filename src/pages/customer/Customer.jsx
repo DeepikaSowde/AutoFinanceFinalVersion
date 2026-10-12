@@ -15,29 +15,26 @@ import { getCustomerOnboarding } from "../../utils/customerOnboardingStorage";
 import CustomerView from "./CustomerView";
 
 const formatCurrency = (value) => {
-  const amount = Number(value || 0);
+  const amount = Math.round(Number(value || 0));
 
   return `₹${amount.toLocaleString("en-IN")}`;
 };
 
-const getCustomerId = (customer) => {
-  if (!customer) return null;
-
-  if (customer.customerId) {
-    return customer.customerId;
-  }
-
-  if (customer.mobile) {
-    return `CUS-${customer.mobile.slice(-5)}`;
-  }
-
+const getCustomerId = (data) => {
+  if (!data) return null;
+  if (data.customerId) return data.customerId;
+  if (data.customer?.customerId) return data.customer.customerId;
+  if (data.customer?.mobile) return `CUS-${data.customer.mobile.slice(-5)}`;
+  if (data.mobile) return `CUS-${data.mobile.slice(-5)}`;
   return null;
 };
 
-const getLoanId = (customerId) => {
-  if (!customerId) return null;
-
-  return `LN-${customerId.replace("CUS-", "")}`;
+const getLoanId = (data, customerId) => {
+  if (!data) return null;
+  if (data.loanId) return data.loanId;
+  if (data.loan?.loanId) return data.loan.loanId;
+  if (customerId) return `LN-${customerId.replace("CUS-", "")}`;
+  return null;
 };
 
 const getLoanAmount = (loan, vehicle) => {
@@ -73,18 +70,20 @@ const StatusBadge = ({ status }) => {
 
 const SummaryCard = ({ icon: Icon, title, value }) => {
   return (
-    <div className="h-[113px] rounded-md border border-slate-200 bg-white px-5 py-4">
-      <div className="flex h-full items-center gap-5">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-50">
-          <Icon className="h-6 w-6 text-emerald-700" strokeWidth={2} />
+    <div className="min-h-[96px] h-full rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm transition-shadow hover:shadow-md min-w-0 w-full">
+      <div className="flex h-full items-center gap-3.5 sm:gap-4 min-w-0">
+        <div className="flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
+          <Icon className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-700" strokeWidth={1.8} />
         </div>
 
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-700">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs sm:text-sm font-medium text-slate-500 mb-0.5 sm:mb-1 leading-snug break-words">
             {title}
           </p>
 
-          <p className="mt-2 truncate text-[29px] font-bold leading-none tracking-tight text-slate-900">
+          <p 
+            className="text-base sm:text-lg lg:text-xl font-bold tracking-tight text-slate-900 whitespace-nowrap leading-tight"
+          >
             {value}
           </p>
         </div>
@@ -100,6 +99,7 @@ const Customer = () => {
   const [status, setStatus] = useState("All");
   const [statusOpen, setStatusOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  const [selectedLoanId, setSelectedLoanId] = useState(null);
 
   useEffect(() => {
     const loadCustomer = () => {
@@ -123,8 +123,8 @@ const Customer = () => {
       const vehicle = data.vehicle || {};
       const loan = data.loan || {};
 
-      const customerId = getCustomerId(customer);
-      const loanId = getLoanId(customerId);
+      const customerId = getCustomerId(data);
+      const loanId = getLoanId(data, customerId);
 
       const vehicleAmount = Number(vehicle.amount || 0);
       const loanVehicleAmount = loan.vehicleAmount !== null && loan.vehicleAmount !== undefined && loan.vehicleAmount !== ""
@@ -175,10 +175,20 @@ const Customer = () => {
 
   const handleView = (item) => {
     setSelectedCustomerId(item.customerId);
+    setSelectedLoanId(item.loanId);
   };
 
   if (selectedCustomerId) {
-    return <CustomerView customerId={selectedCustomerId} onBack={() => setSelectedCustomerId(null)} />;
+    return (
+      <CustomerView 
+        customerId={selectedCustomerId} 
+        initialLoanId={selectedLoanId}
+        onBack={() => {
+          setSelectedCustomerId(null);
+          setSelectedLoanId(null);
+        }} 
+      />
+    );
   }
 
   const totalCustomers = processedCustomers.length;
@@ -210,7 +220,7 @@ const Customer = () => {
           SUMMARY CARDS
       ========================== */}
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:mt-8 lg:grid-cols-3">
+      <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 lg:mt-8">
 
         <SummaryCard
           icon={Users}

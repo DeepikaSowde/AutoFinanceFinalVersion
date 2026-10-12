@@ -23,7 +23,7 @@ import {
 
 const Sidebar = ({ onCollapsedChange }) => {
   const [isOpen, setIsOpen] = useState(false)
-  const [isCollapsed, setIsCollapsed] = useState(() => window.innerWidth >= 640 && window.innerWidth < 1024)
+  const [isCollapsed, setIsCollapsed] = useState(true)
   const { t } = useTranslation()
 
   useEffect(() => {
@@ -40,19 +40,7 @@ const Sidebar = ({ onCollapsedChange }) => {
       if (currentBreakpoint !== lastBreakpoint) {
         lastBreakpoint = currentBreakpoint
         
-        if (currentBreakpoint === 'desktop') {
-          setIsCollapsed(false)
-          onCollapsedChange(false)
-          setIsOpen(false)
-        } else if (currentBreakpoint === 'tablet') {
-          setIsCollapsed(true)
-          onCollapsedChange(true)
-          setIsOpen(false)
-        } else {
-          setIsCollapsed(false)
-          onCollapsedChange(false)
-          setIsOpen(false)
-        }
+        setIsOpen(false)
       }
     }
 
@@ -92,7 +80,7 @@ const Sidebar = ({ onCollapsedChange }) => {
   ]
 
   const moduleItems = [
-    { name: 'Loan', path: '/newloan', icon: HandCoins },
+    { name: 'Loan', path: '/loans', icon: HandCoins },
     { name: 'Collection', path: '/collection', icon: WalletCards },
     { name: 'Vehicle', path: '/vehicle', icon: Car },
     { name: 'Ledger', path: '/ledger', icon: ReceiptText },
@@ -110,13 +98,14 @@ const Sidebar = ({ onCollapsedChange }) => {
 
   return (
     <>
+      {/* Edge Sidebar Toggle for Mobile */}
       <button
         type="button"
-        onClick={() => setIsOpen(true)}
-        className="fixed left-4 top-4 z-40 rounded-lg bg-[#006B52] p-2.5 text-[#FFFFFF] shadow-md hover:bg-[#005344] focus:outline-none focus:ring-2 focus:ring-[#39D6A3] sm:hidden"
-        aria-label="Open navigation menu"
+        onClick={() => setIsOpen((prev) => !prev)}
+        className={`fixed ${isOpen ? 'left-64' : 'left-0'} top-1/2 -translate-y-1/2 z-50 sm:hidden flex items-center justify-center rounded-r-lg bg-[#006B52] hover:bg-[#005344] text-[#FFFFFF] shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-[#39D6A3] h-11 w-7 active:scale-95`}
+        aria-label={isOpen ? "Close navigation" : "Open navigation"}
       >
-        <Menu className="h-5 w-5" />
+        {isOpen ? <ChevronLeft className="h-4 w-4" /> : <Menu className="h-4 w-4 ml-0.5" />}
       </button>
 
       {isOpen && (

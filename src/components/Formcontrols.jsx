@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 export const formatINR = (n) =>
   n === '' || n === null || n === undefined || isNaN(Number(n))
     ? '—'
-    : `₹ ${Number(n).toLocaleString('en-IN')}`
+    : `₹ ${Math.round(Number(n)).toLocaleString('en-IN')}`
 
 export const formatDate = (iso) => {
   if (!iso) return '—'
@@ -37,42 +37,42 @@ export const ClockIcon = (p) => <Svg {...p}><circle cx="12" cy="12" r="10" /><pa
 /* ---------- layout ---------- */
 export const SectionCard = ({ title, right, children, className = '' }) => (
   <section className={`overflow-hidden rounded-lg border border-emerald-100 bg-white ${className}`}>
-    <header className="flex flex-wrap items-center justify-between gap-2 bg-emerald-50 px-4 py-3">
-      <h3 className="text-sm font-semibold text-emerald-900 sm:text-base">{title}</h3>
+    <header className="flex flex-wrap items-center justify-between gap-2 bg-emerald-50 px-3.5 py-2 sm:px-4 sm:py-2.5">
+      <h3 className="text-xs font-semibold text-emerald-900 sm:text-sm">{title}</h3>
       {right}
     </header>
-    <div className="p-4">{children}</div>
+    <div className="p-3 sm:p-3.5">{children}</div>
   </section>
 )
 
 export const Field = ({ label, required, hint, children, className = '' }) => (
   <div className={className}>
     {label && (
-      <label className="mb-1 block text-xs font-medium text-slate-700 sm:text-sm">
+      <label className="mb-1 block text-xs font-medium text-slate-700">
         {label}
         {required && <span className="ml-0.5 text-red-500">*</span>}
       </label>
     )}
     {children}
-    {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+    {hint && <p className="mt-0.5 text-[11px] text-slate-500">{hint}</p>}
   </div>
 )
 
 export const InfoNote = ({ children }) => (
-  <div className="flex items-start gap-2 rounded-md bg-emerald-50 px-3 py-2 text-xs text-slate-600">
-    <InfoIcon className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+  <div className="flex items-start gap-2 rounded-md bg-emerald-50 px-2.5 py-1.5 text-xs text-slate-600">
+    <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" />
     <span>{children}</span>
   </div>
 )
 
 /* ---------- inputs ---------- */
 export const inputCls =
-  'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
+  'w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
 
 export const Input = ({ className = '', ...props }) => <input className={`${inputCls} ${className}`} {...props} />
 
-export const Textarea = ({ className = '', ...props }) => (
-  <textarea rows={3} className={`${inputCls} resize-y ${className}`} {...props} />
+export const Textarea = ({ className = '', rows = 2, ...props }) => (
+  <textarea rows={rows} className={`${inputCls} resize-y ${className}`} {...props} />
 )
 
 export const Select = ({
@@ -111,13 +111,12 @@ export const Select = ({
     </div>
   );
 };
-
 /** Input with a fixed prefix (₹) or suffix (%, Days, Amount) */
 export const AdornedInput = ({ prefix, suffix, disabled, ...props }) => (
   <div className={`flex items-center rounded-md border border-slate-300 bg-white focus-within:border-emerald-600 focus-within:ring-1 focus-within:ring-emerald-600 ${disabled ? 'bg-slate-50' : ''}`}>
-    {prefix && <span className="pl-3 text-sm text-slate-500">{prefix}</span>}
-    <input disabled={disabled} className="w-full min-w-0 bg-transparent px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:text-slate-400" {...props} />
-    {suffix && <span className="border-l border-slate-200 px-3 py-2 text-sm text-slate-500">{suffix}</span>}
+    {prefix && <span className="pl-2.5 text-xs sm:text-sm text-slate-500">{prefix}</span>}
+    <input disabled={disabled} className="w-full min-w-0 bg-transparent px-2.5 py-1.5 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:text-slate-400" {...props} />
+    {suffix && <span className="border-l border-slate-200 px-2.5 py-1.5 text-xs sm:text-sm text-slate-500">{suffix}</span>}
   </div>
 )
 

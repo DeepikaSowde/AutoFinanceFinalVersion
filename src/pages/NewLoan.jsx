@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import CustomerTab from '../components/CustomerTab'
 import VehicleTab from '../components/Vehicletab'
@@ -63,8 +64,8 @@ const initialForm = () => ({
 
 /* ---------- stepper ---------- */
 const Stepper = ({ current, onStepClick, t }) => (
-  <div className="overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-    <ol className="flex items-start min-w-[500px] sm:min-w-0">
+  <div className="overflow-x-auto pb-1 -mx-2 px-2 sm:mx-0 sm:px-0">
+    <ol className="flex items-start min-w-[440px] sm:min-w-0">
       {STEPS.map((s, i) => {
         const done = i < current
         const active = i === current
@@ -73,22 +74,22 @@ const Stepper = ({ current, onStepClick, t }) => (
             <button
               type="button"
               onClick={() => onStepClick(i)}
-              className="flex flex-col items-center gap-1 focus:outline-none"
+              className="flex flex-col items-center gap-1 focus:outline-none cursor-pointer group"
               aria-current={active ? 'step' : undefined}
             >
               <span
-                className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold ${
+                className={`flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold transition-all ${
                   done || active
-                    ? 'border-emerald-800 bg-emerald-800 text-white'
-                    : 'border-slate-300 bg-white text-slate-500'
-                } ${active ? 'ring-4 ring-emerald-100' : ''}`}
+                    ? 'border-emerald-800 bg-emerald-800 text-white shadow-xs'
+                    : 'border-slate-300 bg-white text-slate-500 group-hover:border-slate-400'
+                } ${active ? 'ring-3 ring-emerald-100' : ''}`}
               >
                 {done ? '✓' : i + 1}
               </span>
-              <span className={`text-[11px] sm:text-xs whitespace-nowrap ${active ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{t(s.labelKey)}</span>
+              <span className={`text-[10px] sm:text-xs whitespace-nowrap transition-colors ${active ? 'font-semibold text-slate-900' : 'text-slate-500 group-hover:text-slate-700'}`}>{t(s.labelKey)}</span>
             </button>
             {i < STEPS.length - 1 && (
-              <span className={`mx-1 mt-3.5 h-0.5 flex-1 sm:mx-2 ${done ? 'bg-emerald-700' : 'bg-slate-200'}`} />
+              <span className={`mx-1 mt-3 h-0.5 flex-1 sm:mx-2 transition-colors ${done ? 'bg-emerald-700' : 'bg-slate-200'}`} />
             )}
           </li>
         )
@@ -231,7 +232,7 @@ const NewLoan = () => {
         tenureUnit: form.loan.tenureUnit,
         paymentFrequency: form.loan.paymentFrequency,
         interestType: form.loan.interestType,
-        repaymentMethod: 'EMI'
+        repaymentMethod: form.loan.repaymentMethod || 'EMI'
       })
       
       const emiAmount = repayment.emiAmount || 0
@@ -306,27 +307,41 @@ const NewLoan = () => {
   const handleViewSchedule = () => setShowScheduleModal(true)
   const handleFetchVehicle = () => console.log('Fetch vehicle details', form.vehicle.regNo)
 
-  const outlineBtn = 'rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:border-emerald-700 hover:text-emerald-800'
-  const primaryBtn = 'inline-flex items-center justify-center gap-2 rounded-md bg-emerald-800 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50'
+  const navigate = useNavigate()
+
+  const outlineBtn = 'rounded-md border border-slate-300 bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-slate-800 hover:border-emerald-700 hover:text-emerald-800 transition-colors'
+  const primaryBtn = 'inline-flex items-center justify-center gap-1.5 sm:gap-2 rounded-md bg-emerald-800 px-4 sm:px-5 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50 transition-colors'
 
   return (
-    <div className="mx-auto w-full max-w-5xl p-2 sm:p-4 h-[calc(100vh-72px)] lg:h-full flex flex-col">
-      <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm flex-1 min-h-0">
+    <div className="mx-auto w-full max-w-5xl px-2 py-2 sm:px-4 sm:py-3 h-full flex flex-col flex-1 min-h-0">
+      {/* Top Navigation */}
+      <div className="shrink-0 mb-1.5 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => navigate('/loans')}
+          className="group inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-500 hover:text-emerald-800 transition-colors focus:outline-none"
+        >
+          <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform group-hover:-translate-x-0.5" />
+          <span>Back to Loans</span>
+        </button>
+      </div>
+
+      <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs flex-1 min-h-0">
         {/* Header */}
-        <div className="shrink-0 space-y-3 px-4 pt-4 sm:px-6">
+        <div className="shrink-0 space-y-2 px-3 pt-3 sm:px-5 sm:pt-3.5 border-b border-slate-100 pb-2.5">
           <div>
-            <h1 className="text-lg font-semibold text-slate-900 sm:text-xl">{t(current.titleKey)}</h1>
-            <p className="text-sm text-slate-500">{t(current.subtitleKey)}</p>
+            <h1 className="text-base font-bold text-slate-900 sm:text-lg tracking-tight">{t(current.titleKey)}</h1>
+            <p className="text-xs text-slate-500">{t(current.subtitleKey)}</p>
           </div>
           <Stepper current={step} onStepClick={setStep} t={t} />
         </div>
 
         {/* Active tab */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 min-h-0 bg-white">
+        <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5 sm:py-3.5 min-h-0 bg-white">
           {step === 0 && (
-            <div className="space-y-3">
-              <div className="rounded-lg border border-slate-200 bg-white p-1.5">
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            <div className="space-y-2.5">
+              <div className="rounded-lg border border-slate-200 bg-white p-1">
+                <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                   {[
                     { id: 'customer', label: t('app.sections.customer'), description: t('app.sections.customerDescription') },
                     { id: 'guarantor', label: t('app.sections.guarantor'), description: t('app.sections.guarantorDescription') },
@@ -337,12 +352,12 @@ const NewLoan = () => {
                         key={section.id}
                         type="button"
                         onClick={() => setCustomerSection(section.id)}
-                        className={`rounded-md px-3 py-2.5 text-left transition ${
-                          active ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100' : 'text-slate-500 hover:bg-slate-50'
+                        className={`rounded-md px-3 py-1.5 text-left transition cursor-pointer ${
+                          active ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200' : 'text-slate-500 hover:bg-slate-50'
                         }`}
                       >
-                        <span className="block text-sm font-semibold">{section.label}</span>
-                        <span className="mt-0.5 block text-[11px]">{section.description}</span>
+                        <span className="block text-xs sm:text-sm font-semibold">{section.label}</span>
+                        <span className="text-[10px] sm:text-[11px] opacity-80">{section.description}</span>
                       </button>
                     )
                   })}
@@ -368,16 +383,16 @@ const NewLoan = () => {
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 flex-col gap-3 border-t border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 bg-slate-50">
+        <div className="flex shrink-0 flex-col gap-2.5 border-t border-slate-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-5 bg-slate-50">
           <div>
             {!isFirst && (
-              <button type="button" onClick={goBack} className={`${outlineBtn} inline-flex w-full items-center justify-center gap-2 sm:w-auto`}>
-                <ArrowLeft className="h-4 w-4" /> {t('app.back')}
+              <button type="button" onClick={goBack} className={`${outlineBtn} inline-flex w-full items-center justify-center gap-1.5 sm:w-auto`}>
+                <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {t('app.back')}
               </button>
             )}
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             {isLast && (
               <label className="flex items-center gap-2 text-xs text-slate-600">
                 <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} className="h-4 w-4 accent-emerald-700" />
@@ -387,13 +402,13 @@ const NewLoan = () => {
             <button type="button" onClick={handleSaveDraft} className={outlineBtn}>{t('app.saveDraft')}</button>
             {isLast ? (
               <button type="button" onClick={handleSubmit} disabled={!verified} className={primaryBtn}>
-                {t('app.submitApplication')} <ArrowRight className="h-4 w-4" />
+                {t('app.submitApplication')} <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </button>
             ) : (
               <button type="button" onClick={step === 0 ? goFromCustomer : goNext} className={primaryBtn}>
                 {t('app.next')}: {step === 0 && customerSection === 'customer' && form.guarantor.required === 'Yes'
                   ? t('app.sections.guarantor')
-                  : t(STEPS[step + 1].labelKey)} <ArrowRight className="h-4 w-4" />
+                  : t(STEPS[step + 1].labelKey)} <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </button>
             )}
           </div>
@@ -426,14 +441,14 @@ const NewLoan = () => {
               <div className="flex justify-between border-b border-slate-200 pb-2">
                 <span className="text-slate-500">Loan Amount:</span>
                 <span className="font-semibold text-slate-900">
-                  ₹{Number(submittedLoan.loanAmount).toLocaleString('en-IN')}
+                  ₹{Math.round(Number(submittedLoan.loanAmount)).toLocaleString('en-IN')}
                 </span>
               </div>
               
               <div className="flex justify-between border-b border-slate-200 pb-2">
-                <span className="text-slate-500">EMI:</span>
+                <span className="text-slate-500">Installment Amount:</span>
                 <span className="font-semibold text-slate-900 text-right">
-                  ₹{Number(submittedLoan.emiAmount).toLocaleString('en-IN')} / {submittedLoan.paymentFrequency || 'Monthly'}
+                  ₹{Math.round(Number(submittedLoan.emiAmount)).toLocaleString('en-IN')} / {submittedLoan.paymentFrequency || 'Monthly'}
                 </span>
               </div>
               

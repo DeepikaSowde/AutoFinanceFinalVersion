@@ -1,9 +1,9 @@
 import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
-const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
-const COLORS = ['#0f4a36', '#3b82f6', '#10b981', '#f59e0b', '#64748b', '#8b5cf6'];
+const COLORS = ['#0f4a36', '#3b82f6', '#10b981', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899', '#64748b'];
 
 const IncomeOverviewChart = ({ data, total }) => {
   if (!data || data.length === 0) {

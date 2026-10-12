@@ -5,9 +5,15 @@ import RepaymentScheduleModal from './RepaymentScheduleModal';
 
 const digits = (value = '') => value.replace(/\D/g, '');
 
-const calculateCustomPlan = (P, annualRate, periodsPerYear, interestType, E_new, originalLoanDetails) => {
+const calculateCustomPlan = (P, monthlyRate, freq, interestType, E_new, originalLoanDetails) => {
   if (P <= 0 || E_new <= 0) return null;
-  const r_periodic = annualRate / 100 / periodsPerYear;
+  
+  let r_periodic = monthlyRate / 100;
+  if (freq === 'Daily') {
+    r_periodic = (monthlyRate / 100) / 30;
+  } else if (freq === 'Weekly') {
+    r_periodic = (monthlyRate / 100) / (52 / 12);
+  }
 
   let N = 0;
   let totalInterest = 0;
@@ -54,21 +60,20 @@ const calculateCustomPlan = (P, annualRate, periodsPerYear, interestType, E_new,
     }
   }
 
-  // Generate fake loan details to pass into modal to verify due date
+  // Generate modified loan details to pass into modal to verify due date
   let modifiedLoan = {
     ...originalLoanDetails,
     tenure: String(N),
-    tenureUnit: originalLoanDetails.paymentFrequency === 'Monthly' ? 'Months' : originalLoanDetails.paymentFrequency === 'Yearly' ? 'Years' : originalLoanDetails.paymentFrequency === 'Weekly' ? 'Weeks' : 'Periods',
+    tenureUnit: originalLoanDetails.paymentFrequency === 'Weekly' ? 'Weeks' : 'Months',
     repaymentMethod: 'EMI' // Force EMI behavior if reducing balance
   };
 
   // Calculate approx duration
   let approxWeeks = 0;
   let approxMonths = 0;
-  if (periodsPerYear === 52) { approxWeeks = N; approxMonths = (N / 4.33).toFixed(1); }
-  else if (periodsPerYear === 12) { approxMonths = N; approxWeeks = (N * 4.33).toFixed(1); }
-  else if (periodsPerYear === 26) { approxWeeks = N * 2; approxMonths = (N * 2 / 4.33).toFixed(1); }
-  else if (periodsPerYear === 365) { approxWeeks = (N / 7).toFixed(1); approxMonths = (N / 30).toFixed(1); }
+  if (freq === 'Weekly') { approxWeeks = N; approxMonths = (N / (52 / 12)).toFixed(1); }
+  else if (freq === 'Monthly') { approxMonths = N; approxWeeks = (N * (52 / 12)).toFixed(1); }
+  else if (freq === 'Daily') { approxWeeks = (N / 7).toFixed(1); approxMonths = (N / 30).toFixed(1); }
 
   return { N, totalInterest, totalPayable, modifiedLoan, approxWeeks, approxMonths };
 };
@@ -92,7 +97,7 @@ export default function RepaymentCalculator({ loanData, repaymentSummary, onChan
     setResults(null);
     const P = Number(loanData.loanAmount) || 0;
     const E_new = Number(affordableEMI) || 0;
-    const annualRate = Number(loanData.interestRate) || 0;
+    const monthlyRate = Number(loanData.interestRate) || 0;
     const freq = loanData.paymentFrequency || 'Monthly';
     
     if (P <= 0) {
@@ -104,15 +109,7 @@ export default function RepaymentCalculator({ loanData, repaymentSummary, onChan
       return;
     }
 
-    let periodsPerYear = 12;
-    if (freq === 'Weekly') periodsPerYear = 52;
-    else if (freq === 'Bi-Weekly') periodsPerYear = 26;
-    else if (freq === 'Quarterly') periodsPerYear = 4;
-    else if (freq === 'Half-Yearly') periodsPerYear = 2;
-    else if (freq === 'Yearly') periodsPerYear = 1;
-    else if (freq === 'Daily') periodsPerYear = 365;
-
-    const res = calculateCustomPlan(P, annualRate, periodsPerYear, loanData.interestType, E_new, loanData);
+    const res = calculateCustomPlan(P, monthlyRate, freq, loanData.interestType, E_new, loanData);
     
     if (!res) {
       setError('Unable to calculate.');
@@ -134,9 +131,10 @@ export default function RepaymentCalculator({ loanData, repaymentSummary, onChan
     if (newTenureUnit === 'Years') {
       if (freq === 'Monthly') newTenure = (results.N / 12).toFixed(2);
       else if (freq === 'Weekly') newTenure = (results.N / 52).toFixed(2);
-      else if (freq === 'Yearly') newTenure = results.N;
+      else if (freq === 'Daily') newTenure = (results.N / 365).toFixed(2);
     } else if (newTenureUnit === 'Months') {
-      if (freq === 'Weekly') newTenure = (results.N / 4.33).toFixed(2);
+      if (freq === 'Weekly') newTenure = (results.N / (52 / 12)).toFixed(2);
+      else if (freq === 'Daily') newTenure = (results.N / 30).toFixed(2);
       else if (freq === 'Monthly') newTenure = results.N;
     }
 

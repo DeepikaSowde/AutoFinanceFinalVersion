@@ -4,6 +4,7 @@ import './App.css'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import LanguageSwitcher from './components/LanguageSwitcher'
 import Sidebar from './components/Sidebar'
+import Loans from './pages/Loans'
 import NewLoan from './pages/NewLoan'
 import Customer from './pages/customer/Customer'
 import Investors from './pages/Investors/Investors'
@@ -16,19 +17,20 @@ import UserManagement from './pages/UserManagement'
 import Reminder from './pages/Reminder'
 
 function App() {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth >= 640 && window.innerWidth < 1024)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
 
   return (
     <BrowserRouter>
       <div className={`min-h-screen bg-slate-50 transition-all duration-300 ${isSidebarCollapsed ? 'sm:pl-20' : 'sm:pl-64'}`}>
         <Sidebar onCollapsedChange={setIsSidebarCollapsed} />
         <main className="min-h-screen flex flex-col sm:pl-3">
-          <header className="flex h-12 shrink-0 items-center justify-end px-4 sm:px-6">
+          <header className="hidden items-center justify-end px-4 sm:px-6">
             <LanguageSwitcher />
           </header>
           <Routes>
-            <Route path="/" element={<Navigate to="/newloan" replace />} />
+            <Route path="/" element={<Navigate to="/loans" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/loans" element={<Loans />} />
             <Route path="/newloan" element={<NewLoan />} />
             <Route path="/customers" element={<Customer />} />
             <Route path="/investors" element={<Investors />} />

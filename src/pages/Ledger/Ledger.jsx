@@ -23,7 +23,7 @@ import {
 import { isDateInRange } from "../../utils/dateUtils";
 import DateRangeFilter from "../../components/DateRangeFilter";
 
-const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
+const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
 const Ledger = () => {
   const [filter, setFilter] = useState("Ledger");
@@ -46,6 +46,18 @@ const Ledger = () => {
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [triggerRefresh, setTriggerRefresh] = useState(0); // To force refresh when sub-view adds data
 
+  // Investor Helper Calculations
+  const getOpeningBalance = (inv) => inv.transactions?.find(t => t.type === "Opening Balance")?.amount || 0;
+  const getNewInvestments = (inv) => inv.transactions?.filter(t => t.type === "New Investment" || t.type === "Re-Investment").reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+  const getTotalAmountInvested = (inv) => getOpeningBalance(inv) + getNewInvestments(inv);
+  const getInvestorDebits = (inv) => inv.transactions?.filter(t => t.type === "Debit").reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+  const getInvestorRemainingCapital = (inv) => getTotalAmountInvested(inv) - getInvestorDebits(inv);
+
+  const totalInvestedGlobal = investors.reduce((sum, inv) => sum + getTotalAmountInvested(inv), 0);
+  const totalDebitsGlobal = investors.reduce((sum, inv) => sum + getInvestorDebits(inv), 0);
+  const totalAllocatedToLoans = customers.reduce((sum, c) => sum + (c.loanAmount || 0), 0);
+  const totalAvailablePool = Math.max(0, totalInvestedGlobal - totalDebitsGlobal - totalAllocatedToLoans);
+
   // Income Form States
   const [incomeType, setIncomeType] = useState('Other Income');
   const [incomeAmount, setIncomeAmount] = useState('');
@@ -59,14 +71,87 @@ const Ledger = () => {
   const [expenseDate, setExpenseDate] = useState(new Date().toISOString().slice(0, 10));
   const [expenseMode, setExpenseMode] = useState('Cash');
   const [expenseRemarks, setExpenseRemarks] = useState('');
+  const [withdrawalInvestorId, setWithdrawalInvestorId] = useState('');
+  const [incomeInvestorId, setIncomeInvestorId] = useState('');
+  const [incomeError, setIncomeError] = useState('');
+  const [expenseError, setExpenseError] = useState('');
 
   const handleIncomeSubmit = (e) => {
     e.preventDefault();
-    if (!incomeAmount || isNaN(incomeAmount) || Number(incomeAmount) <= 0) return alert('Invalid amount');
+    setIncomeError('');
+    const amountNum = Number(incomeAmount);
+    if (!incomeAmount || isNaN(incomeAmount) || amountNum <= 0) {
+      setIncomeError('Please enter a valid amount greater than 0.');
+      return;
+    }
+
+    if (incomeType === 'Investor Capital' || incomeType === 'Investment') {
+      if (!incomeInvestorId) {
+        setIncomeError('Please select an investor for the investment capital.');
+        return;
+      }
+      const selectedInv = investors.find(i => i.id === incomeInvestorId);
+      if (!selectedInv) {
+        setIncomeError('Selected investor not found.');
+        return;
+      }
+
+      const txId = `tx-${Date.now()}`;
+      const incId = `INC-${Date.now()}`;
+
+      // 1. Add investment transaction to selected investor in motoLendInvestors_data
+      const updatedInvestors = investors.map(inv => {
+        if (inv.id === incomeInvestorId) {
+          return {
+            ...inv,
+            transactions: [
+              ...(inv.transactions || []),
+              {
+                id: txId,
+                type: 'Re-Investment',
+                amount: amountNum,
+                date: incomeDate,
+                transferMode: incomeMode,
+                remarks: incomeRemarks || 'Investment Capital Deposit',
+                incomeId: incId
+              }
+            ]
+          };
+        }
+        return inv;
+      });
+      window.localStorage.setItem('motoLendInvestors_data', JSON.stringify(updatedInvestors));
+
+      // 2. Add to motoLendIncome_data
+      const newIncome = {
+        id: incId,
+        type: 'Investment',
+        subType: 'Re-Investment',
+        amount: amountNum,
+        date: incomeDate,
+        mode: incomeMode,
+        remarks: incomeRemarks || `Investment received from ${selectedInv.name}`,
+        investorId: selectedInv.id,
+        investorName: selectedInv.name,
+        transactionId: txId,
+        isCapital: true
+      };
+      const updated = [...incomeData, newIncome];
+      window.localStorage.setItem('motoLendIncome_data', JSON.stringify(updated));
+
+      setShowAddIncome(false);
+      setIncomeAmount('');
+      setIncomeRemarks('');
+      setIncomeInvestorId('');
+      setIncomeError('');
+      setTriggerRefresh(prev => prev + 1);
+      return;
+    }
+
     const newIncome = {
       id: `INC${Date.now()}`,
       type: incomeType,
-      amount: Number(incomeAmount),
+      amount: amountNum,
       date: incomeDate,
       mode: incomeMode,
       remarks: incomeRemarks,
@@ -76,16 +161,97 @@ const Ledger = () => {
     setShowAddIncome(false);
     setIncomeAmount('');
     setIncomeRemarks('');
+    setIncomeInvestorId('');
+    setIncomeError('');
     setTriggerRefresh(prev => prev + 1);
   };
 
   const handleExpenseSubmit = (e) => {
     e.preventDefault();
-    if (!expenseAmount || isNaN(expenseAmount) || Number(expenseAmount) <= 0) return alert('Invalid amount');
+    setExpenseError('');
+    const amountNum = Number(expenseAmount);
+    if (!expenseAmount || isNaN(expenseAmount) || amountNum <= 0) {
+      setExpenseError('Please enter a valid amount greater than 0.');
+      return;
+    }
+
+    if (expenseCategory === 'Investor Withdrawal') {
+      if (!withdrawalInvestorId) {
+        setExpenseError('Please select an investor for the withdrawal.');
+        return;
+      }
+      const selectedInv = investors.find(i => i.id === withdrawalInvestorId);
+      if (!selectedInv) {
+        setExpenseError('Selected investor not found.');
+        return;
+      }
+      const remCapital = getInvestorRemainingCapital(selectedInv);
+      if (amountNum > remCapital) {
+        setExpenseError(`Withdrawal amount (₹${amountNum.toLocaleString('en-IN')}) exceeds investor's remaining capital (₹${remCapital.toLocaleString('en-IN')}).`);
+        return;
+      }
+      if (amountNum > totalAvailablePool) {
+        setExpenseError(`Withdrawal amount (₹${amountNum.toLocaleString('en-IN')}) exceeds total available investor pool (₹${totalAvailablePool.toLocaleString('en-IN')}).`);
+        return;
+      }
+
+      const txId = `tx-${Date.now()}`;
+      const expId = `EXP-${Date.now()}`;
+
+      // 1. Deduct from investor transactions
+      const updatedInvestors = investors.map(inv => {
+        if (inv.id === withdrawalInvestorId) {
+          return {
+            ...inv,
+            transactions: [
+              ...(inv.transactions || []),
+              {
+                id: txId,
+                type: 'Debit',
+                amount: amountNum,
+                date: expenseDate,
+                paymentMode: expenseMode,
+                reason: 'Withdrawal',
+                remarks: expenseRemarks || 'Investor Withdrawal',
+                expenseId: expId
+              }
+            ]
+          };
+        }
+        return inv;
+      });
+      window.localStorage.setItem('motoLendInvestors_data', JSON.stringify(updatedInvestors));
+
+      // 2. Record under Expenses -> Investor Withdrawal
+      const newExpense = {
+        id: expId,
+        category: 'Investor Withdrawal',
+        amount: amountNum,
+        date: expenseDate,
+        mode: expenseMode,
+        remarks: expenseRemarks || 'Investor Withdrawal',
+        investorId: selectedInv.id,
+        investorName: selectedInv.name,
+        transactionId: txId,
+        isInvestorWithdrawal: true
+      };
+      const updatedExpenses = [...expenseData, newExpense];
+      window.localStorage.setItem('motoLendExpense_data', JSON.stringify(updatedExpenses));
+
+      setShowAddExpense(false);
+      setExpenseAmount('');
+      setExpenseRemarks('');
+      setWithdrawalInvestorId('');
+      setExpenseError('');
+      setTriggerRefresh(prev => prev + 1);
+      return;
+    }
+
+    // Regular Business Expense
     const newExpense = {
       id: `EXP${Date.now()}`,
       category: expenseCategory,
-      amount: Number(expenseAmount),
+      amount: amountNum,
       date: expenseDate,
       mode: expenseMode,
       remarks: expenseRemarks,
@@ -95,20 +261,28 @@ const Ledger = () => {
     setShowAddExpense(false);
     setExpenseAmount('');
     setExpenseRemarks('');
+    setExpenseError('');
     setTriggerRefresh(prev => prev + 1);
   };
 
-  // Flatten all transactions from investors
+  // Flatten all transactions from investors (skipping debits already in expenseData to prevent double counting)
   const rawTransactions = [];
   investors.forEach(inv => {
     if (inv.transactions) {
       inv.transactions.forEach(tx => {
-        rawTransactions.push({
-          ...tx,
-          source: 'investor',
-          investorName: inv.name,
-          investorId: inv.id
-        });
+        const isLinkedToExpense = tx.type === 'Debit' && expenseData.some(e =>
+          (e.transactionId && e.transactionId === tx.id) ||
+          (tx.expenseId && tx.expenseId === e.id) ||
+          (e.category === 'Investor Withdrawal' && e.investorId === inv.id && Number(e.amount) === Number(tx.amount) && e.date === tx.date)
+        );
+        if (!isLinkedToExpense) {
+          rawTransactions.push({
+            ...tx,
+            source: 'investor',
+            investorName: inv.name,
+            investorId: inv.id
+          });
+        }
       });
     }
   });
@@ -157,15 +331,30 @@ const Ledger = () => {
 
   // Flatten manual expense
   expenseData.forEach(exp => {
-    rawTransactions.push({
-      id: exp.id,
-      date: exp.date,
-      amount: exp.amount,
-      type: "Expense",
-      source: 'expense',
-      description: exp.category,
-      remarks: exp.remarks
-    });
+    if (exp.category === 'Investor Withdrawal') {
+      rawTransactions.push({
+        id: exp.id,
+        date: exp.date,
+        amount: exp.amount,
+        type: "Investor Withdrawal",
+        source: 'investor_withdrawal',
+        description: exp.category,
+        remarks: exp.remarks,
+        investorName: exp.investorName,
+        investorId: exp.investorId,
+        mode: exp.mode
+      });
+    } else {
+      rawTransactions.push({
+        id: exp.id,
+        date: exp.date,
+        amount: exp.amount,
+        type: "Expense",
+        source: 'expense',
+        description: exp.category,
+        remarks: exp.remarks
+      });
+    }
   });
 
   // Sort chronologically (oldest first) to compute running balance
@@ -191,10 +380,16 @@ const Ledger = () => {
       typeDesc = "Loan Disbursed";
       subDesc = `Loan ID: ${tx.loanId} · Loan Amount: ₹${Number(amountOut).toLocaleString('en-IN')}`;
       name = tx.customerName;
+    } else if (tx.source === 'investor_withdrawal' || tx.type === "Investor Withdrawal") {
+      amountOut = Number(tx.amount || 0);
+      runningBalance -= amountOut;
+      typeDesc = "Investor Withdrawal";
+      subDesc = `Investor: ${tx.investorName || "Investor"} · Mode: ${tx.mode || 'Withdrawal'}${tx.remarks ? ` · ${tx.remarks}` : ''}`;
+      name = tx.investorName || "Investor";
     } else if (tx.type === "Debit") {
       amountOut = Number(tx.amount || 0);
       runningBalance -= amountOut;
-      typeDesc = "Investor Debit";
+      typeDesc = "Investor Withdrawal";
       subDesc = tx.reason ? `Reason: ${tx.reason}${tx.remarks ? ` - ${tx.remarks}` : ''}` : 'Withdrawal';
       name = tx.investorName;
     } else if (tx.source === 'income') {
@@ -221,7 +416,8 @@ const Ledger = () => {
     const dateObj = new Date(tx.date);
     const dateStr = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    const getLedgerType = (source) => {
+    const getLedgerType = (source, type) => {
+      if (source === 'investor_withdrawal' || type === 'Investor Withdrawal') return 'INVESTOR';
       switch (source) {
         case 'expense': return 'EXPENSE';
         case 'income': return 'INCOME';
@@ -242,7 +438,7 @@ const Ledger = () => {
       in: amountIn,
       out: amountOut,
       balance: runningBalance,
-      type: getLedgerType(tx.source),
+      type: getLedgerType(tx.source, tx.type),
       icon: tx.source === 'customer' ? Briefcase : User
     };
   });
@@ -260,10 +456,20 @@ const Ledger = () => {
     return sum + newInvTxs.reduce((s, t) => s + Number(t.amount || 0), 0);
   }, 0) + payments.reduce((sum, p) => sum + Number(p.amount || 0), 0) + incomeData.reduce((sum, i) => sum + Number(i.amount || 0), 0);
 
-  const totalMoneyOut = investors.reduce((sum, inv) => {
+  const regularExpensesTotal = expenseData
+    .filter(e => e.category !== 'Investor Withdrawal')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const investorDebitsTotal = investors.reduce((sum, inv) => {
     const debitTxs = inv.transactions?.filter(t => t.type === "Debit") || [];
     return sum + debitTxs.reduce((s, t) => s + Number(t.amount || 0), 0);
-  }, 0) + customers.reduce((sum, c) => sum + Number(c.loanAmount || 0), 0) + expenseData.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  }, 0);
+
+  const unlinkedWithdrawalsTotal = expenseData
+    .filter(e => e.category === 'Investor Withdrawal' && !investors.some(inv => inv.transactions?.some(t => t.id === e.transactionId || t.expenseId === e.id)))
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const totalMoneyOut = investorDebitsTotal + unlinkedWithdrawalsTotal + customers.reduce((sum, c) => sum + Number(c.loanAmount || 0), 0) + regularExpensesTotal;
 
   const closingBalance = totalOpeningBalance + totalMoneyIn - totalMoneyOut;
 
@@ -343,20 +549,20 @@ const Ledger = () => {
         </div>
       </div>
 
-      {filter === 'Income' && <IncomeView />}
-      {filter === 'Expense' && <ExpenseView />}
+      {filter === 'Income' && <IncomeView key={`inc-${triggerRefresh}`} />}
+      {filter === 'Expense' && <ExpenseView key={`exp-${triggerRefresh}`} onAddExpense={() => setShowAddExpense(true)} />}
 
       {filter === 'Ledger' && (
         <>
           {/* KPI CARDS */}
-          <div className="mt-6 grid grid-cols-2 max-[400px]:grid-cols-1 lg:flex lg:flex-row gap-3 sm:gap-4 shrink-0 pb-2">
+          <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 sm:gap-4 shrink-0 pb-2">
             <SummaryCard
               icon={Database}
               title="Opening Balance"
               value={formatCurrency(totalOpeningBalance)}
               iconColor="text-slate-600"
               iconBg="bg-slate-100"
-              extraClass="flex-1 min-w-[200px] bg-white border-slate-200 shadow-sm"
+              extraClass="bg-white border-slate-200 shadow-sm"
             />
             <SummaryCard
               icon={ArrowUpCircle}
@@ -365,7 +571,7 @@ const Ledger = () => {
               valueColor="text-emerald-700"
               iconColor="text-emerald-600"
               iconBg="bg-emerald-100"
-              extraClass="flex-1 min-w-[200px] bg-white border-slate-200 shadow-sm"
+              extraClass="bg-white border-slate-200 shadow-sm"
             />
             <SummaryCard
               icon={ArrowDownCircle}
@@ -374,7 +580,7 @@ const Ledger = () => {
               valueColor="text-red-600"
               iconColor="text-red-600"
               iconBg="bg-red-100"
-              extraClass="flex-1 min-w-[200px] bg-white border-slate-200 shadow-sm"
+              extraClass="bg-white border-slate-200 shadow-sm"
             />
             <SummaryCard
               icon={Wallet}
@@ -383,7 +589,7 @@ const Ledger = () => {
               valueColor="text-[#006052]"
               iconColor="text-[#006052]"
               iconBg="bg-[#e5f0ef]"
-              extraClass="flex-1 min-w-[200px] bg-emerald-50/50 border-emerald-200 shadow-sm"
+              extraClass="bg-emerald-50/50 border-emerald-200 shadow-sm"
             />
           </div>
 
@@ -552,16 +758,60 @@ const Ledger = () => {
             <form onSubmit={handleIncomeSubmit} className="p-6 flex flex-col gap-4">
               <div>
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Income Type *</label>
-                <select value={incomeType} onChange={e => setIncomeType(e.target.value)} className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all">
-                  <option>Other Income</option>
-                  <option>Service Income</option>
-                  <option>Commission</option>
-                  <option>Other</option>
+                <select
+                  value={incomeType}
+                  onChange={e => {
+                    setIncomeType(e.target.value);
+                    setIncomeError('');
+                  }}
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all"
+                >
+                  <option value="Other Income">Other Income</option>
+                  <option value="Investor Capital">Investor Capital</option>
+                  <option value="Chit Investment">Chit Investment</option>
+                  <option value="Service Income">Service Income</option>
+                  <option value="Commission">Commission</option>
+                  <option value="Other">Other</option>
                 </select>
               </div>
+
+              {(incomeType === 'Investor Capital' || incomeType === 'Investment') && (
+                <div className="flex flex-col gap-3 rounded-xl bg-purple-50/70 p-4 border border-purple-200">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-purple-900 mb-1">Select Investor *</label>
+                    <select
+                      value={incomeInvestorId}
+                      onChange={e => {
+                        setIncomeInvestorId(e.target.value);
+                        setIncomeError('');
+                      }}
+                      required
+                      className="w-full h-10 border border-purple-300 rounded-lg px-3 text-[13px] font-semibold text-slate-800 bg-white outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 shadow-sm"
+                    >
+                      <option value="">-- Choose an Investor --</option>
+                      {investors.map(inv => (
+                        <option key={inv.id} value={inv.id}>
+                          {inv.name} ({inv.id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Amount *</label>
-                <input type="number" required value={incomeAmount} onChange={e => setIncomeAmount(e.target.value)} className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all" />
+                <input
+                  type="number"
+                  required
+                  placeholder="0.00"
+                  value={incomeAmount}
+                  onChange={e => {
+                    setIncomeAmount(e.target.value);
+                    setIncomeError('');
+                  }}
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all"
+                />
               </div>
               <div>
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Date *</label>
@@ -578,11 +828,39 @@ const Ledger = () => {
               </div>
               <div>
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Description / Remarks</label>
-                <input type="text" value={incomeRemarks} onChange={e => setIncomeRemarks(e.target.value)} className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all" />
+                <input
+                  type="text"
+                  placeholder={incomeType === 'Investor Capital' ? 'Optional investment notes' : 'Description'}
+                  value={incomeRemarks}
+                  onChange={e => setIncomeRemarks(e.target.value)}
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all"
+                />
               </div>
-              <div className="flex justify-end gap-3 mt-4">
-                <button type="button" onClick={() => setShowAddIncome(false)} className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">Cancel</button>
-                <button type="submit" className="px-5 py-2.5 text-[13px] font-bold text-white bg-[#006052] hover:bg-[#004d43] rounded-xl shadow-sm transition-colors">Add Income</button>
+
+              {incomeError && (
+                <div className="rounded-lg bg-red-50 p-3 border border-red-200">
+                  <p className="text-[13px] font-medium text-red-600">{incomeError}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddIncome(false);
+                    setIncomeError('');
+                    setIncomeInvestorId('');
+                  }}
+                  className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 text-[13px] font-bold text-white bg-[#006052] hover:bg-[#004d43] rounded-xl shadow-sm transition-colors"
+                >
+                  Add Income
+                </button>
               </div>
             </form>
           </div>
@@ -592,33 +870,118 @@ const Ledger = () => {
       {/* Add Expense Modal */}
       {showAddExpense && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-[400px] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden">
+          <div className="w-full max-w-[460px] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden max-h-[90vh]">
             <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50">
-              <h3 className="font-bold text-lg text-slate-900">Add Expense</h3>
-              <button onClick={() => setShowAddExpense(false)}><X className="h-5 w-5 text-slate-400 hover:text-slate-600" /></button>
+              <div>
+                <h3 className="font-bold text-lg text-slate-900">Add Expense</h3>
+                <p className="text-[12px] text-slate-500">Record a business expense or investor withdrawal</p>
+              </div>
+              <button onClick={() => { setShowAddExpense(false); setExpenseError(''); setWithdrawalInvestorId(''); }}><X className="h-5 w-5 text-slate-400 hover:text-slate-600" /></button>
             </div>
-            <form onSubmit={handleExpenseSubmit} className="p-6 flex flex-col gap-4">
+            <form onSubmit={handleExpenseSubmit} className="p-6 flex flex-col gap-4 overflow-y-auto">
               <div>
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Expense Category *</label>
-                <select value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)} className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all">
-                  <option>Rent</option>
-                  <option>Salary</option>
-                  <option>Electricity</option>
-                  <option>Fuel</option>
-                  <option>Maintenance</option>
-                  <option>Office Expense</option>
-                  <option>Travel</option>
-                  <option>Other</option>
+                <select
+                  value={expenseCategory}
+                  onChange={e => {
+                    setExpenseCategory(e.target.value);
+                    setExpenseError('');
+                  }}
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all"
+                >
+                  <option value="Rent">Rent</option>
+                  <option value="Salary">Salary</option>
+                  <option value="Electricity">Electricity</option>
+                  <option value="Fuel">Fuel</option>
+                  <option value="Maintenance">Maintenance</option>
+                  <option value="Office Expense">Office Expense</option>
+                  <option value="Travel">Travel</option>
+                  <option value="Investor Withdrawal">Investor Withdrawal</option>
+                  <option value="Other">Other</option>
                 </select>
               </div>
+
+              {/* Special Investor Selector & Balance preview for Investor Withdrawal */}
+              {expenseCategory === 'Investor Withdrawal' && (
+                <div className="flex flex-col gap-3 rounded-xl bg-purple-50/70 p-4 border border-purple-200">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-purple-900 mb-1">Select Investor *</label>
+                    <select
+                      value={withdrawalInvestorId}
+                      onChange={e => {
+                        setWithdrawalInvestorId(e.target.value);
+                        setExpenseError('');
+                      }}
+                      required
+                      className="w-full h-10 border border-purple-300 rounded-lg px-3 text-[13px] font-semibold text-slate-800 bg-white outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 shadow-sm"
+                    >
+                      <option value="">-- Choose an Investor --</option>
+                      {investors.map(inv => {
+                        const remCap = getInvestorRemainingCapital(inv);
+                        return (
+                          <option key={inv.id} value={inv.id}>
+                            {inv.name} (Available: ₹{Number(remCap).toLocaleString('en-IN')})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {withdrawalInvestorId && (() => {
+                    const selInv = investors.find(i => i.id === withdrawalInvestorId);
+                    if (!selInv) return null;
+                    const remCap = getInvestorRemainingCapital(selInv);
+                    const amtNum = Number(expenseAmount) || 0;
+                    return (
+                      <div className="space-y-2 pt-1 text-[12px]">
+                        <div className="grid grid-cols-2 gap-2 bg-white/90 p-2.5 rounded-lg border border-purple-100">
+                          <div>
+                            <span className="text-slate-500 font-medium block">Investor Balance:</span>
+                            <span className="font-bold text-purple-900 text-[14px]">₹{remCap.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 font-medium block">Total Pool Available:</span>
+                            <span className="font-bold text-slate-800 text-[14px]">₹{totalAvailablePool.toLocaleString('en-IN')}</span>
+                          </div>
+                        </div>
+
+                        {amtNum > 0 && (
+                          <div className={`p-2 rounded-lg text-[12px] font-medium border ${amtNum > remCap || amtNum > totalAvailablePool ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                            {amtNum > remCap ? (
+                              <span>⚠️ Exceeds investor's remaining capital (₹{remCap.toLocaleString('en-IN')})</span>
+                            ) : amtNum > totalAvailablePool ? (
+                              <span>⚠️ Exceeds total available pool (₹{totalAvailablePool.toLocaleString('en-IN')})</span>
+                            ) : (
+                              <span>✓ Capital after withdrawal: ₹{(remCap - amtNum).toLocaleString('en-IN')}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               <div>
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Amount *</label>
-                <input type="number" required value={expenseAmount} onChange={e => setExpenseAmount(e.target.value)} className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all" />
+                <input
+                  type="number"
+                  required
+                  placeholder="0.00"
+                  value={expenseAmount}
+                  onChange={e => {
+                    setExpenseAmount(e.target.value);
+                    setExpenseError('');
+                  }}
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all"
+                />
               </div>
+
               <div>
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Date *</label>
                 <input type="date" required value={expenseDate} onChange={e => setExpenseDate(e.target.value)} className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all" />
               </div>
+
               <div>
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Payment Mode *</label>
                 <select value={expenseMode} onChange={e => setExpenseMode(e.target.value)} className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all">
@@ -628,13 +991,42 @@ const Ledger = () => {
                   <option>Cheque</option>
                 </select>
               </div>
+
               <div>
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">Description / Remarks</label>
-                <input type="text" value={expenseRemarks} onChange={e => setExpenseRemarks(e.target.value)} className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all" />
+                <input
+                  type="text"
+                  placeholder={expenseCategory === 'Investor Withdrawal' ? 'Optional reason / withdrawal notes' : 'Description'}
+                  value={expenseRemarks}
+                  onChange={e => setExpenseRemarks(e.target.value)}
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all"
+                />
               </div>
-              <div className="flex justify-end gap-3 mt-4">
-                <button type="button" onClick={() => setShowAddExpense(false)} className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">Cancel</button>
-                <button type="submit" className="px-5 py-2.5 text-[13px] font-bold text-white bg-[#006052] hover:bg-[#004d43] rounded-xl shadow-sm transition-colors">Add Expense</button>
+
+              {expenseError && (
+                <div className="rounded-lg bg-red-50 p-3 border border-red-200">
+                  <p className="text-[13px] font-medium text-red-600">{expenseError}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddExpense(false);
+                    setExpenseError('');
+                    setWithdrawalInvestorId('');
+                  }}
+                  className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 text-[13px] font-bold text-white bg-[#006052] hover:bg-[#004d43] rounded-xl shadow-sm transition-colors"
+                >
+                  Add Expense
+                </button>
               </div>
             </form>
           </div>
@@ -737,14 +1129,18 @@ const getTypeBadgeStyle = (type) => {
 
 // Sub-components
 const SummaryCard = ({ icon: Icon, title, value, valueColor = "text-slate-900", iconColor, iconBg, extraClass = "bg-white border-slate-200 shadow-sm" }) => (
-  <div className={`rounded-xl border p-4 sm:p-5 transition-shadow flex flex-col justify-center h-full ${extraClass}`}>
-    <div className="flex items-center sm:items-start gap-3 sm:gap-4">
+  <div className={`rounded-xl border p-4 sm:p-5 transition-shadow flex flex-col justify-center h-full min-w-0 w-full ${extraClass}`}>
+    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
       <div className={`flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
         <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${iconColor}`} strokeWidth={2} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[12px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">{title}</p>
-        <p className={`mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight whitespace-nowrap ${valueColor}`}>{value}</p>
+        <p className="text-[12px] sm:text-[14px] font-semibold text-slate-500 leading-snug break-words">{title}</p>
+        <p 
+          className={`mt-0.5 sm:mt-1 text-base sm:text-lg lg:text-xl font-bold tracking-tight whitespace-nowrap leading-tight ${valueColor}`}
+        >
+          {value}
+        </p>
       </div>
     </div>
   </div>

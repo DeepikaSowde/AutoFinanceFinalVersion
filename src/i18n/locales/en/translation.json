@@ -238,6 +238,12 @@
   "No": "No"
 },
 
+"paymentFrequencies": {
+  "Daily": "Daily",
+  "Weekly": "Weekly",
+  "Monthly": "Monthly"
+},
+
     "profession": {
       "Salaried": "Salaried",
       "Self Employed": "Self Employed",
@@ -378,8 +384,8 @@
     "selectInterestType": "Select interest type",
     "repaymentMethod": "Repayment Method",
     "selectRepaymentMethod": "Select repayment method",
-    "interestRate": "Interest Rate",
-    "enterInterestRate": "Enter interest rate",
+    "interestRate": "Monthly Interest Rate (%)",
+    "enterInterestRate": "Enter monthly interest rate (e.g. 2, 2.5)",
     "paymentFrequency": "Payment Frequency",
     "selectFrequency": "Select frequency",
     "loanTenure": "Loan Tenure",
@@ -396,9 +402,9 @@
     "penaltyType": "Penalty Type",
     "repaymentSummary": "Repayment Summary",
     "principal": "Principal",
-    "interest": "Interest",
-    "totalPayable": "Total Payable",
-    "emiAmount": "EMI Amount",
+    "interest": "Total Interest",
+    "totalPayable": "Total Repayable",
+    "emiAmount": "Installment Amount",
     "numberOfPayments": "Number of Payments",
     "repaymentInfo": "Repayment values are calculated from the loan amount, interest rate, tenure and payment frequency."
   },
@@ -431,7 +437,7 @@
   "loanAmount": "Loan Amount",
   "interestType": "Interest Type",
   "repaymentMethod": "Repayment Method",
-  "interestRate": "Interest Rate",
+  "interestRate": "Monthly Interest Rate (%)",
   "paymentFrequency": "Payment Frequency",
   "loanTenure": "Loan Tenure",
   "firstDueDate": "First Due Date",

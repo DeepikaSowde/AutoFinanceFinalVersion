@@ -1,1 +1,127 @@
 @import "tailwindcss";
+
+/* ==========================================================================
+   Loan View Sidebar-Aware Responsive Layout (Container Queries)
+   ========================================================================== */
+
+.loan-view-container {
+  container-type: inline-size;
+  container-name: loan-view;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* 1. KPI Cards Grid */
+.loan-kpi-grid {
+  display: grid;
+  width: 100%;
+}
+
+/* Wide Content Area (>= 1080px): All 5 cards in 1 single row */
+@container loan-view (min-width: 1080px) {
+  .loan-kpi-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Medium Content Area (640px to 1079px): 2 columns, 5th card spans full width */
+@container loan-view (min-width: 640px) and (max-width: 1079.98px) {
+  .loan-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .loan-kpi-grid > *:last-child {
+    grid-column: span 2 / span 2 !important;
+  }
+}
+
+/* Narrow Content Area (< 640px): 1 column (or 2 columns on >= 440px) */
+@container loan-view (max-width: 639.98px) {
+  .loan-kpi-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+  }
+}
+
+@container loan-view (min-width: 440px) and (max-width: 639.98px) {
+  .loan-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .loan-kpi-grid > *:last-child {
+    grid-column: span 2 / span 2 !important;
+  }
+}
+
+/* 2. Loan Details: ~69% Loan Info / ~31% Summary Cards Split Layout */
+.loan-overview-grid {
+  display: grid;
+  width: 100%;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+
+.loan-info-col {
+  width: 100%;
+  min-width: 0;
+}
+
+.loan-summary-col {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Tablet & Mobile (< 700px container width): Stack vertically */
+@container loan-view (max-width: 699.98px) {
+  .loan-overview-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .loan-info-col,
+  .loan-summary-col {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+  }
+}
+
+/* Desktop & Laptop (>= 700px container width): Side-by-side (~69% / ~31%) */
+@container loan-view (min-width: 700px) {
+  .loan-overview-grid {
+    grid-template-columns: minmax(0, 69fr) minmax(0, 31fr) !important;
+    align-items: stretch !important;
+  }
+  .loan-info-col {
+    grid-column: 1 / 2 !important;
+  }
+  .loan-summary-col {
+    grid-column: 2 / 3 !important;
+  }
+}
+
+/* Standard media query fallback for desktop/laptop screens */
+@media (min-width: 1024px) {
+  .loan-overview-grid {
+    grid-template-columns: minmax(0, 69fr) minmax(0, 31fr);
+    align-items: stretch;
+  }
+  .loan-info-col {
+    grid-column: 1 / 2;
+  }
+  .loan-summary-col {
+    grid-column: 2 / 3;
+  }
+}
+
+
+.loan-info-fields-grid {
+  display: grid;
+  width: 100%;
+}
+
+@container loan-view (min-width: 620px) {
+  .loan-info-fields-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@container loan-view (max-width: 619.98px) {
+  .loan-info-fields-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

@@ -161,9 +161,9 @@
 },
 
 "paymentFrequencies": {
-  "Monthly": "மாதாந்திரம்",
+  "Daily": "தினசரி",
   "Weekly": "வாராந்திரம்",
-  "Bi-Weekly": "இரு வாரத்திற்கு ஒருமுறை"
+  "Monthly": "மாதாந்திரம்"
 },
 
 "tenureUnits": {
@@ -346,8 +346,8 @@
   "repaymentMethod": "திருப்பிச் செலுத்தும் முறை",
   "selectRepaymentMethod": "திருப்பிச் செலுத்தும் முறையைத் தேர்ந்தெடுக்கவும்",
 
-  "interestRate": "வட்டி விகிதம்",
-  "enterInterestRate": "வட்டி விகிதத்தை உள்ளிடவும்",
+  "interestRate": "மாதாந்திர வட்டி விகிதம் (%)",
+  "enterInterestRate": "மாதாந்திர வட்டி விகிதத்தை உள்ளிடவும்",
 
   "paymentFrequency": "செலுத்தும் கால இடைவெளி",
   "selectFrequency": "செலுத்தும் கால இடைவெளியைத் தேர்ந்தெடுக்கவும்",
@@ -379,8 +379,8 @@
   "repaymentSummary": "திருப்பிச் செலுத்தும் சுருக்கம்",
 
   "principal": "அசல் தொகை",
-  "interest": "வட்டி",
-  "totalPayable": "மொத்தம் செலுத்த வேண்டியது",
+  "interest": "மொத்த வட்டி",
+  "totalPayable": "மொத்த திருப்பிச் செலுத்த வேண்டியது",
   "emiAmount": "தவணைத் தொகை",
   "numberOfPayments": "தவணைகளின் எண்ணிக்கை",
 
@@ -415,7 +415,7 @@
   "loanAmount": "கடன் தொகை",
   "interestType": "வட்டி வகை",
   "repaymentMethod": "திருப்பிச் செலுத்தும் முறை",
-  "interestRate": "வட்டி விகிதம்",
+  "interestRate": "மாதாந்திர வட்டி விகிதம் (%)",
   "paymentFrequency": "செலுத்தும் கால இடைவெளி",
   "loanTenure": "கடன் காலம்",
   "firstDueDate": "முதல் தவணை தேதி",

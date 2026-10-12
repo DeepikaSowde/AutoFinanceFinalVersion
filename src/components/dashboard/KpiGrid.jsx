@@ -1,35 +1,40 @@
-import React from 'react';
 import KpiCard from './KpiCard';
 import { Database, Wallet, ArrowRightLeft, Percent, PiggyBank } from 'lucide-react';
 
 const KpiGrid = ({ data }) => {
-  if (!data) return null;
+  const safeData = data || {
+    totalOutstanding: 0,
+    totalCredit: 0,
+    totalDebit: 0,
+    interestEarned: 0,
+    closingBalance: 0
+  };
 
   return (
-    <div className="flex flex-wrap lg:flex-nowrap gap-4 mb-6">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-4 mb-6">
       <KpiCard 
         title="Total Outstanding" 
-        amount={data.totalOutstanding} 
+        amount={safeData.totalOutstanding} 
         icon={Database} 
       />
       <KpiCard 
         title="Total Credit" 
-        amount={data.totalCredit} 
+        amount={safeData.totalCredit} 
         icon={Wallet} 
       />
       <KpiCard 
         title="Total Debit" 
-        amount={data.totalDebit} 
+        amount={safeData.totalDebit} 
         icon={ArrowRightLeft} 
       />
       <KpiCard 
         title="Interest Earned" 
-        amount={data.interestEarned} 
+        amount={safeData.interestEarned} 
         icon={Percent} 
       />
       <KpiCard 
         title="Closing Balance" 
-        amount={data.closingBalance} 
+        amount={safeData.closingBalance} 
         icon={PiggyBank} 
       />
     </div>

@@ -71,33 +71,33 @@ const CustomerTab = ({ data, onChange }) => {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       {/* Header */}
-      <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-4 py-3">
+      <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-1.5 sm:px-4 sm:py-2">
         <div>
-          <h2 className="text-base font-semibold text-slate-900 sm:text-lg">
+          <h2 className="text-sm font-semibold text-slate-900 sm:text-base">
             {t("customer.information")}
           </h2>
 
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="text-[11px] text-slate-500">
             {t("customer.enterCustomerDetailsAndIdentityInformation")}
           </p>
         </div>
 
-        <span className="shrink-0 rounded-md bg-white px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+        <span className="shrink-0 rounded-md bg-white px-2 py-0.5 text-[10px] sm:text-[11px] font-medium text-emerald-700">
           {t("steps.stepOf", { current: 1, total: 4 })}
         </span>
       </div>
 
       {/* Main Content */}
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2.5 xl:grid-cols-3">
         {/* =====================================================
             CUSTOMER DETAILS
         ====================================================== */}
 
         <div className="xl:col-span-2">
           <SectionCard title={t("customer.details")}>
-            <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-x-3 gap-y-2 md:grid-cols-2 lg:grid-cols-3">
               {/* Application Date */}
               <Field label={t("customer.applicationDate")}>
                 <Input
@@ -138,16 +138,17 @@ const CustomerTab = ({ data, onChange }) => {
                 className="md:col-span-3"
               >
                 <Textarea
+                  rows={2}
                   value={data.address || ""}
                   onChange={set("address")}
                   placeholder={t("customer.enterFullAddress")}
-                  className="min-h-[68px] resize-none"
+                  className="min-h-[44px] resize-none"
                 />
               </Field>
             </div>
 
             {/* Location Details */}
-            <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-3">
+            <div className="mt-2 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-3">
               {/* Area / Locality */}
               <Field label={t("customer.areaLocality")}>
                 <Input
@@ -191,7 +192,7 @@ const CustomerTab = ({ data, onChange }) => {
 
         <div className="xl:col-span-1">
           <SectionCard title={t("kyc.title")}>
-            <div className="space-y-3">
+            <div className="space-y-2">
               {/* Aadhaar */}
               <KycRow
                 label={t("kyc.aadhaarNumber")}
@@ -254,12 +255,12 @@ const CustomerTab = ({ data, onChange }) => {
             </div>
 
             {/* Compact KYC information */}
-            <div className="mt-3 flex items-start gap-2 rounded-md bg-emerald-50 px-3 py-2">
-              <span className="mt-0.5 text-xs text-emerald-700">
+            <div className="mt-2 flex items-start gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1.5">
+              <span className="text-[11px] text-emerald-700">
                 ⓘ
               </span>
 
-              <p className="text-[11px] leading-4 text-emerald-700">
+              <p className="text-[10px] leading-snug text-emerald-700">
                 {t("kyc.information")}
               </p>
             </div>
@@ -286,8 +287,8 @@ export const KycRow = ({
   const { t } = useTranslation();
 
   return (
-    <div className="border-b border-slate-100 pb-3 last:border-0 last:pb-0">
-      <label className="mb-1.5 block text-xs font-medium text-slate-700">
+    <div className="border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+      <label className="mb-1 block text-xs font-medium text-slate-700">
         {label}
       </label>
 
