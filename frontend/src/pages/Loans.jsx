@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DATA_CHANGED_EVENT } from "../services/api";
 import { loadCustomerEntries } from "../services/customerApi";
+import { loadPayments } from "../services/collectionApi";
 import {
   FileText,
   CheckCircle2,
@@ -18,6 +19,7 @@ import {
 import CustomerView from "./customer/CustomerView";
 import LoanDetailsView from "./customer/LoanDetailsView";
 import { generateSchedule } from "../components/RepaymentScheduleTable";
+import { calculateLoanOutstanding } from "../utils/loanCalculations";
 
 const formatINR = (value) => {
   const amount = Math.round(Number(value || 0));
@@ -88,6 +90,7 @@ export default function Loans() {
   const navigate = useNavigate();
 
   const [rawCustomers, setRawCustomers] = useState([]);
+  const [allPayments, setAllPayments] = useState([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
   const [frequencyFilter, setFrequencyFilter] = useState("All Frequencies");
@@ -105,10 +108,11 @@ export default function Loans() {
   useEffect(() => {
     let active = true;
     const load = () =>
-      loadCustomerEntries()
-        .then((entries) => {
+      Promise.all([loadCustomerEntries(), loadPayments()])
+        .then(([entries, payments]) => {
           if (!active) return;
           setRawCustomers(entries);
+          setAllPayments(payments);
           setLoadError("");
         })
         .catch((error) => active && setLoadError(error.message))
@@ -140,48 +144,11 @@ export default function Loans() {
       const customerName = customer.name || "Unknown Customer";
       const customerMobile = customer.mobile || "";
 
-      // Loan Amount calculation
-      const vehicleAmount =
-        loan.vehicleAmount !== "" &&
-        loan.vehicleAmount !== null &&
-        loan.vehicleAmount !== undefined
-          ? Number(loan.vehicleAmount)
-          : Number(vehicle.amount || 0);
-
-      const downPayment = Number(loan.downPayment || 0);
-      const calculatedPrincipal = Math.max(vehicleAmount - downPayment, 0);
-      const loanAmount = Number(record.loanAmount || calculatedPrincipal || 0);
-
-      // Schedule generation or existing schedule
-      let schedule = record.repaymentSchedule;
-      if (!schedule || schedule.length === 0) {
-        if (loanAmount > 0 && loan.interestRate && loan.tenure) {
-          schedule = generateSchedule({
-            loanAmount: loanAmount,
-            interestRate: loan.interestRate,
-            tenure: loan.tenure,
-            tenureUnit: loan.tenureUnit || "Months",
-            paymentFrequency: loan.paymentFrequency || record.paymentFrequency || "Monthly",
-            interestType: loan.interestType || "Flat",
-            repaymentMethod: loan.repaymentMethod || "EMI",
-            firstDueDate: loan.firstDueDate || record.nextDueDate,
-          });
-        } else {
-          schedule = [];
-        }
-      }
-
-      // Outstanding Amount calculation
-      let outstandingAmount = loanAmount;
-      if (record.outstandingAmount !== undefined && record.outstandingAmount !== null) {
-        outstandingAmount = Number(record.outstandingAmount);
-      } else if (schedule.length > 0) {
-        const remainingSchedule = schedule.reduce(
-          (sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)),
-          0
-        );
-        outstandingAmount = remainingSchedule;
-      }
+      // Consistent loan-level calculation
+      const loanCalc = calculateLoanOutstanding(record, allPayments);
+      const loanAmount = loanCalc.principal;
+      const outstandingAmount = loanCalc.outstandingAmount;
+      const schedule = loanCalc.effectiveSchedule;
 
       // Check overdue installments:
       // An installment is overdue if it is not fully paid AND its due date is strictly earlier than today (dueTimestamp < todayTimestamp)
@@ -234,7 +201,7 @@ export default function Loans() {
         frequency,
       };
     });
-  }, [rawCustomers]);
+  }, [rawCustomers, allPayments]);
 
   // KPI Calculations
   const kpiData = useMemo(() => {

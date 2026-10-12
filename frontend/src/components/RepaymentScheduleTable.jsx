@@ -215,6 +215,240 @@ export const generateSchedule = (loanDetails) => {
   return schedule;
 };
 
+export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
+  if (!baseOrRawSchedule || baseOrRawSchedule.length === 0) return [];
+
+  // Rows loaded from the server already include every posted payment (the
+  // server splits each payment across installments when it is recorded).
+  // Keep those figures; re-applying payments here would only re-derive them.
+  // Each installment's history comes from the server's allocation records.
+  if (baseOrRawSchedule.some((item) => item.fromServer)) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return baseOrRawSchedule.map((item) => {
+      const amountPaid = Math.round(Number(item.amountPaid || 0) * 100) / 100;
+      const emi = Number(item.emi || 0);
+      const balance = Math.max(0, Math.round((emi - amountPaid) * 100) / 100);
+      const dueDate = new Date(item.dueDate);
+      dueDate.setHours(0, 0, 0, 0);
+
+      let status = "Due";
+      if (balance <= 0.01 && emi > 0) status = "Paid";
+      else if (amountPaid > 0.01) status = "Partial";
+      else if (!isNaN(dueDate.getTime()) && dueDate.getTime() < today.getTime()) status = "Overdue";
+
+      return {
+        ...item,
+        amountPaid,
+        balance: balance <= 0.01 ? 0 : balance,
+        status,
+        paymentsList: (item.allocations || []).map((part) => ({
+          ...(payments || []).find((p) => p.id === part.id),
+          ...part,
+        })),
+      };
+    });
+  }
+
+  // Filter payments to only eligible ones
+  const eligiblePayments = (payments || []).filter((p) => {
+    if (!p) return false;
+    const status = (p.status || "").toLowerCase();
+    return status !== "failed" && status !== "cancelled" && status !== "reversed";
+  });
+
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+
+  // If there are NO eligible payments recorded in payment history,
+  // preserve the existing rawSchedule amounts and compute statuses
+  if (eligiblePayments.length === 0) {
+    return baseOrRawSchedule.map((item) => {
+      const amountPaid = Math.round(Number(item.amountPaid || 0) * 100) / 100;
+      const emi = Number(item.emi || 0);
+      const balance = Math.max(0, Math.round((emi - amountPaid) * 100) / 100);
+      let status = "Due";
+      if (balance <= 0.01 && emi > 0) {
+        status = "Paid";
+      } else if (amountPaid > 0.01) {
+        status = "Partial";
+      } else {
+        const itemDue = new Date(item.dueDate);
+        itemDue.setHours(0, 0, 0, 0);
+        if (!isNaN(itemDue.getTime()) && itemDue.getTime() < todayDate.getTime()) {
+          status = "Overdue";
+        } else {
+          status = "Due";
+        }
+      }
+      return {
+        ...item,
+        amountPaid,
+        balance: balance <= 0.01 ? 0 : balance,
+        status,
+        paymentsList: item.paymentsList || [],
+      };
+    });
+  }
+
+  // When payments exist, derive schedule strictly from baseline terms and recorded transactions
+  const schedule = baseOrRawSchedule.map((item) => ({
+    ...item,
+    principal: Number(item.principal || 0),
+    interest: Number(item.interest || 0),
+    emi: Number(item.emi || 0),
+    principalOutstanding: item.principalOutstanding !== undefined ? Number(item.principalOutstanding) : undefined,
+    amountPaid: 0,
+    principalPaid: 0,
+    interestPaid: 0,
+    balance: Number(item.emi || 0),
+    status: "Due",
+    paymentsList: [],
+  }));
+
+  const unassignedPayments = [];
+  const sortedPayments = [...eligiblePayments].sort(
+    (a, b) => new Date(a.date || 0) - new Date(b.date || 0)
+  );
+
+  sortedPayments.forEach((p) => {
+    // 1. Explicit allocations array (from Collection.jsx)
+    if (p.allocations && Array.isArray(p.allocations) && p.allocations.length > 0) {
+      let anyAllocated = false;
+      p.allocations.forEach((alloc) => {
+        const instNum = Number(alloc.installmentNumber);
+        const inst = schedule.find((s) => s.installmentNumber === instNum);
+        if (inst) {
+          const allocAmt = Number(alloc.allocated ?? alloc.amount ?? 0);
+          if (allocAmt > 0) {
+            anyAllocated = true;
+            const intAlloc = Number(alloc.interestPaid ?? 0);
+            const prinAlloc = Number(alloc.principalPaid ?? Math.max(0, allocAmt - intAlloc));
+            inst.amountPaid += allocAmt;
+            inst.interestPaid += intAlloc;
+            inst.principalPaid += prinAlloc;
+            if (!inst.paymentsList.some((ep) => ep.id === p.id)) {
+              inst.paymentsList.push(p);
+            }
+          }
+        }
+      });
+      if (!anyAllocated && Number(p.amount || 0) > 0) {
+        unassignedPayments.push(p);
+      }
+      return;
+    }
+
+    // 2. Explicit installment number / reference
+    let matchedNum = null;
+    if (p.installmentNumber !== undefined && p.installmentNumber !== null && !isNaN(Number(p.installmentNumber))) {
+      matchedNum = Number(p.installmentNumber);
+    } else if (p.installmentRef) {
+      const match = String(p.installmentRef).match(/#?(\d+)/);
+      if (match) matchedNum = Number(match[1]);
+    } else if (p.remarks && /installment\s*#?(\d+)/i.test(p.remarks)) {
+      const match = String(p.remarks).match(/installment\s*#?(\d+)/i);
+      if (match) matchedNum = Number(match[1]);
+    }
+
+    if (matchedNum) {
+      const inst = schedule.find((s) => s.installmentNumber === matchedNum);
+      if (inst) {
+        const pAmt = Number(p.amount || 0);
+        const remDue = Math.max(0, inst.emi - inst.amountPaid);
+        const alloc = Math.min(remDue, pAmt);
+        const intDue = Math.max(0, inst.interest - inst.interestPaid);
+        const intAlloc = Math.min(intDue, alloc);
+        const prinAlloc = alloc - intAlloc;
+
+        inst.amountPaid += alloc;
+        inst.interestPaid += intAlloc;
+        inst.principalPaid += prinAlloc;
+        if (!inst.paymentsList.some((ep) => ep.id === p.id)) {
+          inst.paymentsList.push(p);
+        }
+
+        const excess = pAmt - alloc;
+        if (excess > 0.001) {
+          unassignedPayments.push({ ...p, amount: excess, id: `${p.id}-excess` });
+        }
+        return;
+      }
+    }
+
+    // 3. Otherwise unassigned, allocate FIFO
+    unassignedPayments.push(p);
+  });
+
+  // Distribute unassigned payments FIFO across oldest unpaid installments
+  let unassignedIdx = 0;
+  let unassignedRemAmt = unassignedPayments[0] ? Number(unassignedPayments[0].amount || 0) : 0;
+
+  schedule.forEach((inst) => {
+    let remDue = Math.max(0, inst.emi - inst.amountPaid);
+    while (remDue > 0.01 && unassignedIdx < unassignedPayments.length) {
+      const currP = unassignedPayments[unassignedIdx];
+      if (unassignedRemAmt <= 0.001) {
+        unassignedIdx++;
+        if (unassignedIdx < unassignedPayments.length) {
+          unassignedRemAmt = Number(unassignedPayments[unassignedIdx].amount || 0);
+        }
+        continue;
+      }
+
+      const alloc = Math.min(remDue, unassignedRemAmt);
+      const intDue = Math.max(0, inst.interest - inst.interestPaid);
+      const intAlloc = Math.min(intDue, alloc);
+      const prinAlloc = alloc - intAlloc;
+
+      inst.amountPaid += alloc;
+      inst.interestPaid += intAlloc;
+      inst.principalPaid += prinAlloc;
+      remDue -= alloc;
+      unassignedRemAmt -= alloc;
+
+      if (!inst.paymentsList.some((ep) => ep.id === currP.id)) {
+        inst.paymentsList.push(currP);
+      }
+
+      if (unassignedRemAmt <= 0.001) {
+        unassignedIdx++;
+        if (unassignedIdx < unassignedPayments.length) {
+          unassignedRemAmt = Number(unassignedPayments[unassignedIdx].amount || 0);
+        }
+      }
+    }
+  });
+
+  // Calculate balances and final statuses
+  return schedule.map((item) => {
+    const roundedPaid = Math.round(item.amountPaid * 100) / 100;
+    const balance = Math.max(0, Math.round((item.emi - roundedPaid) * 100) / 100);
+    let status = "Due";
+    if (balance <= 0.01 && item.emi > 0) {
+      status = "Paid";
+    } else if (roundedPaid > 0.01) {
+      status = "Partial";
+    } else {
+      const itemDue = new Date(item.dueDate);
+      itemDue.setHours(0, 0, 0, 0);
+      if (!isNaN(itemDue.getTime()) && itemDue.getTime() < todayDate.getTime()) {
+        status = "Overdue";
+      } else {
+        status = "Due";
+      }
+    }
+
+    return {
+      ...item,
+      amountPaid: roundedPaid,
+      balance: balance <= 0.01 ? 0 : balance,
+      status,
+    };
+  });
+};
+
 const StatusBadge = ({ status }) => {
   if (status === 'Paid') return <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-600/20">Paid</span>;
   if (status === 'Partial') return <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 ring-1 ring-inset ring-amber-600/20">Partial</span>;
@@ -222,10 +456,20 @@ const StatusBadge = ({ status }) => {
   return <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 ring-1 ring-inset ring-slate-500/20">Due</span>;
 };
 
-export default function RepaymentScheduleTable({ loanDetails }) {
-  const schedule = useMemo(() => generateSchedule(loanDetails), [loanDetails]);
+export default function RepaymentScheduleTable({ loanDetails = {}, schedule: propSchedule }) {
+  const generatedSchedule = useMemo(() => generateSchedule(loanDetails), [loanDetails]);
 
-  if (!loanDetails.loanAmount || !loanDetails.interestRate || !loanDetails.tenure) {
+  const schedule = useMemo(() => {
+    if (propSchedule && propSchedule.length > 0) {
+      return propSchedule;
+    }
+    if (loanDetails?.repaymentSchedule && loanDetails.repaymentSchedule.length > 0) {
+      return loanDetails.repaymentSchedule;
+    }
+    return generatedSchedule;
+  }, [propSchedule, loanDetails, generatedSchedule]);
+
+  if (!propSchedule && (!loanDetails?.loanAmount || !loanDetails?.interestRate || !loanDetails?.tenure)) {
     return (
       <div className="flex items-center justify-center py-12 px-4 text-center">
         <p className="text-sm font-medium text-slate-500">

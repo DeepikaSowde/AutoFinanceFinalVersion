@@ -12,7 +12,9 @@ import {
 } from "lucide-react";
 
 import { loadCustomerEntries } from "../../services/customerApi";
+import { loadPayments } from "../../services/collectionApi";
 import CustomerView from "./CustomerView";
+import { calculateLoanOutstanding } from "../../utils/loanCalculations";
 
 const formatCurrency = (value) => {
   const amount = Math.round(Number(value || 0));
@@ -94,6 +96,7 @@ const SummaryCard = ({ icon: Icon, title, value }) => {
 
 const Customer = () => {
   const [customerData, setCustomerData] = useState([]);
+  const [allPayments, setAllPayments] = useState([]);
 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("All");
@@ -107,10 +110,11 @@ const Customer = () => {
   useEffect(() => {
     let active = true;
 
-    loadCustomerEntries()
-      .then((entries) => {
+    Promise.all([loadCustomerEntries(), loadPayments()])
+      .then(([entries, payments]) => {
         if (!active) return;
         setCustomerData(entries);
+        setAllPayments(payments);
         setLoadError("");
       })
       .catch((error) => active && setLoadError(error.message))
@@ -132,14 +136,9 @@ const Customer = () => {
       const customerId = getCustomerId(data);
       const loanId = getLoanId(data, customerId);
 
-      const vehicleAmount = Number(vehicle.amount || 0);
-      const loanVehicleAmount = loan.vehicleAmount !== null && loan.vehicleAmount !== undefined && loan.vehicleAmount !== ""
-        ? Number(loan.vehicleAmount)
-        : vehicleAmount;
-
-      const downPayment = Number(loan.downPayment || 0);
-      const loanAmount = data.loanAmount ?? Math.max(loanVehicleAmount - downPayment, 0);
-      const outstandingAmount = data.outstandingAmount ?? loanAmount;
+      const loanCalc = calculateLoanOutstanding(data, allPayments);
+      const loanAmount = loanCalc.principal;
+      const outstandingAmount = loanCalc.outstandingAmount;
       const customerStatus = data.status || (customer.name ? "Active" : "—");
 
       return {
@@ -154,7 +153,7 @@ const Customer = () => {
         status: customerStatus
       };
     });
-  }, [customerData]);
+  }, [customerData, allPayments]);
 
   const filteredCustomers = useMemo(() => {
     if (!hasCustomer) return [];

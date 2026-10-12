@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
+import { DATA_CHANGED_EVENT } from '../services/api';
 import { loadLedgerData } from '../services/ledgerApi';
+import { calculateTotalPortfolioOutstanding } from '../utils/loanCalculations.js';
 
 export const useDashboardData = () => {
   const [data, setData] = useState({
@@ -37,8 +39,9 @@ export const useDashboardData = () => {
             totalRepaid += Number(pay.amount || 0);
         });
 
-        // What borrowers still owe (principal + interest), from each loan's schedule.
-        const totalOutstanding = customers.reduce((sum, cust) => sum + Number(cust.outstandingAmount || 0), 0);
+        // Calculate Total Outstanding across all loans (Remaining Principal + Remaining Interest)
+        const portfolio = calculateTotalPortfolioOutstanding(customers, payments);
+        const totalOutstanding = portfolio.totalOutstanding;
         const interestEarned = payments.reduce((sum, pay) => sum + Number(pay.interest || 0), 0);
 
         let totalIncome = 0;
@@ -199,9 +202,11 @@ export const useDashboardData = () => {
     };
 
     fetchData();
+    window.addEventListener(DATA_CHANGED_EVENT, fetchData);
 
     return () => {
       active = false;
+      window.removeEventListener(DATA_CHANGED_EVENT, fetchData);
     };
   }, []);
 

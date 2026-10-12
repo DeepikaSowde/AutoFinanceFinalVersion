@@ -29,7 +29,7 @@ import {
   Activity,
   BadgePercent,
 } from "lucide-react";
-import RepaymentScheduleTable, { generateSchedule } from "../../components/RepaymentScheduleTable";
+import RepaymentScheduleTable, { generateSchedule, computeEffectiveSchedule } from "../../components/RepaymentScheduleTable";
 import InstallmentTimeline from "../../components/InstallmentTimeline";
 
 const formatCurrency = (value) => {
@@ -192,126 +192,14 @@ export default function LoanDetailsView({ loanId, customerId, onBack, onEditLoan
   const loanPayments = useMemo(() => {
     return allPayments.filter(
       (p) =>
-        (p.loanId ? p.loanId === effectiveLoanId : p.customerId === effectiveCustomerId) &&
+        (p.loanId ? p.loanId === effectiveLoanId : (p.customerId && p.customerId === effectiveCustomerId)) &&
         isEligiblePayment(p)
     );
   }, [allPayments, effectiveLoanId, effectiveCustomerId]);
 
-  // Map collections to installments and compute effective schedule
+  // Derive authoritative schedule reconciled with actual recorded transactions
   const schedule = useMemo(() => {
-    if (!rawSchedule || rawSchedule.length === 0) return [];
-
-    // Helper map of installment payments
-    const paymentsByInstallment = {};
-    rawSchedule.forEach((s) => {
-      paymentsByInstallment[s.installmentNumber] = [];
-    });
-
-    // Unassigned payments to be distributed FIFO
-    const unassignedPayments = [];
-
-    loanPayments.forEach((p) => {
-      let matchedNum = null;
-      if (p.installmentNumber !== undefined && p.installmentNumber !== null) {
-        matchedNum = Number(p.installmentNumber);
-      } else if (p.installmentRef) {
-        const match = p.installmentRef.match(/#?(\d+)/);
-        if (match) matchedNum = Number(match[1]);
-      } else if (p.remarks && /installment\s*#?(\d+)/i.test(p.remarks)) {
-        const match = p.remarks.match(/installment\s*#?(\d+)/i);
-        if (match) matchedNum = Number(match[1]);
-      }
-
-      if (matchedNum && paymentsByInstallment[matchedNum]) {
-        paymentsByInstallment[matchedNum].push(p);
-      } else {
-        unassignedPayments.push(p);
-      }
-    });
-
-    const serverApplied = rawSchedule.some((s) => s.fromServer);
-    if (serverApplied) unassignedPayments.length = 0;
-
-    // Sort unassigned payments chronologically
-    unassignedPayments.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    // Allocate unassigned payments across installments that still have remaining balance
-    let unassignedIdx = 0;
-    let unassignedRemAmt = unassignedPayments[0] ? Number(unassignedPayments[0].amount || 0) : 0;
-
-    const todayDate = new Date();
-    todayDate.setHours(0, 0, 0, 0);
-
-    return rawSchedule.map((item) => {
-      const explicitPayments = item.fromServer
-        ? (item.allocations || []).map((part) => ({
-            ...part,
-            mode: loanPayments.find((p) => p.id === part.id)?.mode,
-          }))
-        : paymentsByInstallment[item.installmentNumber] || [];
-      let totalAssigned = item.fromServer
-        ? Number(item.amountPaid || 0)
-        : explicitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-
-      // If item already had schedule-recorded amountPaid that exceeds explicit payments, account for that
-      if (item.amountPaid && item.amountPaid > totalAssigned && explicitPayments.length === 0) {
-        totalAssigned = Number(item.amountPaid);
-      }
-
-      // Check if unassigned payments can fill remaining due for this installment
-      let remDue = Math.max(0, item.emi - totalAssigned);
-      while (remDue > 0.01 && unassignedIdx < unassignedPayments.length) {
-        const currP = unassignedPayments[unassignedIdx];
-        if (unassignedRemAmt <= 0.001) {
-          unassignedIdx++;
-          if (unassignedIdx < unassignedPayments.length) {
-            unassignedRemAmt = Number(unassignedPayments[unassignedIdx].amount || 0);
-          }
-          continue;
-        }
-
-        const alloc = Math.min(remDue, unassignedRemAmt);
-        totalAssigned += alloc;
-        remDue -= alloc;
-        unassignedRemAmt -= alloc;
-
-        // Associate this payment with this installment's history list
-        if (!explicitPayments.some((ep) => ep.id === currP.id)) {
-          explicitPayments.push(currP);
-        }
-
-        if (unassignedRemAmt <= 0.001) {
-          unassignedIdx++;
-          if (unassignedIdx < unassignedPayments.length) {
-            unassignedRemAmt = Number(unassignedPayments[unassignedIdx].amount || 0);
-          }
-        }
-      }
-
-      const balance = Math.max(0, Math.round((item.emi - totalAssigned) * 100) / 100);
-      let status = "Due";
-      if (balance <= 0.01) {
-        status = "Paid";
-      } else if (totalAssigned > 0.01) {
-        status = "Partial";
-      } else {
-        const itemDue = new Date(item.dueDate);
-        itemDue.setHours(0, 0, 0, 0);
-        if (!isNaN(itemDue.getTime()) && itemDue.getTime() < todayDate.getTime()) {
-          status = "Overdue";
-        } else {
-          status = "Due";
-        }
-      }
-
-      return {
-        ...item,
-        amountPaid: totalAssigned,
-        balance: balance <= 0.01 ? 0 : balance,
-        status: status,
-        paymentsList: explicitPayments,
-      };
-    });
+    return computeEffectiveSchedule(rawSchedule, loanPayments);
   }, [rawSchedule, loanPayments]);
 
   // Financial summary metrics
@@ -323,10 +211,9 @@ export default function LoanDetailsView({ loanId, customerId, onBack, onEditLoan
     (sum, s) => sum + Number(s.amountPaid || 0),
     0
   );
-  const totalCollected = Math.max(
-    totalCollectedFromPayments,
-    totalCollectedFromSchedule
-  );
+  const totalCollected = loanPayments.length > 0
+    ? totalCollectedFromPayments
+    : totalCollectedFromSchedule;
 
   const totalPrincipalRepaid = schedule.reduce(
     (sum, s) => sum + Number(s.principalPaid || 0),
@@ -352,7 +239,7 @@ export default function LoanDetailsView({ loanId, customerId, onBack, onEditLoan
 
   // Total Outstanding = Total Repayable Amount - Total Eligible Collections
   // (Do not use remaining principal value as Total Outstanding)
-  const outstandingBalance = Math.max(totalRepayable - totalCollected, 0);
+  const outstandingBalance = loanRecord?.status === "Closed" ? 0 : Math.max(totalRepayable - totalCollected, 0);
 
   // Next Due Date
   const todayTs = parseToDayTimestamp(new Date());
