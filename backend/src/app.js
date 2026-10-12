@@ -9,6 +9,7 @@ import { customersRouter } from "./routes/customers.js";
 import { loansRouter } from "./routes/loans.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
 import { collectionsRouter } from "./routes/collections.js";
+import { draftsRouter } from "./routes/drafts.js";
 import {
   categoriesRouter,
   expensesRouter,
@@ -36,6 +37,7 @@ export const createApp = () => {
   app.use("/api/loans", requireAuth, loansRouter);
   app.use("/api/vehicles", requireAuth, vehiclesRouter);
   app.use("/api/collections", requireAuth, collectionsRouter);
+  app.use("/api/drafts", requireAuth, draftsRouter);
   app.use("/api/investors", requireAuth, investorsRouter);
   app.use("/api/expenses", requireAuth, expensesRouter);
   app.use("/api/incomes", requireAuth, incomesRouter);

@@ -519,3 +519,23 @@ CREATE TABLE IF NOT EXISTS reminders (
 
 CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders (status);
 CREATE INDEX IF NOT EXISTS idx_reminders_loan ON reminders (loan_id);
+
+/* =========================================================
+   LOAN DRAFTS
+
+   An unfinished New Loan application, saved so it can be resumed on
+   any device. The form travels as jsonb; name and mobile are copied
+   out so the drafts list can show them without opening each one.
+========================================================= */
+
+CREATE TABLE IF NOT EXISTS loan_drafts (
+  pk             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id             TEXT UNIQUE NOT NULL,
+  form           JSONB NOT NULL DEFAULT '{}'::jsonb,
+  customer_name  TEXT,
+  mobile_number  TEXT,
+  created_by     TEXT,
+  updated_by     TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
