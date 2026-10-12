@@ -131,9 +131,9 @@ export const VERIFICATION_STATUSES = [
 ]
 
 export const PAYMENT_FREQUENCIES = [
-  'Monthly',
+  'Daily',
   'Weekly',
-  'Bi-Weekly',
+  'Monthly',
 ]
 
 export const TENURE_UNITS = [

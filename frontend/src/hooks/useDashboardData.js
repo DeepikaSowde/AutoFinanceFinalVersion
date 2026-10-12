@@ -47,7 +47,11 @@ export const useDashboardData = () => {
         const vehicleSaleProceeds = vehicleSales.reduce((sum, sale) => sum + Number(sale.amount || 0), 0);
 
         let totalExpense = 0;
-        expenseData.forEach(exp => totalExpense += Number(exp.amount || 0));
+        expenseData.forEach(exp => {
+            if (exp.category !== 'Investor Withdrawal') {
+                totalExpense += Number(exp.amount || 0);
+            }
+        });
         
         let totalOpeningBalance = 0;
         let investorMoneyIn = 0;
@@ -62,6 +66,16 @@ export const useDashboardData = () => {
                     if (tx.type === "New Investment" || tx.type === "Re-Investment") investorMoneyIn += Number(tx.amount || 0);
                     if (tx.type === "Debit") investorMoneyOut += Number(tx.amount || 0);
                 });
+            }
+        });
+
+        // Account for any unlinked investor withdrawals in expenseData
+        expenseData.forEach(exp => {
+            if (exp.category === 'Investor Withdrawal') {
+                const isLinked = investors.some(inv => inv.transactions?.some(t => t.id === exp.transactionId || t.expenseId === exp.id));
+                if (!isLinked) {
+                    investorMoneyOut += Number(exp.amount || 0);
+                }
             }
         });
 
@@ -92,7 +106,11 @@ export const useDashboardData = () => {
             const loanAmount = Number(cust.loanAmount || 0);
             processDate(cust.customer?.applicationDate, loanAmount, 'debit');
         });
-        expenseData.forEach(exp => processDate(exp.date, exp.amount, 'debit'));
+        expenseData.forEach(exp => {
+            if (exp.category !== 'Investor Withdrawal') {
+                processDate(exp.date, exp.amount, 'debit');
+            }
+        });
         payments.forEach(pay => processDate(pay.date, pay.amount, 'credit'));
         incomeData.forEach(inc => processDate(inc.date, inc.amount, 'credit'));
         vehicleSales.forEach(sale => processDate(sale.date, sale.amount, 'credit'));
@@ -102,6 +120,15 @@ export const useDashboardData = () => {
                     if (tx.type === 'Opening Balance' || tx.type === "New Investment" || tx.type === "Re-Investment") processDate(tx.date, tx.amount, 'credit');
                     if (tx.type === 'Debit') processDate(tx.date, tx.amount, 'debit');
                 });
+            }
+        });
+        // Process any unlinked investor withdrawals for monthly map
+        expenseData.forEach(exp => {
+            if (exp.category === 'Investor Withdrawal') {
+                const isLinked = investors.some(inv => inv.transactions?.some(t => t.id === exp.transactionId || t.expenseId === exp.id));
+                if (!isLinked) {
+                    processDate(exp.date, exp.amount, 'debit');
+                }
             }
         });
 

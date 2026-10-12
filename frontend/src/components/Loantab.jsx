@@ -37,8 +37,14 @@ const YES_NO = ['Yes', 'No']
 const digits = (value = '') =>
   value.replace(/\D/g, '')
 
-const decimal = (value = '') =>
-  value.replace(/[^\d.]/g, '')
+const decimal = (value = '') => {
+  const clean = value.replace(/[^\d.]/g, '')
+  const parts = clean.split('.')
+  if (parts.length > 2) {
+    return `${parts[0]}.${parts.slice(1).join('')}`
+  }
+  return clean
+}
 
 /* =========================================================
    REPAYMENT CALCULATION
@@ -54,7 +60,7 @@ export const calculateRepayment = ({
   repaymentMethod,
 }) => {
   const P = Number(principal) || 0
-  const annualRate = Number(interestRate) || 0
+  const monthlyRate = Number(interestRate) || 0
   const tenureValue = Number(tenure) || 0
 
   if (P <= 0 || tenureValue <= 0) {
@@ -68,43 +74,29 @@ export const calculateRepayment = ({
   }
 
   /* -------------------------------------------------------
-     NUMBER OF PAYMENTS
+     DERIVE NUMBER OF PAYMENTS FROM TENURE & FREQUENCY
   ------------------------------------------------------- */
 
-  let numberOfPayments = tenureValue
+  const tenureMonths =
+    tenureUnit === 'Years'
+      ? tenureValue * 12
+      : tenureValue
 
-  if (tenureUnit === 'Years') {
-    if (paymentFrequency === 'Monthly') {
-      numberOfPayments = tenureValue * 12
-    } else if (paymentFrequency === 'Quarterly') {
-      numberOfPayments = tenureValue * 4
-    } else if (paymentFrequency === 'Half-Yearly') {
-      numberOfPayments = tenureValue * 2
-    } else if (paymentFrequency === 'Yearly') {
-      numberOfPayments = tenureValue
-    } else {
-      numberOfPayments = tenureValue * 12
-    }
-  }
+  let numberOfPayments = tenureMonths
 
-  /* -------------------------------------------------------
-     PAYMENT FREQUENCY
-  ------------------------------------------------------- */
-
-  let periodsPerYear = 12
-
-  if (paymentFrequency === 'Weekly') {
-    periodsPerYear = 52
-  } else if (paymentFrequency === 'Bi-Weekly') {
-    periodsPerYear = 26
-  } else if (paymentFrequency === 'Monthly') {
-    periodsPerYear = 12
-  } else if (paymentFrequency === 'Quarterly') {
-    periodsPerYear = 4
-  } else if (paymentFrequency === 'Half-Yearly') {
-    periodsPerYear = 2
-  } else if (paymentFrequency === 'Yearly') {
-    periodsPerYear = 1
+  if (paymentFrequency === 'Daily') {
+    numberOfPayments =
+      tenureUnit === 'Years'
+        ? tenureValue * 365
+        : Math.round(tenureMonths * 30)
+  } else if (paymentFrequency === 'Weekly') {
+    numberOfPayments =
+      tenureUnit === 'Years'
+        ? tenureValue * 52
+        : Math.round(tenureMonths * (52 / 12))
+  } else {
+    // Default 'Monthly'
+    numberOfPayments = tenureMonths
   }
 
   numberOfPayments = Math.max(
@@ -123,15 +115,23 @@ export const calculateRepayment = ({
   }
 
   /* -------------------------------------------------------
+     PERIODIC INTEREST RATE (DERIVED FROM MONTHLY RATE)
+  ------------------------------------------------------- */
+
+  let periodicRate = monthlyRate / 100
+
+  if (paymentFrequency === 'Daily') {
+    periodicRate = (monthlyRate / 100) / 30
+  } else if (paymentFrequency === 'Weekly') {
+    periodicRate = (monthlyRate / 100) / (52 / 12)
+  }
+
+  /* -------------------------------------------------------
      REDUCING BALANCE
   ------------------------------------------------------- */
 
   if (interestType === 'Reducing Balance') {
-    const periodicRate =
-      annualRate / 100 / periodsPerYear
-
     /* EMI method */
-
     if (
       repaymentMethod === 'EMI' ||
       !repaymentMethod
@@ -142,29 +142,47 @@ export const calculateRepayment = ({
         emi = P / numberOfPayments
       } else {
         emi =
-          P *
-          periodicRate *
-          Math.pow(
-            1 + periodicRate,
-            numberOfPayments
-          ) /
-          (
+          (P *
+            periodicRate *
             Math.pow(
               1 + periodicRate,
               numberOfPayments
-            ) - 1
-          )
+            )) /
+          (Math.pow(
+            1 + periodicRate,
+            numberOfPayments
+          ) - 1)
       }
 
-      const totalPayable =
-        emi * numberOfPayments
+      let balance = P
+      let totalInterest = 0
 
-      const interest =
-        totalPayable - P
+      for (
+        let i = 1;
+        i <= numberOfPayments;
+        i++
+      ) {
+        const interestForPeriod =
+          balance * periodicRate
+        let principalForPeriod =
+          emi - interestForPeriod
+        let periodPayment = emi
+
+        if (i === numberOfPayments) {
+          principalForPeriod = balance
+          periodPayment =
+            principalForPeriod + interestForPeriod
+        }
+
+        totalInterest += interestForPeriod
+        balance -= principalForPeriod
+      }
+
+      const totalPayable = P + totalInterest
 
       return {
         principal: P,
-        interest: Math.max(interest, 0),
+        interest: Math.max(totalInterest, 0),
         totalPayable,
         emiAmount: emi,
         numberOfPayments,
@@ -172,7 +190,6 @@ export const calculateRepayment = ({
     }
 
     /* Principal method */
-
     if (repaymentMethod === 'Principal') {
       const principalPerPayment =
         P / numberOfPayments
@@ -181,26 +198,33 @@ export const calculateRepayment = ({
       let totalInterest = 0
 
       for (
-        let i = 0;
-        i < numberOfPayments;
+        let i = 1;
+        i <= numberOfPayments;
         i++
       ) {
         const interestForPeriod =
           balance * periodicRate
+        let principalForPeriod =
+          principalPerPayment
+
+        if (i === numberOfPayments) {
+          principalForPeriod = balance
+        }
+
+        const periodPayment =
+          principalForPeriod + interestForPeriod
 
         totalInterest += interestForPeriod
-        balance -= principalPerPayment
+        balance -= principalForPeriod
       }
 
-      const totalPayable =
-        P + totalInterest
-
+      const totalPayable = P + totalInterest
       const averagePayment =
         totalPayable / numberOfPayments
 
       return {
         principal: P,
-        interest: totalInterest,
+        interest: Math.max(totalInterest, 0),
         totalPayable,
         emiAmount: averagePayment,
         numberOfPayments,
@@ -212,25 +236,18 @@ export const calculateRepayment = ({
      FLAT / SIMPLE INTEREST
   ------------------------------------------------------- */
 
-  const years =
-    tenureUnit === 'Years'
-      ? tenureValue
-      : tenureValue / periodsPerYear
-
-  const interest =
-    P *
-    (annualRate / 100) *
-    years
+  const totalInterest =
+    P * (monthlyRate / 100) * tenureMonths
 
   const totalPayable =
-    P + interest
+    P + totalInterest
 
   const paymentAmount =
     totalPayable / numberOfPayments
 
   return {
     principal: P,
-    interest,
+    interest: Math.max(totalInterest, 0),
     totalPayable,
     emiAmount: paymentAmount,
     numberOfPayments,

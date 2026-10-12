@@ -4,8 +4,8 @@ import RepaymentScheduleTable from './RepaymentScheduleTable';
 import { calculateRepayment } from './Loantab';
 
 const formatINR = (value) => {
-  if (value === undefined || value === null || isNaN(Number(value))) return '₹0.00';
-  return `₹${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+  if (value === undefined || value === null || isNaN(Number(value))) return '₹0';
+  return `₹${Math.round(Number(value)).toLocaleString('en-IN')}`;
 };
 
 export default function RepaymentScheduleModal({ isOpen, onClose, loanDetails }) {

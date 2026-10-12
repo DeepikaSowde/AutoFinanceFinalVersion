@@ -3,6 +3,10 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'
 
+// Fired after any successful create/update/delete, so views showing the same
+// records (e.g. a loan's details after a payment) can reload.
+export const DATA_CHANGED_EVENT = 'auto-finance:data-changed'
+
 const TOKEN_KEY = 'auto_finance_token'
 const USER_KEY = 'auto_finance_user'
 
@@ -64,6 +68,10 @@ const request = async (path, options = {}) => {
   } catch {
     throw new ApiError('Cannot reach the server. Check your connection and try again.', 0)
   }
+
+  // Any successful write tells open views to reload (see DATA_CHANGED_EVENT).
+  const isWrite = options.method && options.method !== 'GET'
+  if (isWrite && response.ok) window.dispatchEvent(new Event(DATA_CHANGED_EVENT))
 
   if (response.status === 204) return null
 

@@ -1,20 +1,32 @@
-import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { Calendar } from 'lucide-react';
 import { formatCompactCurrency } from '../../utils/currencyFormatter';
+import DashboardEmptyState from './DashboardEmptyState';
 
 const MonthlyDebitCreditChart = ({ data }) => {
-  if (!data || data.length === 0) {
+  const hasData = Array.isArray(data) && data.length > 0 && data.some(d => (Number(d.Debit || 0) > 0 || Number(d.Credit || 0) > 0));
+
+  if (!hasData) {
     return (
-      <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm h-80 flex items-center justify-center col-span-2">
-        <p className="text-slate-500">No monthly data available</p>
+      <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm col-span-1 lg:col-span-7 h-[360px] min-h-[360px] flex flex-col min-w-0">
+        <div className="flex justify-between items-center mb-4 shrink-0">
+          <h3 className="text-base font-bold text-slate-800">Monthly Financial Overview</h3>
+        </div>
+        <div className="flex-1 flex items-center justify-center min-h-0">
+          <DashboardEmptyState
+            icon={Calendar}
+            title="No monthly financial data available."
+            subtitle="Transactions will appear here once recorded."
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm col-span-1 lg:col-span-7 h-[350px] flex flex-col">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-lg font-bold text-slate-800">Monthly Debit vs Credit</h3>
+    <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm col-span-1 lg:col-span-7 h-[360px] min-h-[360px] flex flex-col min-w-0">
+      <div className="flex justify-between items-center mb-4 shrink-0">
+        <h3 className="text-base font-bold text-slate-800">Monthly Financial Overview</h3>
       </div>
       <div className="flex-1 w-full min-h-0">
         <ResponsiveContainer width="100%" height="100%">
@@ -39,8 +51,8 @@ const MonthlyDebitCreditChart = ({ data }) => {
               contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
             />
             <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} align="right" verticalAlign="top" />
-            <Bar dataKey="Debit" fill="#0f4a36" radius={[2, 2, 0, 0]} maxBarSize={12} />
-            <Bar dataKey="Credit" fill="#69bca0" radius={[2, 2, 0, 0]} maxBarSize={12} />
+            <Bar dataKey="Debit" fill="#0f4a36" radius={[2, 2, 0, 0]} maxBarSize={14} />
+            <Bar dataKey="Credit" fill="#69bca0" radius={[2, 2, 0, 0]} maxBarSize={14} />
           </BarChart>
         </ResponsiveContainer>
       </div>

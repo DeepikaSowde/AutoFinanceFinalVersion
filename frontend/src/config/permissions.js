@@ -31,6 +31,7 @@ export const DEFAULT_STAFF_PERMISSIONS = { collections: { view: true, add: true 
 // makes is allowed (e.g. the Ledger also reads investors, which ledger.view
 // covers). Admins open everything; /users is admin-only.
 export const PAGE_ACCESS = {
+  '/loans': ['loans.view', 'loans.add'],
   '/dashboard': ['dashboard.view'],
   '/newloan': ['loans.add'],
   '/collection': ['collections.view'],
@@ -50,6 +51,5 @@ export const canOpen = (user, path) => {
   })
 }
 
-// Where to land after sign-in: New Loan for admins, else the first page allowed.
-export const homePageFor = (user) =>
-  canOpen(user, '/newloan') ? '/newloan' : Object.keys(PAGE_ACCESS).find((path) => canOpen(user, path)) || null
+// Where to land after sign-in: the first page allowed (Loans for admins).
+export const homePageFor = (user) => Object.keys(PAGE_ACCESS).find((path) => canOpen(user, path)) || null

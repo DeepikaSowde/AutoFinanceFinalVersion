@@ -1,4 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { DATA_CHANGED_EVENT } from '../../services/api';
+import { loadCustomerEntries } from '../../services/customerApi';
+import { loadPayments } from '../../services/collectionApi';
 import { 
   ArrowLeft, Edit, Search, FileText, Coins, Landmark, 
   Clock, CheckCircle2, AlertTriangle, Car, Shield, Activity, Users, CreditCard,
@@ -7,7 +10,7 @@ import {
 import RepaymentScheduleTable from '../../components/RepaymentScheduleTable';
 import { calculateRepayment } from '../../components/Loantab';
 
-const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
+const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
 const formatDate = (dateString) => {
   if (!dateString) return '—';
@@ -97,46 +100,164 @@ const TABS = [
   { id: 'activity', label: 'Activity' }
 ];
 
-export default function CustomerView({ customerId, entries = [], onBack }) {
-  const [activeTab, setActiveTab] = useState('overview');
+export const extractRecordCustomerId = (record) => {
+  if (!record || typeof record !== 'object') return null;
+  const rawId = record.customerId || record.customer?.customerId;
+  if (rawId && typeof rawId === 'string' && rawId.trim()) {
+    return rawId.trim();
+  }
+  if (record.customer?.mobile && typeof record.customer.mobile === 'string' && record.customer.mobile.trim().length >= 5) {
+    return `CUS-${record.customer.mobile.trim().slice(-5)}`;
+  }
+  return null;
+};
 
-  // Loaded from the API by the Customers page.
-  const allData = entries;
+export const extractRecordLoanId = (record) => {
+  if (!record || typeof record !== 'object') return null;
+  const rawLoanId = record.loanId || record.loan?.loanId;
+  if (rawLoanId && typeof rawLoanId === 'string' && rawLoanId.trim()) {
+    return rawLoanId.trim();
+  }
+  return null;
+};
+
+export default function CustomerView({ customerId, initialLoanId, onBack, backLabel = "Back to Customers" }) {
+  const [activeTab, setActiveTab] = useState(initialLoanId ? 'loan' : 'overview');
+
+  const [allData, setAllData] = useState([]);
+  const [allPayments, setAllPayments] = useState([]);
+  const [loadError, setLoadError] = useState("");
+
+  // Loans and payments come from the API, and reload after any save (e.g. a
+  // payment recorded from the loan details).
+  useEffect(() => {
+    let active = true;
+    const load = () =>
+      Promise.all([loadCustomerEntries(), loadPayments()])
+        .then(([entries, payments]) => {
+          if (!active) return;
+          setAllData(entries);
+          setAllPayments(payments);
+          setLoadError("");
+        })
+        .catch((error) => active && setLoadError(error.message));
+
+    load();
+    window.addEventListener(DATA_CHANGED_EVENT, load);
+    return () => {
+      active = false;
+      window.removeEventListener(DATA_CHANGED_EVENT, load);
+    };
+  }, [customerId]);
 
   const customerLoans = useMemo(() => {
-    return allData.filter(d => {
-      const cId = d.customerId || (d.customer?.mobile ? `CUS-${d.customer.mobile.slice(-5)}` : null);
-      return cId === customerId;
-    }).map(d => {
-      const vehicleAmount = Number(d.loan?.vehicleAmount !== undefined && d.loan?.vehicleAmount !== "" ? d.loan.vehicleAmount : (d.vehicle?.amount || 0));
-      const downPayment = Number(d.loan?.downPayment || 0);
-      const loanAmount = d.loanAmount ?? Math.max(vehicleAmount - downPayment, 0);
-      const outstandingAmount = d.outstandingAmount ?? loanAmount;
-      
-      const cId = d.customerId || (d.customer?.mobile ? `CUS-${d.customer.mobile.slice(-5)}` : null);
-      const lId = d.loanId || `LN-${cId?.replace("CUS-", "")}`;
+    if (!customerId || typeof customerId !== 'string' || !customerId.trim()) {
+      return [];
+    }
+    const targetCId = customerId.trim().toLowerCase();
 
-      return {
-        ...d,
-        loanAmount,
-        outstandingAmount,
-        loanId: lId,
-        status: d.status || 'Active'
-      };
-    });
-  }, [allData, customerId]);
+    return allData
+      .filter(d => {
+        const cId = extractRecordCustomerId(d);
+        if (!cId) return false;
+        return cId.toLowerCase() === targetCId;
+      })
+      .map((d, index) => {
+        const vehicleAmount = Number(
+          d.loan?.vehicleAmount !== undefined && d.loan?.vehicleAmount !== ""
+            ? d.loan.vehicleAmount
+            : (d.vehicle?.amount || 0)
+        );
+        const downPayment = Number(d.loan?.downPayment || 0);
+        const calculatedPrincipal = Math.max(vehicleAmount - downPayment, 0);
+        const loanAmount = Number(d.loanAmount || calculatedPrincipal || 0);
+        
+        const lId = extractRecordLoanId(d) || `LN-${String(index + 1).padStart(3, "0")}`;
+        const cId = extractRecordCustomerId(d) || customerId;
 
-  const primaryCustomer = customerLoans[0]?.customer || {};
+        // Calculate collections for this specific loan from payment history
+        const paymentsForLoan = allPayments.filter(
+          p => p.loanId === lId && p.status !== "Failed" && p.status !== "Cancelled" && p.status !== "Reversed"
+        );
+        const totalPaidForLoan = paymentsForLoan.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+        let outstandingAmount = loanAmount;
+        if (d.outstandingAmount !== undefined && d.outstandingAmount !== null && !isNaN(Number(d.outstandingAmount))) {
+          outstandingAmount = Number(d.outstandingAmount);
+        } else if (totalPaidForLoan > 0) {
+          outstandingAmount = Math.max(0, loanAmount - totalPaidForLoan);
+        }
+
+        const status = d.status || (outstandingAmount <= 0.01 && loanAmount > 0 ? 'Closed' : 'Active');
+
+        return {
+          ...d,
+          customerId: cId,
+          loanAmount,
+          outstandingAmount,
+          loanId: lId,
+          status,
+          totalPaidForLoan
+        };
+      });
+  }, [allData, allPayments, customerId]);
+
+  const primaryRecord = useMemo(() => {
+    if (customerLoans.length > 0) return customerLoans[0];
+    if (!customerId) return {};
+    const targetCId = customerId.trim().toLowerCase();
+    return allData.find(d => {
+      const cId = extractRecordCustomerId(d);
+      return cId && cId.toLowerCase() === targetCId;
+    }) || {};
+  }, [customerLoans, allData, customerId]);
+
+  const primaryCustomer = primaryRecord.customer || {};
   const mobile = primaryCustomer.mobile ? `${primaryCustomer.countryCode || ''} ${primaryCustomer.mobile}` : '—';
   const customerSince = primaryCustomer.applicationDate || new Date().toISOString().slice(0, 10);
 
   const totalLoans = customerLoans.length;
-  const activeLoans = customerLoans.filter(l => l.status === 'Active').length;
-  const totalOutstanding = customerLoans.reduce((sum, l) => sum + l.outstandingAmount, 0);
-  const totalOverdue = 0;
+  const activeLoans = customerLoans.filter(l => l.status === 'Active' || l.status === 'Overdue').length;
+  const totalOutstanding = customerLoans.reduce((sum, l) => sum + (Number(l.outstandingAmount) || 0), 0);
+  const totalOverdue = customerLoans.filter(l => l.status === 'Overdue').reduce((sum, l) => sum + (Number(l.overdueAmount) || 0), 0);
 
-  const [selectedLoanId, setSelectedLoanId] = useState(customerLoans[0]?.loanId);
-  const selectedLoanData = customerLoans.find(l => l.loanId === selectedLoanId) || customerLoans[0] || {};
+  const [selectedLoanId, setSelectedLoanId] = useState(initialLoanId || null);
+
+  // Synchronize selected loan when customerId or customerLoans change
+  useEffect(() => {
+    if (!customerLoans || customerLoans.length === 0) {
+      setSelectedLoanId(null);
+      return;
+    }
+    // If an initialLoanId is provided and exists in this customer's loans, select it
+    if (initialLoanId && customerLoans.some(l => l.loanId === initialLoanId)) {
+      setSelectedLoanId(initialLoanId);
+      return;
+    }
+    // If current selectedLoanId belongs to this customer, retain it
+    if (selectedLoanId && customerLoans.some(l => l.loanId === selectedLoanId)) {
+      return;
+    }
+    // Otherwise reset to the first loan belonging to this customer
+    setSelectedLoanId(customerLoans[0].loanId);
+  }, [customerId, initialLoanId, customerLoans, selectedLoanId]);
+
+  // Guaranteed active loan ID (strictly belongs to the selected customer's loans)
+  const activeSelectedLoanId = useMemo(() => {
+    if (!customerLoans || customerLoans.length === 0) return null;
+    if (selectedLoanId && customerLoans.some(l => l.loanId === selectedLoanId)) {
+      return selectedLoanId;
+    }
+    if (initialLoanId && customerLoans.some(l => l.loanId === initialLoanId)) {
+      return initialLoanId;
+    }
+    return customerLoans[0].loanId;
+  }, [customerLoans, selectedLoanId, initialLoanId]);
+
+  const selectedLoanData = useMemo(() => {
+    if (!customerLoans || customerLoans.length === 0) return {};
+    return customerLoans.find(l => l.loanId === activeSelectedLoanId) || customerLoans[0] || {};
+  }, [customerLoans, activeSelectedLoanId]);
   
   const loanSummary = useMemo(() => {
     if (!selectedLoanData.loan) return null;
@@ -151,15 +272,32 @@ export default function CustomerView({ customerId, entries = [], onBack }) {
     });
   }, [selectedLoanData]);
 
+  // Selected loan payments for the Payments tab and progress
+  const selectedLoanPayments = useMemo(() => {
+    if (!activeSelectedLoanId) return [];
+    return allPayments.filter(
+      p => p.loanId === activeSelectedLoanId && p.status !== "Failed" && p.status !== "Cancelled" && p.status !== "Reversed"
+    );
+  }, [allPayments, activeSelectedLoanId]);
+
+  const totalPaidForSelectedLoan = useMemo(() => {
+    return selectedLoanPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  }, [selectedLoanPayments]);
+
   return (
     <div className="bg-slate-50">
+      {loadError && (
+        <div role="alert" className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 sm:mx-6 lg:mx-8">
+          Could not load this customer: {loadError}
+        </div>
+      )}
       
       <div className="bg-white border-b border-slate-200 px-4 py-4 sm:px-6 lg:px-8">
         <button 
           onClick={onBack}
           className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 mb-4 transition-colors"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to Customers
+          <ArrowLeft className="h-4 w-4" /> {backLabel}
         </button>
         
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -236,59 +374,66 @@ export default function CustomerView({ customerId, entries = [], onBack }) {
           </div>
           
           <div className="divide-y divide-slate-100">
-            {customerLoans.map(loan => (
-              <div 
-                key={loan.loanId} 
-                onClick={() => setSelectedLoanId(loan.loanId)}
-                className={`p-5 flex flex-col lg:flex-row lg:items-center gap-6 cursor-pointer transition-colors ${selectedLoanId === loan.loanId ? 'bg-emerald-50/30' : 'hover:bg-slate-50'}`}
-              >
-                <div className="flex items-center gap-4 lg:w-1/4">
-                  <div className="bg-emerald-100 p-3 rounded-xl text-emerald-700 shrink-0">
-                    <Car className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-900">{loan.loanId}</span>
-                      <StatusBadge status={loan.status} />
-                    </div>
-                    <p className="text-sm font-medium text-slate-700 mt-1">{loan.vehicle?.brand} {loan.vehicle?.model}</p>
-                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Car className="h-3 w-3"/> {loan.vehicle?.regNo || 'Unregistered'}</p>
-                  </div>
-                </div>
+            {customerLoans.map(loan => {
+              const isSelected = activeSelectedLoanId === loan.loanId;
+              const paid = loan.totalPaidForLoan || 0;
+              const pct = loan.loanAmount > 0 ? Math.min(100, Math.round((paid / loan.loanAmount) * 100)) : 0;
+              const pendingPct = Math.max(0, 100 - pct);
 
-                <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-4">
-                  <div>
-                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Loan Amount</p>
-                    <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(loan.loanAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Outstanding</p>
-                    <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(loan.outstandingAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Interest</p>
-                    <p className="font-bold text-slate-900 mt-0.5">{loan.loan?.interestRate ? `${loan.loan.interestRate}%` : '—'} <span className="text-[10px] font-normal text-slate-500">({loan.loan?.interestType === 'Reducing Balance EMI-Based' ? 'Red. EMI' : loan.loan?.interestType === 'Reducing Balance Principal-Based' ? 'Red. Prin' : 'Flat'})</span></p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Next Due Date</p>
-                    <p className="font-bold text-slate-900 mt-0.5">{formatDate(loan.loan?.firstDueDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Overdue</p>
-                    <p className="font-bold text-red-600 mt-0.5">₹0</p>
-                  </div>
-                  <div className="col-span-2 md:col-span-5 mt-1">
-                    <div className="flex justify-between text-[10px] font-semibold mb-1">
-                      <span className="text-emerald-700">0% Paid</span>
-                      <span className="text-slate-500">100% Pending</span>
+              return (
+                <div 
+                  key={loan.loanId} 
+                  onClick={() => setSelectedLoanId(loan.loanId)}
+                  className={`p-5 flex flex-col lg:flex-row lg:items-center gap-6 cursor-pointer transition-colors ${isSelected ? 'bg-emerald-50/40 ring-1 ring-inset ring-emerald-500/30' : 'hover:bg-slate-50'}`}
+                >
+                  <div className="flex items-center gap-4 lg:w-1/4">
+                    <div className={`p-3 rounded-xl shrink-0 transition-colors ${isSelected ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
+                      <Car className="h-6 w-6" />
                     </div>
-                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: '0%' }}></div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900">{loan.loanId}</span>
+                        <StatusBadge status={loan.status} />
+                      </div>
+                      <p className="text-sm font-medium text-slate-700 mt-1">{loan.vehicle?.brand} {loan.vehicle?.model}</p>
+                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Car className="h-3 w-3"/> {loan.vehicle?.regNo || 'Unregistered'}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-500 uppercase">Loan Amount</p>
+                      <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(loan.loanAmount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-500 uppercase">Outstanding</p>
+                      <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(loan.outstandingAmount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-500 uppercase">Interest</p>
+                      <p className="font-bold text-slate-900 mt-0.5">{loan.loan?.interestRate ? `${loan.loan.interestRate}%` : '—'} <span className="text-[10px] font-normal text-slate-500">({loan.loan?.interestType === 'Reducing Balance EMI-Based' ? 'Red. EMI' : loan.loan?.interestType === 'Reducing Balance Principal-Based' ? 'Red. Prin' : 'Flat'})</span></p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-500 uppercase">Next Due Date</p>
+                      <p className="font-bold text-slate-900 mt-0.5">{formatDate(loan.loan?.firstDueDate || loan.nextDueDate)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-500 uppercase">Overdue</p>
+                      <p className="font-bold text-red-600 mt-0.5">{formatCurrency(loan.overdueAmount || 0)}</p>
+                    </div>
+                    <div className="col-span-2 md:col-span-5 mt-1">
+                      <div className="flex justify-between text-[10px] font-semibold mb-1">
+                        <span className="text-emerald-700">{pct}% Paid</span>
+                        <span className="text-slate-500">{pendingPct}% Pending</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }}></div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {customerLoans.length === 0 && (
               <div className="p-8 text-center text-slate-500">No loans found for this customer.</div>
             )}
@@ -409,7 +554,7 @@ export default function CustomerView({ customerId, entries = [], onBack }) {
                       <div className="p-5 space-y-4">
                         <div className="flex justify-between border-b border-slate-100 pb-2">
                           <span className="text-sm text-slate-500">Loan ID</span>
-                          <span className="text-sm font-semibold text-slate-900">{selectedLoanId}</span>
+                          <span className="text-sm font-semibold text-slate-900">{activeSelectedLoanId || '—'}</span>
                         </div>
                         <div className="flex justify-between border-b border-slate-100 pb-2">
                           <span className="text-sm text-slate-500">Loan Status</span>
@@ -481,39 +626,55 @@ export default function CustomerView({ customerId, entries = [], onBack }) {
                         Repayment Progress
                       </div>
                       <div className="p-5 flex-1 flex flex-col justify-center">
-                        <div className="text-center mb-6">
-                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Total Paid</p>
-                          <p className="text-3xl font-black text-emerald-700">₹0</p>
-                          <p className="text-xs text-slate-500 mt-1">out of {loanSummary ? formatCurrency(loanSummary.totalAmount) : '—'}</p>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs font-semibold">
-                            <span className="text-emerald-700">0% Paid</span>
-                            <span className="text-slate-500">100% Pending</span>
-                          </div>
-                          <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: '0%' }}></div>
-                          </div>
-                        </div>
+                        {(() => {
+                          const totalRepay = loanSummary?.totalAmount || selectedLoanData.loanAmount || 0;
+                          const paid = totalPaidForSelectedLoan || 0;
+                          const pct = totalRepay > 0 ? Math.min(100, Math.round((paid / totalRepay) * 100)) : 0;
+                          const pendingPct = Math.max(0, 100 - pct);
+                          const paidInst = loanSummary?.emiAmount && loanSummary.emiAmount > 0 ? Math.min(loanSummary.numberOfPayments || 0, Math.floor(paid / loanSummary.emiAmount)) : 0;
+                          const pendingInst = Math.max(0, (loanSummary?.numberOfPayments || 0) - paidInst);
 
-                        <div className="grid grid-cols-2 gap-4 mt-6">
-                          <div className="bg-slate-50 rounded-lg p-3 text-center">
-                            <p className="text-[10px] text-slate-500 uppercase font-semibold">Paid Inst.</p>
-                            <p className="text-lg font-bold text-slate-900 mt-0.5">0</p>
-                          </div>
-                          <div className="bg-slate-50 rounded-lg p-3 text-center">
-                            <p className="text-[10px] text-slate-500 uppercase font-semibold">Pending Inst.</p>
-                            <p className="text-lg font-bold text-slate-900 mt-0.5">{loanSummary ? loanSummary.numberOfPayments : '—'}</p>
-                          </div>
-                        </div>
+                          return (
+                            <>
+                              <div className="text-center mb-6">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Total Paid</p>
+                                <p className="text-3xl font-black text-emerald-700">{formatCurrency(paid)}</p>
+                                <p className="text-xs text-slate-500 mt-1">out of {loanSummary ? formatCurrency(totalRepay) : '—'}</p>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-xs font-semibold">
+                                  <span className="text-emerald-700">{pct}% Paid</span>
+                                  <span className="text-slate-500">{pendingPct}% Pending</span>
+                                </div>
+                                <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
+                                  <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }}></div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4 mt-6">
+                                <div className="bg-slate-50 rounded-lg p-3 text-center">
+                                  <p className="text-[10px] text-slate-500 uppercase font-semibold">Paid Inst.</p>
+                                  <p className="text-lg font-bold text-slate-900 mt-0.5">{paidInst}</p>
+                                </div>
+                                <div className="bg-slate-50 rounded-lg p-3 text-center">
+                                  <p className="text-[10px] text-slate-500 uppercase font-semibold">Pending Inst.</p>
+                                  <p className="text-lg font-bold text-slate-900 mt-0.5">{pendingInst}</p>
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
 
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mt-6">
                     <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-emerald-600"/> Repayment Schedule</h3>
-                    <RepaymentScheduleTable loanDetails={selectedLoanData.loan} />
+                    <RepaymentScheduleTable loanDetails={{
+                      ...selectedLoanData.loan,
+                      loanAmount: selectedLoanData.loanAmount
+                    }} />
                   </div>
                 </>
               ) : (
@@ -737,31 +898,92 @@ export default function CustomerView({ customerId, entries = [], onBack }) {
 
           {/* PAYMENTS TAB */}
           {activeTab === 'payments' && (
-             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 flex flex-col items-center justify-center text-center">
+            selectedLoanPayments.length > 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-slate-900">Payment History</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Recorded collections for {activeSelectedLoanId || 'this loan'}</p>
+                  </div>
+                  <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full">
+                    {selectedLoanPayments.length} payment{selectedLoanPayments.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Receipt / Ref</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Payment Date</th>
+                        <th className="px-4 py-3 text-right font-semibold text-slate-700">Amount Paid</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Method</th>
+                        <th className="px-4 py-3 text-center font-semibold text-slate-700">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {selectedLoanPayments.map((p, idx) => (
+                        <tr key={p.id || idx} className="hover:bg-slate-50 transition-colors">
+                          <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
+                            {p.receiptNo || p.referenceNo || p.id || `RCP-${idx + 1}`}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                            {formatDate(p.paymentDate || p.date)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-emerald-800">
+                            {formatCurrency(p.amount)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                            {p.paymentMethod || p.method || 'Cash'}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-center">
+                            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                              {p.status || 'Received'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 flex flex-col items-center justify-center text-center">
                 <div className="bg-emerald-50 h-16 w-16 rounded-full flex items-center justify-center mb-4 border border-emerald-100 shadow-sm">
                   <Wallet className="h-8 w-8 text-emerald-600" />
                 </div>
                 <h3 className="text-lg font-bold text-slate-900">No Payments Recorded</h3>
-                <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">Payment history for this loan will appear here once payments are recorded.</p>
-             </div>
+                <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">Payment history for {activeSelectedLoanId || 'this loan'} will appear here once payments are recorded.</p>
+              </div>
+            )
           )}
 
           {/* ACTIVITY TAB */}
           {activeTab === 'activity' && (() => {
-            // Combine mock loan creation with any future activity logs
+            const paymentActivities = selectedLoanPayments.map(p => ({
+              id: p.id || `pmt-${p.paymentDate || p.date}-${p.amount}`,
+              title: `Payment Received — ${formatCurrency(p.amount)}`,
+              description: `Collected via ${p.paymentMethod || 'Cash'}${p.receiptNo ? ` (Ref: ${p.receiptNo})` : ''} for loan ${activeSelectedLoanId}.`,
+              date: p.paymentDate || p.date,
+              icon: Coins,
+              colorClass: 'text-emerald-700',
+              bgClass: 'bg-emerald-50',
+              borderClass: 'border-emerald-100'
+            }));
+
             const activities = [
               ...(selectedLoanData.activities || []),
+              ...paymentActivities,
               {
                 id: 'loan_created',
                 title: 'Loan Application Created',
-                description: `Initial loan profile was created for ${selectedLoanData.customer?.name || 'the customer'}.`,
-                date: selectedLoanData.customer?.applicationDate,
+                description: `Loan profile (${activeSelectedLoanId || 'new'}) was created for ${selectedLoanData.customer?.name || primaryCustomer.name || 'the customer'}.`,
+                date: selectedLoanData.customer?.applicationDate || selectedLoanData.date,
                 icon: FileTextIcon,
                 colorClass: 'text-[#087F5B]',
                 bgClass: 'bg-emerald-50',
                 borderClass: 'border-emerald-100'
               }
-            ];
+            ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
             return (
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8">

@@ -1,14 +1,27 @@
-import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Users } from 'lucide-react';
+import { Users, ArrowRightLeft } from 'lucide-react';
 import { formatCompactCurrency } from '../../utils/currencyFormatter';
+import DashboardEmptyState from './DashboardEmptyState';
 
 const RepaymentInterestChart = ({ data }) => {
-  // If there's no data or all values are 0
-  if (!data || data.length === 0 || !data.some(d => d.Credit > 0)) {
+  const hasData = Array.isArray(data) && data.length > 0 && data.some(d => Number(d.Credit || 0) > 0);
+
+  if (!hasData) {
     return (
-      <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm col-span-1 h-80 flex items-center justify-center">
-        <p className="text-slate-500">No repayment data available</p>
+      <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm col-span-1 lg:col-span-7 h-[360px] min-h-[360px] flex flex-col min-w-0">
+        <div className="flex items-center gap-2 mb-4 shrink-0">
+          <div className="h-8 w-8 rounded-full bg-emerald-50 flex items-center justify-center shrink-0">
+            <Users className="h-4 w-4 text-emerald-700" strokeWidth={1.8} />
+          </div>
+          <h3 className="text-base font-bold text-slate-800">Repayment vs Interest</h3>
+        </div>
+        <div className="flex-1 flex items-center justify-center min-h-0">
+          <DashboardEmptyState
+            icon={ArrowRightLeft}
+            title="No repayment data available."
+            subtitle="Repayment and interest trends will appear once recorded."
+          />
+        </div>
       </div>
     );
   }
@@ -20,12 +33,12 @@ const RepaymentInterestChart = ({ data }) => {
   }));
 
   return (
-    <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm col-span-1 lg:col-span-7 h-[350px] flex flex-col">
-      <div className="flex items-center gap-2 mb-6">
+    <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm col-span-1 lg:col-span-7 h-[360px] min-h-[360px] flex flex-col min-w-0">
+      <div className="flex items-center gap-2 mb-4 shrink-0">
         <div className="h-8 w-8 rounded-full bg-emerald-50 flex items-center justify-center shrink-0">
-          <Users className="h-4 w-4 text-emerald-700" />
+          <Users className="h-4 w-4 text-emerald-700" strokeWidth={1.8} />
         </div>
-        <h3 className="text-sm font-bold text-slate-800">Repayment vs Interest</h3>
+        <h3 className="text-base font-bold text-slate-800">Repayment vs Interest</h3>
       </div>
       <div className="flex-1 w-full min-h-0">
         <ResponsiveContainer width="100%" height="100%">

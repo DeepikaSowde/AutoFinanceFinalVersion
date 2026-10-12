@@ -5,7 +5,7 @@
 // from raw terms rather than trusting values submitted by a client.
 
 import {
-  getInterestYears,
+  getInterestMonths,
   getPaymentCount,
   getPeriodicRate,
   normaliseInterestType,
@@ -24,13 +24,13 @@ export const calculateFlatInterest = ({
 }) => {
   const loanAmount = Number(principal) || 0;
   const interestRate = Number(rate) || 0;
-  const years = getInterestYears({ tenure, tenureUnit, frequency });
+  const months = getInterestMonths({ tenure, tenureUnit });
 
-  if (loanAmount <= 0 || interestRate <= 0 || years <= 0) {
+  if (loanAmount <= 0 || interestRate <= 0 || months <= 0) {
     return 0;
   }
 
-  return roundMoney(loanAmount * (interestRate / 100) * years);
+  return roundMoney(loanAmount * (interestRate / 100) * months);
 };
 
 export const calculateFlatEMI = ({

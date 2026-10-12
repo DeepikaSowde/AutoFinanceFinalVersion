@@ -194,8 +194,29 @@ const docAsFile = (meta) => (meta?.fileName ? { name: meta.fileName, type: meta.
 // Installments in the shape the Collection screen works with.
 const SCHEDULE_STATUS = { Paid: 'Collected', 'Partially Paid': 'Partial' }
 
-const toUiSchedule = (rows = []) =>
-  rows.map((row) => ({
+// Which payments went to an installment, from the server's allocation records
+// (one payment can be split across installments, and into interest/principal).
+const allocationsByInstallment = (paymentHistory = []) => {
+  const byInstallment = {}
+  for (const part of paymentHistory) {
+    const list = (byInstallment[part.installment] ||= [])
+    let row = list.find((item) => item.id === part.collectionId)
+    if (!row) {
+      row = { id: part.collectionId, date: part.paidAt, amount: 0, principal: 0, interest: 0 }
+      list.push(row)
+    }
+    row.amount += Number(part.amount) || 0
+    if (part.isPrincipal) row.principal += Number(part.amount) || 0
+    if (part.isInterest) row.interest += Number(part.amount) || 0
+  }
+  return byInstallment
+}
+
+// fromServer marks rows whose paid amounts already include every payment, so
+// views must not apply payments to them a second time.
+const toUiSchedule = (rows = [], paymentHistory = []) => {
+  const allocations = allocationsByInstallment(paymentHistory)
+  return rows.map((row) => ({
     installmentNumber: row.installmentNumber,
     dueDate: row.dueDate,
     emi: row.paymentAmount,
@@ -205,7 +226,10 @@ const toUiSchedule = (rows = []) =>
     principalPaid: row.paidPrincipal,
     interestPaid: row.paidInterest,
     status: SCHEDULE_STATUS[row.status] || 'Due',
+    fromServer: true,
+    allocations: allocations[row.installmentNumber] || [],
   }))
+}
 
 const nextDueDateOf = (loan) => {
   const unpaid = (loan.repaymentSchedule || []).find((row) => row.status !== 'Paid')
@@ -311,7 +335,7 @@ const toEntry = (record, loan) => {
     outstandingAmount: loan.outstandingAmount ?? 0,
     paymentFrequency: loan.repayment?.frequency || '',
     nextDueDate: nextDueDateOf(loan),
-    repaymentSchedule: toUiSchedule(loan.repaymentSchedule),
+    repaymentSchedule: toUiSchedule(loan.repaymentSchedule, loan.paymentHistory),
     paymentHistory: loan.paymentHistory || [],
     status: loan.status || 'Active',
     createdAt: loan.createdAt,

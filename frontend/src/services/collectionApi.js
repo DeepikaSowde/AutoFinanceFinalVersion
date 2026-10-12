@@ -26,7 +26,7 @@ export const loadPayments = async () => {
 
 // clientRef is made once per payment attempt (when the dialog opens) so a
 // double click or a retry after a lost response does not post twice.
-export const recordCollection = ({ entry, amount, paymentMode, remarks, dueAmount, clientRef }) =>
+export const recordCollection = ({ entry, amount, paymentMode, remarks, dueAmount, clientRef, collectedDate }) =>
   apiPost('/collections', {
     loanId: entry.loanId,
     customerId: entry.customerId,
@@ -34,6 +34,6 @@ export const recordCollection = ({ entry, amount, paymentMode, remarks, dueAmoun
     payMode: paymentMode,
     remarks,
     dueAmount,
-    collectedDate: new Date().toISOString(),
+    collectedDate: collectedDate || new Date().toISOString(),
     clientRef,
   })

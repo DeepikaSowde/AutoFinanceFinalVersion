@@ -6,7 +6,7 @@
 
 import {
   addPeriods,
-  getInterestYears,
+  getInterestMonths,
   getPaymentCount,
   getPeriodicRate,
   normaliseInterestType,
@@ -52,8 +52,8 @@ const generateFlatEMI = ({ principal, rate, tenure, tenureUnit, frequency, first
     return [];
   }
 
-  const years = getInterestYears({ tenure, tenureUnit, frequency });
-  const totalInterest = loanAmount * ((Number(rate) || 0) / 100) * years;
+  const months = getInterestMonths({ tenure, tenureUnit });
+  const totalInterest = loanAmount * ((Number(rate) || 0) / 100) * months;
   const principalPerPayment = loanAmount / paymentCount;
   const interestPerPayment = totalInterest / paymentCount;
 
@@ -110,9 +110,12 @@ const generateReducingEMI = ({ principal, rate, tenure, tenureUnit, frequency, f
   const schedule = [];
   let remainingBalance = loanAmount;
 
+  let totalInterest = 0;
+
   for (let period = 1; period <= paymentCount; period++) {
     const openingBalance = remainingBalance;
     const interestAmount = openingBalance * periodicRate;
+    totalInterest += interestAmount;
 
     let principalAmount = paymentAmount - interestAmount;
 
@@ -136,9 +139,9 @@ const generateReducingEMI = ({ principal, rate, tenure, tenureUnit, frequency, f
     });
   }
 
-  // Reducing-balance interest is computed per period from the real
-  // balance, so only principal needs reconciling.
-  return reconcileFinalRow(schedule, { loanAmount });
+  // Rows are rounded to paise; the last one absorbs the drift so the
+  // schedule adds up to the loan's total interest exactly.
+  return reconcileFinalRow(schedule, { loanAmount, totalInterest: roundMoney(totalInterest) });
 };
 
 const generateFlatPrincipal = ({ principal, rate, tenure, tenureUnit, frequency, firstDueDate }) => {
@@ -149,8 +152,8 @@ const generateFlatPrincipal = ({ principal, rate, tenure, tenureUnit, frequency,
     return [];
   }
 
-  const years = getInterestYears({ tenure, tenureUnit, frequency });
-  const totalInterest = loanAmount * ((Number(rate) || 0) / 100) * years;
+  const months = getInterestMonths({ tenure, tenureUnit });
+  const totalInterest = loanAmount * ((Number(rate) || 0) / 100) * months;
   const principalPerPayment = loanAmount / paymentCount;
   const interestPerPayment = totalInterest / paymentCount;
 
@@ -205,10 +208,12 @@ const generateReducingPrincipal = ({
 
   const schedule = [];
   let remainingBalance = loanAmount;
+  let totalInterest = 0;
 
   for (let period = 1; period <= paymentCount; period++) {
     const openingBalance = remainingBalance;
     const interestAmount = openingBalance * periodicRate;
+    totalInterest += interestAmount;
     const principalAmount = period === paymentCount ? remainingBalance : principalPerPayment;
     const paymentAmount = principalAmount + interestAmount;
 
@@ -226,7 +231,9 @@ const generateReducingPrincipal = ({
     });
   }
 
-  return reconcileFinalRow(schedule, { loanAmount });
+  // Rows are rounded to paise; the last one absorbs the drift so the
+  // schedule adds up to the loan's total interest exactly.
+  return reconcileFinalRow(schedule, { loanAmount, totalInterest: roundMoney(totalInterest) });
 };
 
 export const generateRepaymentSchedule = ({

@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 
 const formatINR = (value) => {
-  if (value === undefined || value === null || isNaN(Number(value))) return '₹0.00';
-  return `₹${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+  if (value === undefined || value === null || isNaN(Number(value))) return '₹0';
+  return `₹${Math.round(Number(value)).toLocaleString('en-IN')}`;
 };
 
 const formatDate = (dateString) => {
@@ -12,9 +12,9 @@ const formatDate = (dateString) => {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-const generateSchedule = (loanDetails) => {
+export const generateSchedule = (loanDetails) => {
   const P = Number(loanDetails.loanAmount) || 0;
-  const annualRate = Number(loanDetails.interestRate) || 0;
+  const monthlyRate = Number(loanDetails.interestRate) || 0;
   const tenureValue = Number(loanDetails.tenure) || 0;
   const tenureUnit = loanDetails.tenureUnit;
   const paymentFrequency = loanDetails.paymentFrequency;
@@ -24,85 +24,100 @@ const generateSchedule = (loanDetails) => {
 
   if (P <= 0 || tenureValue <= 0) return [];
 
-  let numberOfPayments = tenureValue;
-  if (tenureUnit === 'Years') {
-    if (paymentFrequency === 'Monthly') numberOfPayments *= 12;
-    else if (paymentFrequency === 'Quarterly') numberOfPayments *= 4;
-    else if (paymentFrequency === 'Half-Yearly') numberOfPayments *= 2;
-    else if (paymentFrequency === 'Yearly') numberOfPayments *= 1;
-    else if (paymentFrequency === 'Weekly') numberOfPayments *= 52;
-    else if (paymentFrequency === 'Bi-Weekly') numberOfPayments *= 26;
-    else if (paymentFrequency === 'Daily') numberOfPayments *= 365;
-    else numberOfPayments *= 12;
-  }
+  const tenureMonths = tenureUnit === 'Years' ? tenureValue * 12 : tenureValue;
 
-  let periodsPerYear = 12;
-  if (paymentFrequency === 'Weekly') periodsPerYear = 52;
-  else if (paymentFrequency === 'Bi-Weekly') periodsPerYear = 26;
-  else if (paymentFrequency === 'Monthly') periodsPerYear = 12;
-  else if (paymentFrequency === 'Quarterly') periodsPerYear = 4;
-  else if (paymentFrequency === 'Half-Yearly') periodsPerYear = 2;
-  else if (paymentFrequency === 'Yearly') periodsPerYear = 1;
-  else if (paymentFrequency === 'Daily') periodsPerYear = 365;
+  let numberOfPayments = tenureMonths;
+  if (paymentFrequency === 'Daily') {
+    numberOfPayments = tenureUnit === 'Years' ? tenureValue * 365 : Math.round(tenureMonths * 30);
+  } else if (paymentFrequency === 'Weekly') {
+    numberOfPayments = tenureUnit === 'Years' ? tenureValue * 52 : Math.round(tenureMonths * (52 / 12));
+  } else {
+    numberOfPayments = tenureMonths;
+  }
 
   numberOfPayments = Math.max(Math.round(numberOfPayments), 0);
   if (numberOfPayments === 0) return [];
 
+  let periodicRate = monthlyRate / 100;
+  if (paymentFrequency === 'Daily') {
+    periodicRate = (monthlyRate / 100) / 30;
+  } else if (paymentFrequency === 'Weekly') {
+    periodicRate = (monthlyRate / 100) / (52 / 12);
+  }
+
   const schedule = [];
   let balance = P;
   
-  let currentDue = new Date();
+  let baseDate;
   if (firstDueDateStr) {
-    currentDue = new Date(firstDueDateStr);
+    if (typeof firstDueDateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(firstDueDateStr)) {
+      const [y, m, d] = firstDueDateStr.split('-').map(Number);
+      baseDate = new Date(y, m - 1, d);
+    } else {
+      baseDate = new Date(firstDueDateStr);
+    }
+  } else {
+    baseDate = new Date();
   }
+  const startYear = baseDate.getFullYear();
+  const startMonth = baseDate.getMonth();
+  const startDay = baseDate.getDate();
 
-  const addFrequency = (date, freq) => {
-    const nd = new Date(date);
-    if (freq === 'Monthly') nd.setMonth(nd.getMonth() + 1);
-    else if (freq === 'Weekly') nd.setDate(nd.getDate() + 7);
-    else if (freq === 'Bi-Weekly') nd.setDate(nd.getDate() + 14);
-    else if (freq === 'Quarterly') nd.setMonth(nd.getMonth() + 3);
-    else if (freq === 'Half-Yearly') nd.setMonth(nd.getMonth() + 6);
-    else if (freq === 'Yearly') nd.setFullYear(nd.getFullYear() + 1);
-    else if (freq === 'Daily') nd.setDate(nd.getDate() + 1);
-    return nd;
+  const getDueDate = (installmentIndex) => {
+    if (paymentFrequency === 'Daily') {
+      const d = new Date(baseDate);
+      d.setDate(startDay + installmentIndex);
+      return d;
+    }
+    if (paymentFrequency === 'Weekly') {
+      const d = new Date(baseDate);
+      d.setDate(startDay + installmentIndex * 7);
+      return d;
+    }
+    // Monthly: exact 1 month progression respecting month-end dates and leap years
+    const targetMonth = startMonth + installmentIndex;
+    const targetYear = startYear + Math.floor(targetMonth / 12);
+    const monthInYear = ((targetMonth % 12) + 12) % 12;
+    const daysInTargetMonth = new Date(targetYear, monthInYear + 1, 0).getDate();
+    const targetDay = Math.min(startDay, daysInTargetMonth);
+    return new Date(targetYear, monthInYear, targetDay);
   };
 
   if (interestType === 'Reducing Balance') {
-    const periodicRate = annualRate / 100 / periodsPerYear;
-
     if (repaymentMethod === 'EMI' || !repaymentMethod) {
       let emi = 0;
       if (periodicRate === 0) {
         emi = P / numberOfPayments;
       } else {
-        emi = P * periodicRate * Math.pow(1 + periodicRate, numberOfPayments) / (Math.pow(1 + periodicRate, numberOfPayments) - 1);
+        emi = (P * periodicRate * Math.pow(1 + periodicRate, numberOfPayments)) /
+              (Math.pow(1 + periodicRate, numberOfPayments) - 1);
       }
 
       for (let i = 1; i <= numberOfPayments; i++) {
         let interestForPeriod = balance * periodicRate;
         let principalForPeriod = emi - interestForPeriod;
+        let periodEmi = emi;
 
         if (i === numberOfPayments) {
           principalForPeriod = balance;
-          emi = principalForPeriod + interestForPeriod;
+          periodEmi = principalForPeriod + interestForPeriod;
         }
+
+        const remainingPrincipal = i === numberOfPayments ? 0 : Math.max(0, balance - principalForPeriod);
 
         schedule.push({
           installmentNumber: i,
-          dueDate: new Date(currentDue),
+          dueDate: getDueDate(i - 1),
           principal: principalForPeriod,
+          principalOutstanding: remainingPrincipal,
           interest: interestForPeriod,
-          emi: emi,
+          emi: periodEmi,
           amountPaid: 0,
-          balance: emi,
+          balance: periodEmi,
           status: 'Due'
         });
 
-        balance -= principalForPeriod;
-        if (i < numberOfPayments) {
-          currentDue = addFrequency(currentDue, paymentFrequency);
-        }
+        balance = remainingPrincipal;
       }
     } else if (repaymentMethod === 'Principal') {
       const principalPerPayment = P / numberOfPayments;
@@ -114,32 +129,33 @@ const generateSchedule = (loanDetails) => {
           principalForPeriod = balance;
         }
         
-        let emi = principalForPeriod + interestForPeriod;
+        let periodEmi = principalForPeriod + interestForPeriod;
+        const remainingPrincipal = i === numberOfPayments ? 0 : Math.max(0, balance - principalForPeriod);
 
         schedule.push({
           installmentNumber: i,
-          dueDate: new Date(currentDue),
+          dueDate: getDueDate(i - 1),
           principal: principalForPeriod,
+          principalOutstanding: remainingPrincipal,
           interest: interestForPeriod,
-          emi: emi,
+          emi: periodEmi,
           amountPaid: 0,
-          balance: emi,
+          balance: periodEmi,
           status: 'Due'
         });
 
-        balance -= principalForPeriod;
-        if (i < numberOfPayments) {
-          currentDue = addFrequency(currentDue, paymentFrequency);
-        }
+        balance = remainingPrincipal;
       }
     }
   } else {
     // Flat / Simple Interest
-    const years = tenureUnit === 'Years' ? tenureValue : tenureValue / periodsPerYear;
-    const totalInterest = P * (annualRate / 100) * years;
+    const totalInterest = P * (monthlyRate / 100) * tenureMonths;
     const interestPerPayment = totalInterest / numberOfPayments;
     const principalPerPayment = P / numberOfPayments;
     const emi = (P + totalInterest) / numberOfPayments;
+
+    let accumulatedPrincipal = 0;
+    let accumulatedInterest = 0;
 
     for (let i = 1; i <= numberOfPayments; i++) {
       let prin = principalPerPayment;
@@ -148,13 +164,20 @@ const generateSchedule = (loanDetails) => {
 
       if (i === numberOfPayments) {
         prin = balance;
+        int = totalInterest - accumulatedInterest;
         amt = prin + int;
+      } else {
+        accumulatedPrincipal += prin;
+        accumulatedInterest += int;
       }
+
+      const remainingPrincipal = i === numberOfPayments ? 0 : Math.max(0, balance - prin);
 
       schedule.push({
         installmentNumber: i,
-        dueDate: new Date(currentDue),
+        dueDate: getDueDate(i - 1),
         principal: prin,
+        principalOutstanding: remainingPrincipal,
         interest: int,
         emi: amt,
         amountPaid: 0,
@@ -162,10 +185,7 @@ const generateSchedule = (loanDetails) => {
         status: 'Due'
       });
 
-      balance -= prin;
-      if (i < numberOfPayments) {
-        currentDue = addFrequency(currentDue, paymentFrequency);
-      }
+      balance = remainingPrincipal;
     }
   }
 
@@ -233,6 +253,7 @@ export default function RepaymentScheduleTable({ loanDetails }) {
             <th className="px-4 py-3 text-left font-semibold text-slate-700">No.</th>
             <th className="px-4 py-3 text-left font-semibold text-slate-700">Due Date</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal</th>
+            <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal Outstanding</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Interest</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Installment</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Amount Paid</th>
@@ -246,6 +267,7 @@ export default function RepaymentScheduleTable({ loanDetails }) {
               <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-600">{row.installmentNumber}</td>
               <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">{formatDate(row.dueDate)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.principal)}</td>
+              <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-700">{formatINR(row.principalOutstanding)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.interest)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-emerald-800">{formatINR(row.emi)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.amountPaid)}</td>

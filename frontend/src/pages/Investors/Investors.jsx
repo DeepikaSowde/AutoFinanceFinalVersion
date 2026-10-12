@@ -24,7 +24,7 @@ import {
   reinvest,
 } from "../../services/investorApi";
 
-const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
+const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
 const Investors = () => {
   const [search, setSearch] = useState("");
@@ -249,7 +249,7 @@ const Investors = () => {
       </div>
 
       {/* KPI CARDS */}
-      <div className="mt-6 grid grid-cols-1 max-[400px]:grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-row gap-3 sm:gap-4 shrink-0">
+      <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 sm:gap-4 shrink-0">
         <SummaryCard icon={Users} title="Total Investors" value={filteredInvestors.length} />
         <SummaryCard icon={Database} title="Total Amount Invested" value={formatCurrency(totalInvestedGlobal)} />
         <SummaryCard icon={Wallet} title="Total Available Balance" value={formatCurrency(totalAvailableBalance)} />
@@ -705,14 +705,18 @@ const FormSection = ({ title, children }) => (
 );
 
 const SummaryCard = ({ icon: Icon, title, value }) => (
-  <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow flex-1 min-w-[200px]">
-    <div className="flex items-center gap-3 sm:gap-4">
+  <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow min-w-0 w-full h-full">
+    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
       <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-[#e5f0ef] text-[#006052]">
         <Icon className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2.5} />
       </div>
-      <div className="min-w-0">
-        <p className="text-[13px] sm:text-[14px] font-semibold text-slate-500">{title}</p>
-        <p className="mt-0.5 sm:mt-1 truncate text-xl sm:text-2xl font-bold tracking-tight text-slate-900">{value}</p>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs sm:text-sm font-semibold text-slate-500 leading-snug break-words">{title}</p>
+        <p
+          className="mt-0.5 sm:mt-1 text-base sm:text-lg lg:text-xl font-bold tracking-tight text-slate-900 whitespace-nowrap leading-tight"
+        >
+          {value}
+        </p>
       </div>
     </div>
   </div>
