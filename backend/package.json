@@ -3,14 +3,16 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "REST API and SQLite database for the Auto Finance / Loan Management application.",
+  "description": "REST API and PostgreSQL database for the MotoLend auto finance application.",
   "main": "src/server.js",
   "engines": {
     "node": ">=22.5.0"
   },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "migrate": "node --import dotenv/config src/db/migrate.js",
+    "seed:superadmin": "node --import dotenv/config scripts/seedSuperAdmin.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

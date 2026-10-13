@@ -14,13 +14,13 @@ const SESSION_TTL_HOURS = 12;
 const hashPassword = (password, salt) =>
   scryptSync(password, salt, 64).toString("hex");
 
-const createPasswordRecord = (password) => {
+export const createPasswordRecord = (password) => {
   const salt = randomBytes(16).toString("hex");
 
   return { salt, hash: hashPassword(password, salt) };
 };
 
-const verifyPassword = (password, salt, expectedHash) => {
+export const verifyPassword = (password, salt, expectedHash) => {
   const actual = Buffer.from(hashPassword(password, salt), "hex");
   const expected = Buffer.from(expectedHash, "hex");
 
