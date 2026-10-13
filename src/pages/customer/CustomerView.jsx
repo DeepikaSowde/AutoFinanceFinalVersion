@@ -7,6 +7,9 @@ import {
 import RepaymentScheduleTable, { generateSchedule, computeEffectiveSchedule } from '../../components/RepaymentScheduleTable';
 import { calculateRepayment } from '../../components/Loantab';
 import { calculateLoanOutstanding } from '../../utils/loanCalculations';
+import { getPaymentInstallmentLabel } from '../../utils/paymentInstallmentUtils';
+
+export { getPaymentInstallmentLabel };
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -960,33 +963,48 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                       <tr>
                         <th className="px-4 py-3 text-left font-semibold text-slate-700">Receipt / Ref</th>
                         <th className="px-4 py-3 text-left font-semibold text-slate-700">Payment Date</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Installment No.</th>
                         <th className="px-4 py-3 text-right font-semibold text-slate-700">Amount Paid</th>
                         <th className="px-4 py-3 text-left font-semibold text-slate-700">Method</th>
                         <th className="px-4 py-3 text-center font-semibold text-slate-700">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {selectedLoanPayments.map((p, idx) => (
-                        <tr key={p.id || idx} className="hover:bg-slate-50 transition-colors">
-                          <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
-                            {p.receiptNo || p.referenceNo || p.id || `RCP-${idx + 1}`}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                            {formatDate(p.paymentDate || p.date)}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-emerald-800">
-                            {formatCurrency(p.amount)}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                            {p.paymentMethod || p.method || p.mode || 'Cash'}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-center">
-                            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                              {p.status || 'Received'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {selectedLoanPayments.map((p, idx) => {
+                        const installmentLabel = getPaymentInstallmentLabel(p, selectedLoanBaseSchedule);
+                        return (
+                          <tr key={p.id || idx} className="hover:bg-slate-50 transition-colors">
+                            <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
+                              {p.receiptNo || p.referenceNo || p.id || `RCP-${idx + 1}`}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                              {formatDate(p.paymentDate || p.date)}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                              {installmentLabel === "Not Assigned" ? (
+                                <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                                  Not Assigned
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 border border-emerald-200/70">
+                                  {installmentLabel}
+                                </span>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-emerald-800">
+                              {formatCurrency(p.amount)}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                              {p.paymentMethod || p.method || p.mode || 'Cash'}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 text-center">
+                              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                                {p.status || 'Received'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

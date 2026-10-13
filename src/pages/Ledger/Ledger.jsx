@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import IncomeView from "./IncomeView";
 import ExpenseView from "./ExpenseView";
 import {
@@ -22,6 +22,7 @@ import {
 
 import { isDateInRange } from "../../utils/dateUtils";
 import DateRangeFilter from "../../components/DateRangeFilter";
+import { reconcileLoanDocumentCharges, UPDATE_EVENT_NAME } from "../../utils/guarantorReferralStorage";
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -45,6 +46,17 @@ const Ledger = () => {
   const [showAddIncome, setShowAddIncome] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [triggerRefresh, setTriggerRefresh] = useState(0); // To force refresh when sub-view adds data
+
+  useEffect(() => {
+    reconcileLoanDocumentCharges();
+    const handleStorage = () => setTriggerRefresh((prev) => prev + 1);
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(UPDATE_EVENT_NAME, handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(UPDATE_EVENT_NAME, handleStorage);
+    };
+  }, []);
 
   // Investor Helper Calculations
   const getOpeningBalance = (inv) => inv.transactions?.find(t => t.type === "Opening Balance")?.amount || 0;
@@ -325,7 +337,10 @@ const Ledger = () => {
       type: "Income",
       source: 'income',
       description: inc.type,
-      remarks: inc.remarks
+      remarks: inc.remarks,
+      customerName: inc.customerName,
+      customerId: inc.customerId,
+      loanId: inc.loanId,
     });
   });
 
@@ -352,7 +367,10 @@ const Ledger = () => {
         type: "Expense",
         source: 'expense',
         description: exp.category,
-        remarks: exp.remarks
+        remarks: exp.remarks,
+        referralName: exp.referrerName || exp.referralName,
+        customerName: exp.customerName,
+        loanId: exp.loanId,
       });
     }
   });
@@ -395,15 +413,19 @@ const Ledger = () => {
     } else if (tx.source === 'income') {
       amountIn = Number(tx.amount || 0);
       runningBalance += amountIn;
-      typeDesc = "Income";
-      subDesc = `${tx.description}${tx.remarks ? ` - ${tx.remarks}` : ''}`;
-      name = "Manual Income";
+      typeDesc = tx.description === "Document Charge" ? "Document Charge" : (tx.description || "Income");
+      subDesc = tx.loanId
+        ? `Loan ID: ${tx.loanId}${tx.remarks ? ` · ${tx.remarks}` : ''}`
+        : `${tx.description}${tx.remarks ? ` - ${tx.remarks}` : ''}`;
+      name = tx.customerName || (tx.description === "Document Charge" ? "Document Charge" : "Manual Income");
     } else if (tx.source === 'expense') {
       amountOut = Number(tx.amount || 0);
       runningBalance -= amountOut;
-      typeDesc = "Expense";
-      subDesc = `${tx.description}${tx.remarks ? ` - ${tx.remarks}` : ''}`;
-      name = "Business Expense";
+      typeDesc = tx.description || "Expense";
+      subDesc = tx.loanId && tx.loanId !== "—"
+        ? `Loan ID: ${tx.loanId}${tx.remarks ? ` · ${tx.remarks}` : ''}`
+        : `${tx.description}${tx.remarks ? ` - ${tx.remarks}` : ''}`;
+      name = tx.referralName || tx.customerName || "Business Expense";
     } else {
       amountIn = Number(tx.amount || 0);
       runningBalance += amountIn;

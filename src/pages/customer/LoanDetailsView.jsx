@@ -432,7 +432,10 @@ export default function LoanDetailsView({ loanId, customerId, onBack, onEditLoan
       id: `PAY-${Date.now()}`,
       customerId: effectiveCustomerId,
       loanId: effectiveLoanId,
-      installmentNumber: appliedAllocations[0]?.installmentNumber,
+      installmentNumber: appliedAllocations.length === 1
+        ? appliedAllocations[0]?.installmentNumber
+        : (appliedAllocations.map((a) => a.installmentNumber).join(", ") || appliedAllocations[0]?.installmentNumber),
+      installmentNumbers: appliedAllocations.map((a) => a.installmentNumber),
       date: new Date().toISOString(),
       amount: amt,
       principal: prinRecovered,

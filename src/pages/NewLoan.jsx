@@ -19,7 +19,7 @@ import {
 
 import { calculateRepayment } from '../components/Loantab'
 import { CheckCircle2, X } from 'lucide-react'
-import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
+import { recordPersonRelationship, syncDocumentChargeIncome } from '../utils/guarantorReferralStorage'
 
 const STEPS = [
   { key: 'customer', labelKey: 'app.steps.customer', titleKey: 'app.titles.customer', subtitleKey: 'app.subtitles.customer' },
@@ -417,7 +417,20 @@ const NewLoan = () => {
         throw storageError;
       }
 
-      // 6. Show Popup
+      // 7. Record Document Charge as Income in Income page and Ledger
+      const docChargeVal = Number(form.loan?.documentCharge || 0);
+      if (docChargeVal > 0) {
+        syncDocumentChargeIncome({
+          loanId: loanId,
+          customerId: customerId,
+          customerName: custName,
+          documentCharge: docChargeVal,
+          date: assocDate,
+          mode: form.loan?.paymentMode || "Cash",
+        });
+      }
+
+      // 8. Show Popup
       setSubmittedLoan(newEntry)
       setShowSuccess(true)
     } catch (e) {

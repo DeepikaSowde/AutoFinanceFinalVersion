@@ -10,6 +10,7 @@ export const STORAGE_KEY = "motoLendGuarantorReferrals_data";
 export const CUSTOMERS_STORAGE_KEY = "motoLendCustomersList_data";
 export const EXPENSES_STORAGE_KEY = "motoLendExpense_data";
 export const COMMISSIONS_STORAGE_KEY = "motoLendReferralCommissions_data";
+export const INCOME_STORAGE_KEY = "motoLendIncome_data";
 export const UPDATE_EVENT_NAME = "motoLendGuarantorReferralsUpdated";
 
 /**
@@ -554,7 +555,30 @@ export const markReferralCommissionPaid = ({
     console.error("Failed to update guarantor referral records on payment:", err);
   }
 
-  // 3. Record the paid commission as an expense in motoLendExpense_data
+  // 3. Update customer's referral in motoLendCustomersList_data
+  try {
+    const rawCusts = localStorage.getItem(CUSTOMERS_STORAGE_KEY);
+    if (rawCusts) {
+      const custs = JSON.parse(rawCusts);
+      let custModified = false;
+      custs.forEach((c) => {
+        if (loanId && c.loanId === loanId && c.referral) {
+          c.referral.commissionStatus = "Paid";
+          c.referral.payCommission = true;
+          c.referral.paidDate = dateVal;
+          c.referral.paymentMode = modeVal;
+          custModified = true;
+        }
+      });
+      if (custModified) {
+        localStorage.setItem(CUSTOMERS_STORAGE_KEY, JSON.stringify(custs));
+      }
+    }
+  } catch (err) {
+    console.error("Failed to update customers list on referral payment:", err);
+  }
+
+  // 4. Record the paid commission as an expense in motoLendExpense_data
   if (numAmount > 0) {
     syncCommissionExpense({
       id: commissionId || `COMM-${loanId || Date.now()}`,
@@ -573,6 +597,275 @@ export const markReferralCommissionPaid = ({
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("storage"));
     window.dispatchEvent(new Event(UPDATE_EVENT_NAME));
+  }
+};
+
+/**
+ * Updates the commission percentage for an existing referral record and loan.
+ * Automatically recalculates commission amount: Loan Amount × Commission % ÷ 100.
+ * Preserves payment details and history when editing the percentage.
+ * Does not overwrite previous payment records or create duplicate expenses.
+ */
+export const updateReferralCommissionRate = ({
+  commissionId,
+  loanId,
+  percentage,
+  commissionAmount,
+  notes,
+}) => {
+  const parsedPct = Number(percentage) || 0;
+
+  let commRecord = null;
+  let computedAmount = 0;
+
+  // 1. Update COMMISSIONS_STORAGE_KEY (motoLendReferralCommissions_data)
+  try {
+    const raw = localStorage.getItem(COMMISSIONS_STORAGE_KEY);
+    const comms = raw ? JSON.parse(raw) : [];
+    const idx = comms.findIndex(
+      (c) => c.id === commissionId || (loanId && c.loanId === loanId && c.loanId !== "—")
+    );
+
+    if (idx >= 0) {
+      const existing = comms[idx];
+      const loanAmt = Number(existing.loanAmount || 0);
+      computedAmount =
+        commissionAmount !== undefined && commissionAmount !== null && !isNaN(commissionAmount) && Number(commissionAmount) > 0
+          ? Number(commissionAmount)
+          : (loanAmt > 0 && parsedPct > 0 ? Math.round((loanAmt * parsedPct) / 100) : 0);
+
+      comms[idx] = {
+        ...existing,
+        percentage: parsedPct,
+        commissionAmount: computedAmount,
+        amount: computedAmount,
+        notes: notes !== undefined ? notes : existing.notes,
+        // PRESERVE payment history!
+        status: existing.status || "Pending",
+        paidDate: existing.paidDate || null,
+        paymentMode: existing.paymentMode || null,
+      };
+      commRecord = comms[idx];
+      localStorage.setItem(COMMISSIONS_STORAGE_KEY, JSON.stringify(comms));
+    }
+  } catch (err) {
+    console.error("Failed to update referral commission percentage:", err);
+  }
+
+  // 2. Update Shared Guarantor/Referral records (motoLendGuarantorReferrals_data)
+  try {
+    const records = getGuarantorReferralRecords();
+    let recordsModified = false;
+
+    records.forEach((rec) => {
+      // Update commissions list
+      if (Array.isArray(rec.commissions)) {
+        rec.commissions.forEach((c) => {
+          if (c.id === commissionId || (loanId && c.loanId === loanId && c.loanId !== "—")) {
+            const loanAmt = Number(c.loanAmount || commRecord?.loanAmount || 0);
+            const calcAmt =
+              computedAmount > 0
+                ? computedAmount
+                : (loanAmt > 0 && parsedPct > 0 ? Math.round((loanAmt * parsedPct) / 100) : 0);
+
+            c.percentage = parsedPct;
+            c.amount = calcAmt;
+            c.commissionAmount = calcAmt;
+            if (notes) c.notes = notes;
+            recordsModified = true;
+          }
+        });
+      }
+
+      // Update relationships list
+      if (Array.isArray(rec.relationships)) {
+        rec.relationships.forEach((rel) => {
+          if (rel.type === "Referral" && (rel.loanId === loanId || !loanId)) {
+            rel.commissionPercentage = parsedPct;
+            rel.commissionAmount = computedAmount;
+            if (Array.isArray(rel.commissions)) {
+              rel.commissions.forEach((c) => {
+                if (c.id === commissionId || (loanId && c.loanId === loanId)) {
+                  c.percentage = parsedPct;
+                  c.amount = computedAmount;
+                  c.commissionAmount = computedAmount;
+                }
+              });
+            }
+            recordsModified = true;
+          }
+        });
+      }
+    });
+
+    if (recordsModified) {
+      saveGuarantorReferralRecords(records);
+    }
+  } catch (err) {
+    console.error("Failed to update shared records on commission rate update:", err);
+  }
+
+  // 3. Update CustomersList (motoLendCustomersList_data)
+  try {
+    const rawCusts = localStorage.getItem(CUSTOMERS_STORAGE_KEY);
+    if (rawCusts && loanId) {
+      const custs = JSON.parse(rawCusts);
+      let custModified = false;
+      custs.forEach((c) => {
+        if (c.loanId === loanId && c.referral) {
+          c.referral.commissionPercentage = parsedPct;
+          c.referral.commissionAmount = computedAmount;
+          custModified = true;
+        }
+      });
+      if (custModified) {
+        localStorage.setItem(CUSTOMERS_STORAGE_KEY, JSON.stringify(custs));
+      }
+    }
+  } catch (err) {
+    console.error("Failed to update customers list on commission rate update:", err);
+  }
+
+  // 4. PRESERVE EXPENSE RULES:
+  // If the commission was already paid, update the existing expense entry without creating a duplicate!
+  // If it was unpaid, DO NOT create an expense.
+  if (commRecord && commRecord.status === "Paid") {
+    try {
+      const rawExp = localStorage.getItem(EXPENSES_STORAGE_KEY);
+      if (rawExp) {
+        const expenses = JSON.parse(rawExp);
+        const expIdx = expenses.findIndex(
+          (e) =>
+            e.commissionId === commRecord.id ||
+            e.id === `EXP-${commRecord.id}` ||
+            (e.category === "Referral Commission" && e.loanId === loanId && e.loanId !== "—")
+        );
+        if (expIdx >= 0) {
+          expenses[expIdx].amount = Number(computedAmount);
+          localStorage.setItem(EXPENSES_STORAGE_KEY, JSON.stringify(expenses));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to update existing expense on commission rate update:", err);
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("storage"));
+    window.dispatchEvent(new Event(UPDATE_EVENT_NAME));
+  }
+
+  return commRecord;
+};
+
+/**
+ * Synchronizes Document Charge collected on a loan as Income.
+ * Accounting Rules:
+ * - Document charge is recorded as Income (not part of principal or interest).
+ * - Records into motoLendIncome_data with type "Document Charge".
+ * - Idempotent: Updates existing entry when saving or editing the same loan, preventing duplicate entries.
+ * - Updates income and ledger totals immediately.
+ */
+export const syncDocumentChargeIncome = ({
+  loanId,
+  customerId,
+  customerName,
+  documentCharge,
+  date,
+  mode = "Cash",
+}) => {
+  if (!loanId || loanId === "—") return null;
+  const chargeNum = Number(documentCharge) || 0;
+
+  try {
+    const raw = localStorage.getItem(INCOME_STORAGE_KEY);
+    const incomeList = raw ? JSON.parse(raw) : [];
+
+    // Stable ID for this loan's document charge
+    const docChargeId = `INC-DOC-${loanId}`;
+
+    const existingIndex = incomeList.findIndex(
+      (inc) =>
+        inc.id === docChargeId ||
+        (inc.loanId === loanId && inc.loanId !== "—" && inc.type === "Document Charge")
+    );
+
+    if (chargeNum <= 0) {
+      if (existingIndex >= 0) {
+        incomeList.splice(existingIndex, 1);
+        localStorage.setItem(INCOME_STORAGE_KEY, JSON.stringify(incomeList));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("storage"));
+        }
+      }
+      return null;
+    }
+
+    const dateVal = date ? String(date).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const custName = customerName || "Customer";
+
+    const incomeEntry = {
+      id: docChargeId,
+      type: "Document Charge",
+      amount: chargeNum,
+      date: dateVal,
+      mode: mode || "Cash",
+      remarks: `Document charge collected for loan ${loanId} (${custName})`,
+      loanId: loanId,
+      customerId: customerId || "—",
+      customerName: custName,
+      isDocumentCharge: true,
+      createdAt: date || new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      incomeList[existingIndex] = {
+        ...incomeList[existingIndex],
+        ...incomeEntry,
+        id: incomeList[existingIndex].id || docChargeId,
+      };
+    } else {
+      incomeList.unshift(incomeEntry);
+    }
+
+    localStorage.setItem(INCOME_STORAGE_KEY, JSON.stringify(incomeList));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+    }
+    return incomeEntry;
+  } catch (err) {
+    console.error("Failed to sync document charge income:", err);
+    return null;
+  }
+};
+
+/**
+ * Reconciles document charges from customer loans to ensure
+ * all existing loans with document charges are reflected in motoLendIncome_data.
+ */
+export const reconcileLoanDocumentCharges = () => {
+  try {
+    const rawCusts = localStorage.getItem(CUSTOMERS_STORAGE_KEY);
+    if (!rawCusts) return;
+    const custs = JSON.parse(rawCusts);
+    if (!Array.isArray(custs)) return;
+
+    custs.forEach((c) => {
+      const charge = Number(c.loan?.documentCharge || c.documentCharge || 0);
+      const lId = c.loanId || (c.customerId ? `LN-${c.customerId.replace("CUS-", "")}` : null);
+      if (charge > 0 && lId) {
+        syncDocumentChargeIncome({
+          loanId: lId,
+          customerId: c.customerId || "—",
+          customerName: c.customer?.name || c.name || "Customer",
+          documentCharge: charge,
+          date: c.customer?.applicationDate || c.createdAt || new Date().toISOString(),
+          mode: c.loan?.paymentMode || "Cash",
+        });
+      }
+    });
+  } catch (err) {
+    console.error("Failed to reconcile loan document charges:", err);
   }
 };
 
@@ -878,28 +1171,84 @@ export const getRecordRelationships = (record) => {
       }
 
       // Check if linked as Referral
+      const refObj = c.referral;
       const refBy = c.customer?.referredBy || c.loan?.referredBy || c.referredBy;
-      if (refBy && typeof refBy === "string" && refBy.trim()) {
+      let isRefMatch = false;
+
+      if (refObj && (refObj.fullName || refObj.name || refObj.phone || refObj.mobile || refObj.referralId || refObj.id)) {
+        const rPhone = normalizePhone(refObj.phone || refObj.mobile);
+        const rName = (refObj.fullName || refObj.name || "").trim().toLowerCase();
+        const rId = refObj.referralId || refObj.id;
+        if (
+          (rId && rId === record.id) ||
+          (recPhone && rPhone && recPhone === rPhone) ||
+          (recName && rName && recName === rName)
+        ) {
+          isRefMatch = true;
+        }
+      }
+
+      if (!isRefMatch && refBy && typeof refBy === "string" && refBy.trim()) {
         const refName = refBy.trim().toLowerCase();
         if (recName && recName === refName) {
-          const exists = rels.some(
-            (r) => r.type === "Referral" && r.customerId === custId && r.loanId === loanId
-          );
-          if (!exists) {
-            rels.push({
-              id: `rel-r-${custId}-${loanId}`,
-              type: "Referral",
-              customerId: custId || "—",
-              customerName: custName,
-              loanId: loanId,
-              associatedDate: assocDate,
-            });
-          }
+          isRefMatch = true;
+        }
+      }
+
+      if (isRefMatch) {
+        const exists = rels.some(
+          (r) => r.type === "Referral" && r.customerId === custId && r.loanId === loanId
+        );
+        if (!exists) {
+          rels.push({
+            id: `rel-r-${custId}-${loanId}`,
+            type: "Referral",
+            customerId: custId || "—",
+            customerName: custName,
+            loanId: loanId,
+            associatedDate: assocDate,
+            commissionAmount: refObj?.commissionAmount,
+            commissionPercentage: refObj?.commissionPercentage,
+            commissionStatus: refObj?.commissionStatus || (refObj?.payCommission ? "Paid" : undefined),
+          });
         }
       }
     });
   } catch (err) {
     console.error("Error reading relationships from storage:", err);
+  }
+
+  // Cross-reference commissions stored in COMMISSIONS_STORAGE_KEY
+  try {
+    const rawComms = localStorage.getItem(COMMISSIONS_STORAGE_KEY);
+    if (rawComms) {
+      const comms = JSON.parse(rawComms);
+      comms.forEach((sc) => {
+        const matchId = sc.referralId && sc.referralId === record.id;
+        const matchPhone = recPhone && normalizePhone(sc.referrerPhone) === recPhone;
+        const matchName = recName && (sc.referrerName || "").trim().toLowerCase() === recName;
+        if (matchId || matchPhone || matchName) {
+          const exists = rels.some(
+            (r) => r.type === "Referral" && r.customerId === sc.customerId && r.loanId === sc.loanId
+          );
+          if (!exists) {
+            rels.push({
+              id: `rel-r-comm-${sc.id || sc.loanId}`,
+              type: "Referral",
+              customerId: sc.customerId || "—",
+              customerName: sc.customerName || "Customer",
+              loanId: sc.loanId || "—",
+              associatedDate: sc.paidDate || sc.createdAt || null,
+              commissionAmount: sc.commissionAmount || sc.amount,
+              commissionPercentage: sc.percentage,
+              commissionStatus: sc.status || "Pending",
+            });
+          }
+        }
+      });
+    }
+  } catch (err) {
+    console.error("Error reading stored commissions in getRecordRelationships:", err);
   }
 
   // Deduplicate entries by type, customerId, loanId
@@ -914,4 +1263,402 @@ export const getRecordRelationships = (record) => {
   });
 
   return unique;
+};
+
+/**
+ * Computes consolidated relationship details, tab lists, KPIs, and documents
+ * for a selected person in the Referral / Guarantor directory.
+ * 
+ * Rules:
+ * - Linked Customers: Count distinct customers across all relationships (same customer with multiple loans counted once).
+ * - As Guarantor: Count distinct customer-loan relationships where person is Guarantor.
+ * - As Referral: Count distinct customer-loan relationships where person is Referral.
+ * - Both: Customer-loan relationships where the person is BOTH Guarantor AND Referral for that same loan.
+ * - Tab Guarantor: Shows all customer-loan relationships where person is Guarantor (including Both).
+ * - Tab Referral: Shows all customer-loan relationships where person is Referral (including Both), with commission details.
+ * - Tab Both: Shows only customer-loan relationships where person has BOTH roles for that same loan.
+ * - Tab Documents: Shared documents (Aadhaar, PAN, KYC docs), deduplicated.
+ * - Commission: Shows Paid/Pending if configured, or "Not Configured" if unconfigured. Never false "₹0 Pending".
+ */
+export const getPersonDetailsSummary = (record) => {
+  if (!record) {
+    return {
+      guarantorList: [],
+      referralList: [],
+      bothList: [],
+      kpis: { linkedCustomers: 0, asGuarantor: 0, asReferral: 0 },
+      documents: [],
+    };
+  }
+
+  // 1. Fetch all raw relationships (from record, customers, and stored commissions)
+  const allRelationships = getRecordRelationships(record);
+
+  // 2. Load stored commissions and customer records for cross-referencing
+  let storedCommissions = [];
+  try {
+    const rawComms = localStorage.getItem(COMMISSIONS_STORAGE_KEY);
+    storedCommissions = rawComms ? JSON.parse(rawComms) : [];
+  } catch {
+    storedCommissions = [];
+  }
+
+  let customersList = [];
+  try {
+    const rawCusts = localStorage.getItem(CUSTOMERS_STORAGE_KEY);
+    customersList = rawCusts ? JSON.parse(rawCusts) : [];
+  } catch {
+    customersList = [];
+  }
+
+  const recName = (record.fullName || "").trim().toLowerCase();
+  const recPhone = normalizePhone(record.phone);
+  const recId = record.id;
+
+  // 3. Group by Customer-Loan pair (unique loan relationship)
+  // Pair key: customerId + loanId
+  const loanPairs = new Map();
+
+  allRelationships.forEach((rel) => {
+    const custId = rel.customerId || "—";
+    const loanId = rel.loanId || "—";
+    // Unique key per customer-loan relationship
+    const pairKey = (loanId && loanId !== "—")
+      ? `${custId}___${loanId}`
+      : `${custId}___${rel.id || Math.random()}`;
+
+    if (!loanPairs.has(pairKey)) {
+      loanPairs.set(pairKey, {
+        customerId: custId,
+        customerName: rel.customerName || "Customer",
+        loanId: loanId,
+        associatedDate: rel.associatedDate || null,
+        isGuarantor: false,
+        isReferral: false,
+        relGuarantor: null,
+        relReferral: null,
+      });
+    }
+
+    const pair = loanPairs.get(pairKey);
+    if (rel.type === "Guarantor") {
+      pair.isGuarantor = true;
+      pair.relGuarantor = rel;
+      if (!pair.associatedDate && rel.associatedDate) pair.associatedDate = rel.associatedDate;
+    } else if (rel.type === "Referral") {
+      pair.isReferral = true;
+      pair.relReferral = rel;
+      if (!pair.associatedDate && rel.associatedDate) pair.associatedDate = rel.associatedDate;
+    } else if (rel.type === "Both") {
+      pair.isGuarantor = true;
+      pair.isReferral = true;
+      pair.relGuarantor = rel;
+      pair.relReferral = rel;
+      if (!pair.associatedDate && rel.associatedDate) pair.associatedDate = rel.associatedDate;
+    }
+  });
+
+  // Also check storedCommissions for any registered referral loan
+  storedCommissions.forEach((sc) => {
+    const matchId = sc.referralId && sc.referralId === recId;
+    const matchPhone = recPhone && normalizePhone(sc.referrerPhone) === recPhone;
+    const matchName = recName && (sc.referrerName || "").trim().toLowerCase() === recName;
+    if (matchId || matchPhone || matchName) {
+      const custId = sc.customerId || "—";
+      const loanId = sc.loanId || "—";
+      const pairKey = (loanId && loanId !== "—") ? `${custId}___${loanId}` : `${custId}___comm-${sc.id}`;
+
+      if (!loanPairs.has(pairKey)) {
+        loanPairs.set(pairKey, {
+          customerId: custId,
+          customerName: sc.customerName || "Customer",
+          loanId: loanId,
+          associatedDate: sc.paidDate || sc.createdAt || null,
+          isGuarantor: false,
+          isReferral: true,
+          relGuarantor: null,
+          relReferral: null,
+        });
+      } else {
+        const pair = loanPairs.get(pairKey);
+        pair.isReferral = true;
+      }
+    }
+  });
+
+  // 4. Resolve commission information for each Referral relationship
+  const resolveCommission = (pair) => {
+    const loanId = pair.loanId;
+    const custId = pair.customerId;
+
+    // A. Check stored commissions (motoLendReferralCommissions_data)
+    const storedComm = storedCommissions.find((sc) => {
+      const matchLoan = loanId && loanId !== "—" && sc.loanId === loanId;
+      const matchCust = custId && custId !== "—" && sc.customerId === custId;
+      const matchPerson =
+        (sc.referralId && sc.referralId === recId) ||
+        (recPhone && normalizePhone(sc.referrerPhone) === recPhone) ||
+        (recName && (sc.referrerName || "").trim().toLowerCase() === recName);
+      return (matchLoan || matchCust) && matchPerson;
+    });
+
+    // B. Check customer record (motoLendCustomersList_data)
+    const custRecord = customersList.find((c) => {
+      return (loanId && loanId !== "—" && c.loanId === loanId) ||
+             (custId && custId !== "—" && c.customerId === custId);
+    });
+
+    // C. Check inline commissions in record.commissions
+    const recordComm = Array.isArray(record.commissions)
+      ? record.commissions.find((c) => (loanId && loanId !== "—" && c.loanId === loanId))
+      : null;
+
+    // D. Check relationship object
+    const rel = pair.relReferral;
+
+    let percentage = null;
+    let amount = null;
+    let status = null;
+
+    if (storedComm) {
+      if (storedComm.percentage !== undefined && storedComm.percentage !== null && storedComm.percentage !== "") {
+        const p = Number(storedComm.percentage);
+        if (!isNaN(p)) percentage = p;
+      }
+      const rawAmt = storedComm.commissionAmount ?? storedComm.amount;
+      if (rawAmt !== undefined && rawAmt !== null && rawAmt !== "") {
+        const a = Number(rawAmt);
+        if (!isNaN(a)) amount = a;
+      }
+      if (storedComm.status === "Paid" || storedComm.status === "Pending") {
+        status = storedComm.status;
+      }
+    }
+
+    if (custRecord?.referral) {
+      const r = custRecord.referral;
+      if (percentage === null && r.commissionPercentage !== undefined && r.commissionPercentage !== null && r.commissionPercentage !== "") {
+        const p = Number(r.commissionPercentage);
+        if (!isNaN(p)) percentage = p;
+      }
+      if (amount === null && r.commissionAmount !== undefined && r.commissionAmount !== null && r.commissionAmount !== "") {
+        const a = Number(r.commissionAmount);
+        if (!isNaN(a)) amount = a;
+      }
+      if (!status) {
+        if (r.payCommission === true || r.commissionStatus === "Paid") {
+          status = "Paid";
+        } else if (r.commissionStatus === "Pending") {
+          status = "Pending";
+        }
+      }
+    }
+
+    if (recordComm) {
+      if (percentage === null && recordComm.percentage !== undefined && recordComm.percentage !== null && recordComm.percentage !== "") {
+        const p = Number(recordComm.percentage);
+        if (!isNaN(p)) percentage = p;
+      }
+      const rawAmt = recordComm.commissionAmount ?? recordComm.amount;
+      if (amount === null && rawAmt !== undefined && rawAmt !== null && rawAmt !== "") {
+        const a = Number(rawAmt);
+        if (!isNaN(a)) amount = a;
+      }
+      if (!status && (recordComm.status === "Paid" || recordComm.status === "Pending")) {
+        status = recordComm.status;
+      }
+    }
+
+    if (rel) {
+      if (percentage === null && rel.commissionPercentage !== undefined && rel.commissionPercentage !== null && rel.commissionPercentage !== "") {
+        const p = Number(rel.commissionPercentage);
+        if (!isNaN(p)) percentage = p;
+      }
+      if (amount === null && rel.commissionAmount !== undefined && rel.commissionAmount !== null && rel.commissionAmount !== "") {
+        const a = Number(rel.commissionAmount);
+        if (!isNaN(a)) amount = a;
+      }
+      if (!status && (rel.commissionStatus === "Paid" || rel.commissionStatus === "Pending")) {
+        status = rel.commissionStatus;
+      }
+    }
+
+    // Auto-calculate amount if percentage and loan principal exist, but amount was 0
+    if ((amount === null || amount <= 0) && percentage !== null && percentage > 0) {
+      const principal = Number(storedComm?.loanAmount || custRecord?.loanAmount || custRecord?.loan?.loanAmount || 0);
+      if (principal > 0) {
+        amount = Math.round((principal * percentage) / 100);
+      }
+    }
+
+    // Configuration check:
+    // If neither percentage > 0 nor amount > 0, and not explicitly Paid -> NOT CONFIGURED!
+    const isConfigured = (percentage !== null && percentage > 0) || (amount !== null && amount > 0) || (status === "Paid");
+
+    if (!isConfigured) {
+      return {
+        isConfigured: false,
+        percentage: null,
+        percentageDisplay: "Not Configured",
+        amount: null,
+        amountDisplay: "—",
+        status: "Not Configured",
+      };
+    }
+
+    return {
+      isConfigured: true,
+      percentage: percentage,
+      percentageDisplay: percentage !== null && percentage > 0 ? `${percentage}%` : "—",
+      amount: amount,
+      amountDisplay: amount !== null && amount > 0 ? `₹${amount.toLocaleString("en-IN")}` : "—",
+      status: status === "Paid" ? "Paid" : "Pending",
+    };
+  };
+
+  // 5. Build Tab Records
+  const guarantorList = [];
+  const referralList = [];
+  const bothList = [];
+
+  loanPairs.forEach((pair, key) => {
+    if (pair.isGuarantor) {
+      guarantorList.push({
+        id: `g-${key}`,
+        customerId: pair.customerId,
+        customerName: pair.customerName,
+        loanId: pair.loanId,
+        type: "Guarantor",
+        associatedDate: pair.associatedDate,
+      });
+    }
+
+    if (pair.isReferral) {
+      const comm = resolveCommission(pair);
+      referralList.push({
+        id: `r-${key}`,
+        customerId: pair.customerId,
+        customerName: pair.customerName,
+        loanId: pair.loanId,
+        type: "Referral",
+        commissionPercentage: comm.percentage,
+        commissionPercentageDisplay: comm.percentageDisplay,
+        commissionAmount: comm.amount,
+        commissionAmountDisplay: comm.amountDisplay,
+        commissionStatus: comm.status,
+        isCommissionConfigured: comm.isConfigured,
+        associatedDate: pair.associatedDate,
+      });
+    }
+
+    if (pair.isGuarantor && pair.isReferral) {
+      bothList.push({
+        id: `b-${key}`,
+        customerId: pair.customerId,
+        customerName: pair.customerName,
+        loanId: pair.loanId,
+        type: "Both",
+        associatedDate: pair.associatedDate,
+      });
+    }
+  });
+
+  // Sort lists by date descending
+  const sortByDate = (a, b) => new Date(b.associatedDate || 0) - new Date(a.associatedDate || 0);
+  guarantorList.sort(sortByDate);
+  referralList.sort(sortByDate);
+  bothList.sort(sortByDate);
+
+  // 6. Calculate Distinct Customers for KPI
+  const distinctCustSet = new Set();
+  loanPairs.forEach((pair) => {
+    if (pair.isGuarantor || pair.isReferral) {
+      const identifier = (pair.customerId && pair.customerId !== "—") ? pair.customerId : pair.customerName;
+      if (identifier) distinctCustSet.add(identifier);
+    }
+  });
+
+  const kpis = {
+    linkedCustomers: distinctCustSet.size,
+    asGuarantor: guarantorList.length,
+    asReferral: referralList.length,
+  };
+
+  // 7. Deduplicate Shared Documents
+  const documents = [];
+  const seenDocs = new Set();
+
+  const addDoc = (id, title, file) => {
+    if (!file) return;
+    const dataKey = file.data || file.name || id;
+    if (seenDocs.has(dataKey)) return;
+    seenDocs.add(dataKey);
+
+    documents.push({
+      id: id,
+      title: title,
+      name: file.name || `${title}.pdf`,
+      size: file.size || "—",
+      type: file.type || "application/pdf",
+      data: file.data || null,
+    });
+  };
+
+  if (record.aadhaarFile) addDoc("aadhaar", "Aadhaar Card", record.aadhaarFile);
+  if (record.panFile) addDoc("pan", "PAN Card", record.panFile);
+  if (record.dlFile) addDoc("dl", "Driving License", record.dlFile);
+  if (record.voterFile) addDoc("voter", "Voter ID", record.voterFile);
+
+  if (Array.isArray(record.additionalDocs)) {
+    record.additionalDocs.forEach((doc, idx) => {
+      if (doc) {
+        addDoc(doc.id || `doc-${idx}`, doc.title || `Document #${idx + 1}`, doc.file || doc);
+      }
+    });
+  }
+
+  // Cross-reference linked customers for any KYC documents attached to this person
+  customersList.forEach((c) => {
+    const g = c.guarantor;
+    if (g) {
+      const isMatch =
+        (g.guarantorId && g.guarantorId === recId) ||
+        (g.id && g.id === recId) ||
+        (recPhone && normalizePhone(g.mobile || g.phone) === recPhone) ||
+        (recName && (g.name || g.fullName || "").trim().toLowerCase() === recName);
+      if (isMatch) {
+        if (g.aadhaarFile) addDoc("cust-g-aadhaar", "Aadhaar Card", g.aadhaarFile);
+        if (g.panFile) addDoc("cust-g-pan", "PAN Card", g.panFile);
+        if (g.dlFile) addDoc("cust-g-dl", "Driving License", g.dlFile);
+        if (g.voterFile) addDoc("cust-g-voter", "Voter ID", g.voterFile);
+        if (Array.isArray(g.additionalDocs)) {
+          g.additionalDocs.forEach((d, i) => addDoc(`cust-g-doc-${i}`, d.title || "Additional Document", d.file || d));
+        }
+      }
+    }
+
+    const r = c.referral;
+    if (r) {
+      const isMatch =
+        (r.referralId && r.referralId === recId) ||
+        (r.id && r.id === recId) ||
+        (recPhone && normalizePhone(r.phone || r.mobile) === recPhone) ||
+        (recName && (r.fullName || r.name || "").trim().toLowerCase() === recName);
+      if (isMatch) {
+        if (r.aadhaarFile) addDoc("cust-r-aadhaar", "Aadhaar Card", r.aadhaarFile);
+        if (r.panFile) addDoc("cust-r-pan", "PAN Card", r.panFile);
+        if (Array.isArray(r.additionalDocs)) {
+          r.additionalDocs.forEach((d, i) => addDoc(`cust-r-doc-${i}`, d.title || "Additional Document", d.file || d));
+        }
+      }
+    }
+  });
+
+  return {
+    guarantorList,
+    referralList,
+    bothList,
+    kpis,
+    documents,
+  };
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, ChevronRight, ChevronLeft, X, Wallet, ArrowDownCircle, ArrowUpCircle, Database, FileText, Banknote, Landmark, PiggyBank, Briefcase } from 'lucide-react';
 import IncomeOverviewChart from './IncomeOverviewChart';
 
@@ -25,6 +25,7 @@ const SummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "text-sla
 
 import { isDateInRange } from '../../utils/dateUtils';
 import DateRangeFilter from '../../components/DateRangeFilter';
+import { reconcileLoanDocumentCharges, UPDATE_EVENT_NAME } from '../../utils/guarantorReferralStorage';
 
 const IncomeView = () => {
   const [search, setSearch] = useState('');
@@ -37,6 +38,18 @@ const IncomeView = () => {
   const [selectedInvestorId, setSelectedInvestorId] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [viewTransaction, setViewTransaction] = useState(null);
+  const [, setRefreshCount] = useState(0);
+
+  useEffect(() => {
+    reconcileLoanDocumentCharges();
+    const handleStorage = () => setRefreshCount((c) => c + 1);
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(UPDATE_EVENT_NAME, handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(UPDATE_EVENT_NAME, handleStorage);
+    };
+  }, []);
 
   const rawIncomeData = JSON.parse(window.localStorage.getItem('motoLendIncome_data') || '[]');
   const payments = JSON.parse(window.localStorage.getItem('motoLendPaymentHistory') || '[]');
@@ -172,6 +185,10 @@ const IncomeView = () => {
     .filter(i => i.type === 'Chit Investment')
     .reduce((sum, i) => sum + i.displayAmount, 0);
 
+  const docChargeTotal = filteredIncome
+    .filter(i => i.type === 'Document Charge')
+    .reduce((sum, i) => sum + i.displayAmount, 0);
+
   const totalInflow = filteredIncome.reduce((sum, i) => sum + i.displayAmount, 0);
 
   // Income Breakdown Chart Data: shows distinct sources without combining capital with interest
@@ -287,6 +304,17 @@ const IncomeView = () => {
             subtext="Chit Fund Capital"
             iconColor="text-teal-600"
             iconBg="bg-teal-100"
+            extraClass="bg-white border-slate-200 shadow-sm"
+          />
+        )}
+        {docChargeTotal > 0 && (
+          <SummaryCard
+            icon={FileText}
+            title="Document Charges"
+            value={formatCurrency(docChargeTotal)}
+            subtext="Collected upfront"
+            iconColor="text-amber-600"
+            iconBg="bg-amber-100"
             extraClass="bg-white border-slate-200 shadow-sm"
           />
         )}

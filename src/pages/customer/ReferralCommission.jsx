@@ -19,12 +19,17 @@ import {
   Check,
   ChevronDown,
   Undo2,
+  Pencil,
+  Percent,
 } from "lucide-react";
 
 import {
   getGuarantorReferralRecords,
   syncCommissionExpense,
   markReferralCommissionPaid,
+  updateReferralCommissionRate,
+  reconcileLoanDocumentCharges,
+  UPDATE_EVENT_NAME,
 } from "../../utils/guarantorReferralStorage";
 
 const STORAGE_KEY = "motoLendReferralCommissions_data";
@@ -72,6 +77,11 @@ const ReferralCommission = () => {
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [payNotes, setPayNotes] = useState("");
 
+  // Edit / Add Commission Rate Modal
+  const [editModalItem, setEditModalItem] = useState(null);
+  const [editPercentage, setEditPercentage] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newCommission, setNewCommission] = useState({
     referrerName: "",
@@ -83,6 +93,44 @@ const ReferralCommission = () => {
     commissionAmount: "",
     notes: "",
   });
+
+  const handleOpenEditModal = (item) => {
+    setEditModalItem(item);
+    setEditPercentage(item.percentage ? String(item.percentage) : "");
+    setEditNotes(item.notes || "");
+  };
+
+  const editCalculatedAmount = useMemo(() => {
+    if (!editModalItem) return 0;
+    const loanAmt = Number(editModalItem.loanAmount || 0);
+    const pct = Number(editPercentage || 0);
+    if (loanAmt > 0 && pct > 0) {
+      return Math.round((loanAmt * pct) / 100);
+    }
+    return 0;
+  }, [editModalItem, editPercentage]);
+
+  const handleSaveCommissionRate = (e) => {
+    e.preventDefault();
+    if (!editModalItem) return;
+
+    const numPct = Number(editPercentage);
+    if (isNaN(numPct) || numPct < 0) {
+      alert("Please enter a valid non-negative commission percentage.");
+      return;
+    }
+
+    updateReferralCommissionRate({
+      commissionId: editModalItem.id,
+      loanId: editModalItem.loanId,
+      percentage: numPct,
+      commissionAmount: editCalculatedAmount,
+      notes: editNotes,
+    });
+
+    loadCommissions();
+    setEditModalItem(null);
+  };
 
   // Load Commissions & Sync with Customer Loans and Shared Records
   const loadCommissions = () => {
@@ -193,9 +241,19 @@ const ReferralCommission = () => {
   };
 
   useEffect(() => {
+    reconcileLoanDocumentCharges();
     loadCommissions();
-    window.addEventListener("storage", loadCommissions);
-    return () => window.removeEventListener("storage", loadCommissions);
+
+    const handleStorageChange = () => {
+      loadCommissions();
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener(UPDATE_EVENT_NAME, handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(UPDATE_EVENT_NAME, handleStorageChange);
+    };
   }, []);
 
   // Filtered commissions
@@ -476,9 +534,19 @@ const ReferralCommission = () => {
 
                     {/* Rate */}
                     <td className="px-4 py-3.5 text-center">
-                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 border border-slate-200">
-                        {row.percentage ? `${row.percentage}%` : "Flat"}
-                      </span>
+                      <div className="inline-flex items-center gap-1">
+                        <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 border border-slate-200">
+                          {row.percentage ? `${row.percentage}%` : "—"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditModal(row)}
+                          className="p-1 text-slate-400 hover:text-[#006052] hover:bg-emerald-50 rounded transition cursor-pointer"
+                          title="Edit Commission Rate (%)"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      </div>
                     </td>
 
                     {/* Commission Amount */}
@@ -503,26 +571,59 @@ const ReferralCommission = () => {
 
                     {/* Actions */}
                     <td className="px-4 py-3.5 text-right">
-                      {row.status === "Pending" ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPayModalItem(row);
-                            setPayDate(new Date().toISOString().slice(0, 10));
-                            setPayMode("Cash");
-                            setPayNotes("");
-                          }}
-                          className="inline-flex items-center gap-1 rounded-md bg-[#006052] px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-[#004d42] transition cursor-pointer"
-                        >
-                          <Coins className="h-3 w-3" />
-                          <span>Pay Commission</span>
-                        </button>
-                      ) : (
-                        <div className="text-[11px] text-slate-500">
-                          <div>Paid on {row.paidDate || "—"}</div>
-                          <div className="font-semibold text-slate-600">via {row.paymentMode || "Cash"}</div>
-                        </div>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        {row.status === "Pending" ? (
+                          <>
+                            {Number(row.commissionAmount || 0) > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPayModalItem(row);
+                                  setPayDate(new Date().toISOString().slice(0, 10));
+                                  setPayMode("Cash");
+                                  setPayNotes("");
+                                }}
+                                className="inline-flex items-center gap-1 rounded-md bg-[#006052] px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-[#004d42] transition cursor-pointer"
+                              >
+                                <Coins className="h-3 w-3" />
+                                <span>Pay Commission</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditModal(row)}
+                                className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-emerald-700 transition cursor-pointer"
+                              >
+                                <Plus className="h-3 w-3" />
+                                <span>Add Commission</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(row)}
+                              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition cursor-pointer"
+                              title="Edit Commission (%)"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <div className="text-[11px] text-slate-500 text-right">
+                              <div>Paid on {row.paidDate || "—"}</div>
+                              <div className="font-semibold text-slate-600">via {row.paymentMode || "Cash"}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(row)}
+                              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition cursor-pointer"
+                              title="Edit Commission Rate (Preserves Payment)"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -847,6 +948,138 @@ const ReferralCommission = () => {
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>Save Record</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          EDIT COMMISSION RATE MODAL
+      ========================================================= */}
+      {editModalItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+          onClick={() => setEditModalItem(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-100 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 bg-emerald-50/70">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-[#006052]">
+                  <Percent className="h-4 w-4" />
+                </span>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {Number(editModalItem.commissionAmount || 0) > 0 ? "Edit Referral Commission" : "Add Referral Commission"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditModalItem(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCommissionRate}>
+              <div className="p-5 space-y-4">
+                <div className="rounded-lg bg-slate-50 p-3.5 border border-slate-200/80 space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Referrer:</span>
+                    <span className="font-bold text-slate-900">{editModalItem.referrerName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Referred Loan:</span>
+                    <span className="font-mono font-bold text-[#006052]">{editModalItem.loanId}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Customer:</span>
+                    <span className="font-semibold text-slate-800">{editModalItem.customerName}</span>
+                  </div>
+                  <div className="flex justify-between pt-1 border-t border-slate-200">
+                    <span className="text-slate-600 font-semibold">Associated Loan Amount:</span>
+                    <span className="font-bold text-slate-900">
+                      {formatCurrency(editModalItem.loanAmount)}
+                    </span>
+                  </div>
+                </div>
+
+                {editModalItem.status === "Paid" && (
+                  <div className="rounded-lg bg-emerald-50/70 p-3 border border-emerald-200 text-xs text-emerald-900">
+                    <p className="font-semibold">Payment Status: Paid on {editModalItem.paidDate || "—"}</p>
+                    <p className="mt-0.5 text-[11px] text-emerald-700">
+                      Editing the percentage recalculates the payout without overwriting payment records or creating duplicate expenses.
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Commission (%) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      required
+                      value={editPercentage}
+                      onChange={(e) => setEditPercentage(e.target.value)}
+                      placeholder="e.g. 2.0"
+                      className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 pr-8 text-xs sm:text-sm text-slate-800 focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                      %
+                    </span>
+                  </div>
+                </div>
+
+                {/* Real-time Dynamic Calculation */}
+                <div className="rounded-lg bg-emerald-50/50 p-3 border border-emerald-100 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Calculated Commission Amount</span>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      ₹{Number(editModalItem.loanAmount || 0).toLocaleString("en-IN")} × {editPercentage || 0}% ÷ 100
+                    </span>
+                  </div>
+                  <span className="text-sm font-bold text-[#006052]">
+                    {formatCurrency(editCalculatedAmount)}
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Notes (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    placeholder="e.g. Standard referral commission"
+                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs sm:text-sm text-slate-800 focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30"
+                  />
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 bg-slate-50 px-5 py-3 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditModalItem(null)}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#006052] px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#004d42] transition cursor-pointer"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  <span>Save Commission</span>
                 </button>
               </div>
             </form>

@@ -16,9 +16,6 @@ import {
   Eye,
   Download,
   Calendar,
-  Users,
-  ShieldCheck,
-  Coins,
   Undo2,
 } from "lucide-react";
 
@@ -29,9 +26,8 @@ import {
   getGuarantorReferralRecords,
   saveGuarantorReferralRecords,
   getRecordRelationships,
-  getRecordCommissions,
-  addReferralCommission,
 } from "../../utils/guarantorReferralStorage";
+import ReferralGuarantorDetailsModal from "../../components/ReferralGuarantorDetailsModal";
 
 // Helper: Convert File to Base64 with metadata
 const fileToBase64 = (file) => {
@@ -70,27 +66,6 @@ const formatAddedDate = (dateString) => {
   });
 };
 
-// Summary KPI Card matching MotoLend UI
-const SummaryCard = ({ icon: Icon, title, value }) => {
-  return (
-    <div className="min-h-[96px] h-full rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs transition-shadow hover:shadow-md min-w-0 w-full">
-      <div className="flex h-full items-center gap-3.5 sm:gap-4 min-w-0">
-        <div className="flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
-          <Icon className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-700" strokeWidth={1.8} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs sm:text-sm font-medium text-slate-500 mb-0.5 sm:mb-1 leading-snug break-words">
-            {title}
-          </p>
-          <p className="text-base sm:text-lg lg:text-xl font-bold tracking-tight text-slate-900 whitespace-nowrap leading-tight">
-            {value}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const GuarantorReferral = () => {
   const navigate = useNavigate();
 
@@ -101,140 +76,11 @@ const GuarantorReferral = () => {
   const [selectedRecord, setSelectedRecord] = useState(null); // For Details view
   const [previewDoc, setPreviewDoc] = useState(null); // For Document viewer
 
-  // Real relationship data for the currently selected record
-  const selectedRecordRelationships = useMemo(
-    () => getRecordRelationships(selectedRecord),
-    [selectedRecord, records]
-  );
-
-  // Commissions for the selected record
-  const selectedRecordCommissions = useMemo(
-    () => (selectedRecord ? getRecordCommissions(selectedRecord) : []),
-    [selectedRecord, records]
-  );
-
-  // Determine if the selected record is a Referral (pure guarantors should not see commission section or add button)
-  const isReferralRecord = useMemo(() => {
-    if (!selectedRecord) return false;
-    const rels = selectedRecordRelationships || [];
-    const hasReferralRel = rels.some((r) => r.type === "Referral");
-    const hasCommissions = selectedRecordCommissions.length > 0;
-    const isGuarantorOnly = rels.length > 0 && rels.every((r) => r.type === "Guarantor") && !hasCommissions;
-    if (isGuarantorOnly) return false;
-    return hasReferralRel || hasCommissions || rels.length === 0;
-  }, [selectedRecord, selectedRecordRelationships, selectedRecordCommissions]);
-
-  // Modal states for Add Commission
-  const [isAddCommissionModalOpen, setIsAddCommissionModalOpen] = useState(false);
-  const [commissionFormData, setCommissionFormData] = useState({
-    selectedLoanKey: "",
-    loanId: "",
-    customerId: "",
-    customerName: "",
-    amount: "",
-    date: new Date().toISOString().slice(0, 10),
-    notes: "",
-  });
-  const [commissionErrors, setCommissionErrors] = useState({});
-  const [isSavingCommission, setIsSavingCommission] = useState(false);
-
-  // Eligible loans for this referral person
-  const commissionEligibleLoans = useMemo(() => {
-    if (!selectedRecord) return [];
-    const rels = selectedRecordRelationships || [];
-    const loans = [];
-    rels.forEach((rel) => {
-      if (rel.loanId && rel.loanId !== "—") {
-        loans.push({
-          key: `${rel.loanId}-${rel.customerId}`,
-          loanId: rel.loanId,
-          customerId: rel.customerId || "—",
-          customerName: rel.customerName || "Customer",
-          label: `${rel.loanId} — ${rel.customerName || "Customer"} (${rel.customerId || "—"})`,
-        });
-      }
-    });
-    return loans;
-  }, [selectedRecord, selectedRecordRelationships]);
-
-  const handleOpenAddCommission = (record) => {
-    const rels = getRecordRelationships(record) || [];
-    const defaultLoan = rels.find((r) => r.loanId && r.loanId !== "—");
-    setCommissionFormData({
-      selectedLoanKey: defaultLoan ? `${defaultLoan.loanId}-${defaultLoan.customerId}` : "__custom__",
-      loanId: defaultLoan?.loanId || "",
-      customerId: defaultLoan?.customerId || "",
-      customerName: defaultLoan?.customerName || "",
-      amount: "",
-      date: new Date().toISOString().slice(0, 10),
-      notes: "",
-    });
-    setCommissionErrors({});
-    setIsAddCommissionModalOpen(true);
-  };
-
-  const handleCommissionLoanSelect = (key) => {
-    if (key === "__custom__") {
-      setCommissionFormData((prev) => ({
-        ...prev,
-        selectedLoanKey: "__custom__",
-        loanId: "",
-        customerId: "",
-        customerName: "",
-      }));
-    } else {
-      const found = commissionEligibleLoans.find((item) => item.key === key);
-      if (found) {
-        setCommissionFormData((prev) => ({
-          ...prev,
-          selectedLoanKey: key,
-          loanId: found.loanId,
-          customerId: found.customerId,
-          customerName: found.customerName,
-        }));
-      }
-    }
-  };
-
-  const handleSaveCommissionSubmit = (e) => {
-    e.preventDefault();
-    if (isSavingCommission) return;
-
-    const num = Number(commissionFormData.amount);
-    if (isNaN(num) || num <= 0) {
-      setCommissionErrors({ amount: "Please enter a valid positive commission amount (₹)." });
-      return;
-    }
-
-    setIsSavingCommission(true);
-    try {
-      addReferralCommission({
-        personId: selectedRecord.id,
-        referralName: selectedRecord.fullName,
-        referralPhone: selectedRecord.phone,
-        customerId: commissionFormData.customerId || "—",
-        customerName: commissionFormData.customerName || "Customer",
-        loanId: commissionFormData.loanId || "—",
-        amount: num,
-        date: commissionFormData.date,
-        notes: commissionFormData.notes,
-      });
-
-      // Reload records to refresh state across components
-      loadRecords();
-      const updated = getGuarantorReferralRecords();
-      const refreshed = updated.find((r) => r.id === selectedRecord.id);
-      if (refreshed) {
-        setSelectedRecord(refreshed);
-      }
-      setIsAddCommissionModalOpen(false);
-    } catch (err) {
-      console.error("Failed to add referral commission:", err);
-      alert("Failed to save commission. Please try again.");
-    } finally {
-      setIsSavingCommission(false);
-    }
-  };
+  // Derive latest record from records if updated in storage
+  const activeSelectedRecord = useMemo(() => {
+    if (!selectedRecord) return null;
+    return records.find((r) => r.id === selectedRecord.id) || selectedRecord;
+  }, [records, selectedRecord]);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -275,7 +121,7 @@ const GuarantorReferral = () => {
 
   // Prevent background page scrolling when modal is open
   useEffect(() => {
-    if (isModalOpen || selectedRecord || previewDoc || isAddCommissionModalOpen) {
+    if (isModalOpen || selectedRecord || previewDoc) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -283,7 +129,7 @@ const GuarantorReferral = () => {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [isModalOpen, selectedRecord, previewDoc, isAddCommissionModalOpen]);
+  }, [isModalOpen, selectedRecord, previewDoc]);
 
   // Reset form
   const resetForm = () => {
@@ -501,82 +347,38 @@ const GuarantorReferral = () => {
     });
   }, [records, searchQuery]);
 
-  // KPI Calculations
-  const totalRecordsCount = records.length;
-  const verifiedAadhaarCount = records.filter((r) => r.aadhaarNumber && r.aadhaarNumber.length === 12).length;
-  const documentsCount = records.reduce(
-    (sum, r) => sum + (r.aadhaarFile ? 1 : 0) + (r.additionalDocs?.length || 0),
-    0
-  );
-
   return (
     <div className="min-h-screen bg-white px-3 pb-8 pt-2 sm:px-6 lg:px-8">
       {/* =========================================================
           PAGE HEADER
       ========================================================= */}
-      <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/customers")}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-2xs transition-all duration-150 hover:border-slate-300 hover:bg-slate-50 hover:text-[#06483f] focus:border-[#006052] focus:outline-none focus:ring-2 focus:ring-[#006052]/20 active:scale-95 active:bg-slate-100 cursor-pointer"
-            aria-label="Back to Customers"
-            title="Back to Customers"
-          >
-            <Undo2 className="h-4 w-4" strokeWidth={2.2} />
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
-              Guarantor / Referral
-            </h1>
-            <p className="mt-1.5 text-xs sm:text-sm text-slate-500 font-medium">
-              Manage and view all guarantor and referral records in one shared directory.
-            </p>
-          </div>
-        </div>
-
-        {/* Top-Right Rectangular Green + Add Button */}
+      <div className="flex items-center gap-3 pt-2">
         <button
           type="button"
-          onClick={() => {
-            resetForm();
-            setIsModalOpen(true);
-          }}
-          className="inline-flex items-center justify-center gap-1.5 self-start rounded-lg bg-[#006052] px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer sm:self-auto shrink-0"
+          onClick={() => navigate("/customers")}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-2xs transition-all duration-150 hover:border-slate-300 hover:bg-slate-50 hover:text-[#06483f] focus:border-[#006052] focus:outline-none focus:ring-2 focus:ring-[#006052]/20 active:scale-95 active:bg-slate-100 cursor-pointer"
+          aria-label="Back to Customers"
+          title="Back to Customers"
         >
-          <Plus className="h-4 w-4" strokeWidth={2.2} />
-          <span>Add</span>
+          <Undo2 className="h-4 w-4" strokeWidth={2.2} />
         </button>
-      </div>
-
-      {/* =========================================================
-          KPI SUMMARY CARDS
-      ========================================================= */}
-      <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 lg:mt-8">
-        <SummaryCard
-          icon={Users}
-          title="Total Records"
-          value={totalRecordsCount.toLocaleString("en-IN")}
-        />
-        <SummaryCard
-          icon={ShieldCheck}
-          title="Verified Aadhaar"
-          value={verifiedAadhaarCount.toLocaleString("en-IN")}
-        />
-        <SummaryCard
-          icon={FileText}
-          title="Attached Documents"
-          value={documentsCount.toLocaleString("en-IN")}
-        />
+        <div>
+          <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
+            Guarantor / Referral
+          </h1>
+          <p className="mt-1.5 text-xs sm:text-sm text-slate-500 font-medium">
+            Manage and view all guarantor and referral records in one shared directory.
+          </p>
+        </div>
       </div>
 
       {/* =========================================================
           RECORDS TABLE SECTION
       ========================================================= */}
-      <div className="mt-6 rounded-md border border-slate-200 bg-white p-4">
-        {/* Search & Filter Bar */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-          <div className="relative w-full sm:w-80">
+      <div className="mt-5 sm:mt-6 rounded-md border border-slate-200 bg-white p-4">
+        {/* Horizontal Toolbar: Flexible Search Bar (Left) & + Add Button (Right) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
@@ -587,11 +389,17 @@ const GuarantorReferral = () => {
             />
           </div>
 
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            {filteredRecords.length === 1
-              ? "Showing 1 record"
-              : `Showing ${filteredRecords.length} records`}
-          </p>
+          <button
+            type="button"
+            onClick={() => {
+              resetForm();
+              setIsModalOpen(true);
+            }}
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[#006052] px-4 text-sm font-semibold text-white shadow-xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer shrink-0"
+          >
+            <Plus className="h-4 w-4" strokeWidth={2.2} />
+            <span>Add</span>
+          </button>
         </div>
 
         {/* Empty State */}
@@ -1125,548 +933,13 @@ const GuarantorReferral = () => {
       )}
 
       {/* =========================================================
-          VIEW RECORD DETAILS MODAL (Preserves all submitted details)
+          FINAL REFERRAL & GUARANTOR DETAILS POPUP MODAL
       ========================================================= */}
-      {selectedRecord && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSelectedRecord(null);
-          }}
-        >
-          <div
-            className="relative w-full max-w-xl sm:max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto border border-slate-200/80 animate-in zoom-in-95 duration-200"
-            role="dialog"
-            aria-modal="true"
-          >
-            {/* Header: Deep Navy */}
-            <div className="bg-[#0F1E36] px-5 py-4 sm:px-6 sm:py-4.5 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-white/10 flex items-center justify-center text-white shrink-0 border border-white/10">
-                  <UserCheck className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                      {selectedRecord.fullName}
-                    </h2>
-                    <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[11px] font-mono font-bold text-emerald-300 border border-emerald-400/30">
-                      {selectedRecord.id}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-300 mt-0.5">
-                    Added on {formatAddedDate(selectedRecord.createdAt)}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedRecord(null)}
-                className="rounded-lg p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Content: Relationship Details */}
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6 bg-white">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F1E36]">
-                    Relationship Details
-                  </h3>
-                  {selectedRecordRelationships.length > 0 && (
-                    <span className="text-xs font-semibold text-slate-500">
-                      {selectedRecordRelationships.length} Associated Link{selectedRecordRelationships.length > 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
-
-                {selectedRecordRelationships.length > 0 ? (
-                  <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-2xs">
-                    <table className="w-full text-left text-xs sm:text-sm">
-                      <thead className="bg-[#0F1E36] text-white">
-                        <tr>
-                          <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
-                            Relationship Type
-                          </th>
-                          <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
-                            Customer ID
-                          </th>
-                          <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
-                            Customer Name
-                          </th>
-                          <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
-                            Loan ID
-                          </th>
-                          <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
-                            Associated Date
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {selectedRecordRelationships.map((rel, idx) => (
-                          <tr key={rel.id || idx} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="px-3.5 py-3 whitespace-nowrap">
-                              <span
-                                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border ${
-                                  rel.type === "Guarantor"
-                                    ? "bg-emerald-50 text-[#006052] border-emerald-200"
-                                    : "bg-blue-50 text-[#0F1E36] border-blue-200"
-                                }`}
-                              >
-                                <span>{rel.type} for</span>
-                                <strong className="font-bold">{rel.customerName || "Customer"}</strong>
-                              </span>
-                            </td>
-                            <td className="px-3.5 py-3 font-mono font-bold text-[#006052] whitespace-nowrap">
-                              {rel.customerId || "—"}
-                            </td>
-                            <td className="px-3.5 py-3 font-semibold text-slate-900">
-                              {rel.customerName || "—"}
-                            </td>
-                            <td className="px-3.5 py-3 font-mono text-slate-700 whitespace-nowrap">
-                              {rel.loanId || "—"}
-                            </td>
-                            <td className="px-3.5 py-3 text-slate-500 whitespace-nowrap">
-                              {formatAddedDate(rel.associatedDate)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  /* Professional Empty State */
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-[#F8FAFC] p-8 sm:p-12 text-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 mb-3 border border-slate-200">
-                      <Users className="h-6 w-6" strokeWidth={1.8} />
-                    </div>
-                    <h4 className="text-base font-bold text-slate-900">
-                      No Relationships Recorded
-                    </h4>
-                    <p className="mt-1.5 max-w-sm text-xs sm:text-sm text-slate-500 leading-relaxed italic">
-                      This person has not yet been linked to any customer or loan.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Section: Referral Commission (Displayed for Referrals only; not shown for Guarantors) */}
-              {isReferralRecord && (
-                <div className="pt-4 border-t border-slate-100 space-y-3">
-                  <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <Coins className="h-4 w-4 text-[#006052]" />
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F1E36]">
-                        Referral Commission History
-                      </h3>
-                      {selectedRecordCommissions.length > 0 && (
-                        <span className="rounded bg-emerald-50 text-[#006052] border border-emerald-200 px-2 py-0.5 text-[11px] font-bold">
-                          Total: ₹{selectedRecordCommissions.reduce((sum, c) => sum + Number(c.amount || 0), 0).toLocaleString("en-IN")}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* + Add Commission Button - Referral View ONLY */}
-                    <button
-                      type="button"
-                      onClick={() => handleOpenAddCommission(selectedRecord)}
-                      className="inline-flex items-center gap-1 rounded-md bg-[#006052] px-2.5 py-1 text-xs font-bold text-white shadow-2xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors cursor-pointer"
-                      title="Add commission for this referral"
-                    >
-                      <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-                      <span>+ Add Commission</span>
-                    </button>
-                  </div>
-
-                  {selectedRecordCommissions.length > 0 ? (
-                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-2xs">
-                      <table className="w-full text-left text-xs sm:text-sm">
-                        <thead className="bg-[#0F1E36] text-white">
-                          <tr>
-                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
-                              Customer ID
-                            </th>
-                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
-                              Customer Name
-                            </th>
-                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
-                              Loan ID
-                            </th>
-                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px] text-right">
-                              Commission Amount
-                            </th>
-                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px] text-center">
-                              Status
-                            </th>
-                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px] text-center">
-                              Date
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {selectedRecordCommissions.map((comm, idx) => (
-                            <tr key={comm.id || idx} className="hover:bg-slate-50/70 transition-colors">
-                              <td className="px-3.5 py-3 font-mono font-bold text-[#006052] whitespace-nowrap">
-                                {comm.customerId || "—"}
-                              </td>
-                              <td className="px-3.5 py-3 font-semibold text-slate-900">
-                                {comm.customerName || "Customer"}
-                              </td>
-                              <td className="px-3.5 py-3 font-mono text-slate-700 whitespace-nowrap">
-                                {comm.loanId || "—"}
-                              </td>
-                              <td className="px-3.5 py-3 font-bold text-emerald-800 text-right whitespace-nowrap">
-                                ₹{Number(comm.amount || 0).toLocaleString("en-IN")}
-                              </td>
-                              <td className="px-3.5 py-3 text-center whitespace-nowrap">
-                                <span
-                                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold border ${
-                                    comm.status === "Paid"
-                                      ? "bg-emerald-50 text-[#006052] border-emerald-200"
-                                      : "bg-amber-50 text-amber-800 border border-amber-200"
-                                  }`}
-                                >
-                                  {comm.status === "Paid" ? "● Paid" : "○ Pending"}
-                                </span>
-                              </td>
-                              <td className="px-3.5 py-3 text-slate-500 text-center whitespace-nowrap">
-                                {formatAddedDate(comm.date || comm.createdAt)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-[#F8FAFC] p-4 text-center">
-                      <p className="text-xs font-medium text-slate-500 italic">
-                        No referral commission recorded.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Section: Uploaded Documents */}
-                <div className="pt-4 border-t border-slate-100 space-y-3">
-                  <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F1E36] flex items-center gap-1.5">
-                      <FileText className="h-4 w-4 text-[#006052]" />
-                      <span>Uploaded Documents</span>
-                    </h3>
-                    <span className="text-xs font-semibold text-slate-500">
-                      {(selectedRecord.aadhaarFile ? 1 : 0) + (selectedRecord.additionalDocs?.length || 0)} Document{((selectedRecord.aadhaarFile ? 1 : 0) + (selectedRecord.additionalDocs?.length || 0)) !== 1 ? "s" : ""}
-                    </span>
-                  </div>
-
-                  {selectedRecord.aadhaarFile || (selectedRecord.additionalDocs && selectedRecord.additionalDocs.length > 0) ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* Aadhaar Document */}
-                      {selectedRecord.aadhaarFile && (
-                        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-[#F8FAFC] p-3 shadow-2xs hover:border-[#006052]/40 transition-colors">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#006052] border border-emerald-100">
-                              <FileText className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
-                                Aadhaar Document
-                              </p>
-                              <p className="text-[11px] text-slate-400 truncate">
-                                {selectedRecord.aadhaarFile.name || "Aadhaar Card"}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setPreviewDoc({
-                                  title: `Aadhaar Document - ${selectedRecord.fullName}`,
-                                  file: selectedRecord.aadhaarFile,
-                                })
-                              }
-                              className="inline-flex items-center gap-1 rounded-md bg-white border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-[#006052] transition-colors cursor-pointer shadow-2xs"
-                              title="Preview Document"
-                            >
-                              <Eye className="h-3.5 w-3.5 text-[#006052]" />
-                              <span>View</span>
-                            </button>
-                            {selectedRecord.aadhaarFile.data && (
-                              <a
-                                href={selectedRecord.aadhaarFile.data}
-                                download={selectedRecord.aadhaarFile.name || "Aadhaar_Document"}
-                                className="inline-flex items-center justify-center rounded-md bg-white border border-slate-200 p-1 text-slate-600 hover:text-[#006052] hover:bg-slate-50 hover:border-[#006052] transition-colors cursor-pointer shadow-2xs"
-                                title="Download Document"
-                              >
-                                <Download className="h-3.5 w-3.5" />
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Additional Documents */}
-                      {selectedRecord.additionalDocs?.map((doc, idx) => (
-                        <div
-                          key={doc.id || idx}
-                          className="flex items-center justify-between rounded-xl border border-slate-200 bg-[#F8FAFC] p-3 shadow-2xs hover:border-[#006052]/40 transition-colors"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#006052] border border-emerald-100">
-                              <FileText className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
-                                {doc.title || `Additional Document #${idx + 1}`}
-                              </p>
-                              <p className="text-[11px] text-slate-400 truncate">
-                                {doc.file?.name || "Attached Document"}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                            {doc.file && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setPreviewDoc({
-                                      title: `${doc.title || "Document"} - ${selectedRecord.fullName}`,
-                                      file: doc.file,
-                                    })
-                                  }
-                                  className="inline-flex items-center gap-1 rounded-md bg-white border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-[#006052] transition-colors cursor-pointer shadow-2xs"
-                                  title="Preview Document"
-                                >
-                                  <Eye className="h-3.5 w-3.5 text-[#006052]" />
-                                  <span>View</span>
-                                </button>
-                                {doc.file.data && (
-                                  <a
-                                    href={doc.file.data}
-                                    download={doc.file.name || `${doc.title || "document"}`}
-                                    className="inline-flex items-center justify-center rounded-md bg-white border border-slate-200 p-1 text-slate-600 hover:text-[#006052] hover:bg-slate-50 hover:border-[#006052] transition-colors cursor-pointer shadow-2xs"
-                                    title="Download Document"
-                                  >
-                                    <Download className="h-3.5 w-3.5" />
-                                  </a>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-[#F8FAFC] p-4 text-center">
-                      <p className="text-xs text-slate-400">No documents uploaded for this record.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-            {/* Footer */}
-            <div className="border-t border-slate-100 px-5 py-3.5 sm:px-6 sm:py-4 bg-slate-50 flex items-center justify-end shrink-0">
-              <button
-                type="button"
-                onClick={() => setSelectedRecord(null)}
-                className="rounded-lg bg-[#0F1E36] px-5 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-[#0A1629] transition-colors cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================
-          COMPACT ADD COMMISSION MODAL (Referral View Only)
-      ========================================================= */}
-      {isAddCommissionModalOpen && selectedRecord && (
-        <div
-          className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !isSavingCommission) {
-              setIsAddCommissionModalOpen(false);
-            }
-          }}
-        >
-          <div
-            className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 animate-in zoom-in-95 duration-200"
-            role="dialog"
-            aria-modal="true"
-          >
-            {/* Compact Modal Header */}
-            <div className="bg-[#0F1E36] px-5 py-3.5 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-400/30">
-                  <Coins className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white tracking-tight leading-tight">
-                    + Add Referral Commission
-                  </h3>
-                  <p className="text-[11px] text-slate-300 truncate max-w-[260px]">
-                    For: {selectedRecord.fullName} ({selectedRecord.id})
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                disabled={isSavingCommission}
-                onClick={() => setIsAddCommissionModalOpen(false)}
-                className="rounded-lg p-1 text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Modal Form */}
-            <form onSubmit={handleSaveCommissionSubmit} className="p-5 space-y-3.5 bg-white">
-              {/* Loan & Customer Context */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Related Loan / Customer Context <span className="text-red-500">*</span>
-                </label>
-                {commissionEligibleLoans.length > 0 ? (
-                  <select
-                    value={commissionFormData.selectedLoanKey}
-                    onChange={(e) => handleCommissionLoanSelect(e.target.value)}
-                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs sm:text-sm font-medium text-slate-800 focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30"
-                  >
-                    {commissionEligibleLoans.map((item) => (
-                      <option key={item.key} value={item.key}>
-                        {item.label}
-                      </option>
-                    ))}
-                    <option value="__custom__">Manual / Other Loan Entry...</option>
-                  </select>
-                ) : null}
-
-                {/* If manual or no linked loans, show manual inputs */}
-                {(commissionEligibleLoans.length === 0 || commissionFormData.selectedLoanKey === "__custom__") && (
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    <div>
-                      <input
-                        type="text"
-                        placeholder="Loan ID (e.g. LN00001)"
-                        value={commissionFormData.loanId}
-                        onChange={(e) =>
-                          setCommissionFormData((prev) => ({ ...prev, loanId: e.target.value }))
-                        }
-                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 focus:border-[#006052] focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <input
-                        type="text"
-                        placeholder="Customer Name"
-                        value={commissionFormData.customerName}
-                        onChange={(e) =>
-                          setCommissionFormData((prev) => ({ ...prev, customerName: e.target.value }))
-                        }
-                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 focus:border-[#006052] focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Commission Amount */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Commission Amount (₹) <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500">
-                    ₹
-                  </span>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="any"
-                    autoFocus
-                    value={commissionFormData.amount}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setCommissionFormData((prev) => ({ ...prev, amount: val }));
-                      if (commissionErrors.amount) {
-                        setCommissionErrors((prev) => ({ ...prev, amount: null }));
-                      }
-                    }}
-                    placeholder="e.g. 1500"
-                    className={`h-9 w-full rounded-md border bg-white pl-8 pr-3 text-xs sm:text-sm font-bold text-slate-900 focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30 ${
-                      commissionErrors.amount ? "border-red-400" : "border-slate-300"
-                    }`}
-                  />
-                </div>
-                {commissionErrors.amount && (
-                  <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3 shrink-0" />
-                    {commissionErrors.amount}
-                  </p>
-                )}
-              </div>
-
-              {/* Date */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Commission Date <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={commissionFormData.date}
-                  onChange={(e) =>
-                    setCommissionFormData((prev) => ({ ...prev, date: e.target.value }))
-                  }
-                  className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs sm:text-sm text-slate-800 focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30"
-                />
-              </div>
-
-              {/* Notes (Optional) */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Notes / Remarks (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={commissionFormData.notes}
-                  onChange={(e) =>
-                    setCommissionFormData((prev) => ({ ...prev, notes: e.target.value }))
-                  }
-                  placeholder="e.g. Loan disbursement referral incentive"
-                  className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30"
-                />
-              </div>
-
-              {/* Footer Actions */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  disabled={isSavingCommission}
-                  onClick={() => setIsAddCommissionModalOpen(false)}
-                  className="rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingCommission}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#006052] px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#004d42] active:bg-[#003d34] transition cursor-pointer disabled:opacity-50"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>{isSavingCommission ? "Saving..." : "Save Commission"}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {activeSelectedRecord && (
+        <ReferralGuarantorDetailsModal
+          person={activeSelectedRecord}
+          onClose={() => setSelectedRecord(null)}
+        />
       )}
 
       {/* =========================================================

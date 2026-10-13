@@ -434,7 +434,10 @@ const Collection = () => {
         customerId: selectedCustomer.customerId,
         customerName: selectedCustomer.customer?.name || "Customer",
         loanId: selectedCustomer.loanId,
-        installmentNumber: appliedAllocations[0]?.installmentNumber,
+        installmentNumber: appliedAllocations.length === 1
+          ? appliedAllocations[0]?.installmentNumber
+          : (appliedAllocations.map((a) => a.installmentNumber).join(", ") || appliedAllocations[0]?.installmentNumber),
+        installmentNumbers: appliedAllocations.map((a) => a.installmentNumber),
         date: paymentDate || new Date().toISOString(),
         amount: amt,
         principal: totalPrincipalRecovered,
