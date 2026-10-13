@@ -17,9 +17,19 @@ import {
   Calendar,
   Users,
   ShieldCheck,
+  Coins,
 } from "lucide-react";
 
-const STORAGE_KEY = "motoLendGuarantorReferrals_data";
+import {
+  STORAGE_KEY,
+  UPDATE_EVENT_NAME,
+  generateNextGuarantorId,
+  getGuarantorReferralRecords,
+  saveGuarantorReferralRecords,
+  getRecordRelationships,
+  getRecordCommissions,
+  addReferralCommission,
+} from "../../utils/guarantorReferralStorage";
 
 // Helper: Convert File to Base64 with metadata
 const fileToBase64 = (file) => {
@@ -58,122 +68,6 @@ const formatAddedDate = (dateString) => {
   });
 };
 
-// Helper: Generate next permanent sequential ID (e.g. GR-00001, GR-00002)
-const generateNextId = (recordsList) => {
-  let highestNum = 0;
-  if (Array.isArray(recordsList)) {
-    recordsList.forEach((r) => {
-      if (r && r.id && typeof r.id === "string") {
-        const match = r.id.match(/^GR-(\d+)$/i);
-        if (match) {
-          const val = parseInt(match[1], 10);
-          if (!isNaN(val) && val > highestNum) {
-            highestNum = val;
-          }
-        }
-      }
-    });
-  }
-  const nextNum = highestNum + 1;
-  return `GR-${String(nextNum).padStart(5, "0")}`;
-};
-
-// Helper: Read real relationship data for this guarantor/referral from application storage
-const getRecordRelationships = (record) => {
-  if (!record) return [];
-
-  // 1. If the record itself already contains relationships:
-  if (Array.isArray(record.relationships) && record.relationships.length > 0) {
-    return record.relationships;
-  }
-
-  // 2. Query real available application data in localStorage
-  try {
-    const customers = JSON.parse(
-      localStorage.getItem("motoLendCustomersList_data") || "[]"
-    );
-    const matches = [];
-
-    const recPhone = record.phone ? String(record.phone).replace(/\D/g, "") : "";
-    const recName = record.fullName ? record.fullName.trim().toLowerCase() : "";
-    const recAadhaar = record.aadhaarNumber
-      ? String(record.aadhaarNumber).replace(/\D/g, "")
-      : "";
-
-    customers.forEach((c) => {
-      const custId =
-        c.customerId ||
-        (c.customer && c.customer.customerId) ||
-        (c.customer?.mobile ? `CUS-${c.customer.mobile.slice(-5)}` : null);
-      const custName = c.customer?.name || c.name || "—";
-      const loanId =
-        c.loanId ||
-        (c.loan && c.loan.loanId) ||
-        (custId ? `LN-${String(custId).replace("CUS-", "")}` : "—");
-      const assocDate =
-        c.createdAt ||
-        c.customer?.applicationDate ||
-        c.applicationDate ||
-        null;
-
-      // Check if linked as Guarantor
-      const g = c.guarantor;
-      if (g && g.required !== "No" && g.name) {
-        const gPhone = g.mobile ? String(g.mobile).replace(/\D/g, "") : "";
-        const gName = g.name.trim().toLowerCase();
-        const gAadhaar = g.aadhaarNo ? String(g.aadhaarNo).replace(/\D/g, "") : "";
-
-        const isPhoneMatch = recPhone && gPhone && recPhone === gPhone;
-        const isAadhaarMatch = recAadhaar && gAadhaar && recAadhaar === gAadhaar;
-        const isNameMatch = recName && gName && recName === gName;
-
-        if (isPhoneMatch || isAadhaarMatch || (isNameMatch && (isPhoneMatch || !gPhone))) {
-          matches.push({
-            id: `rel-g-${custId}-${loanId}`,
-            type: "Guarantor",
-            customerId: custId || "—",
-            customerName: custName,
-            loanId: loanId || "—",
-            associatedDate: assocDate,
-          });
-        }
-      }
-
-      // Check if linked as Referral
-      const refBy = c.customer?.referredBy || c.referredBy;
-      if (refBy && typeof refBy === "string" && refBy.trim()) {
-        const refName = refBy.trim().toLowerCase();
-        if (recName && recName === refName) {
-          matches.push({
-            id: `rel-r-${custId}-${loanId}`,
-            type: "Referral",
-            customerId: custId || "—",
-            customerName: custName,
-            loanId: loanId || "—",
-            associatedDate: assocDate,
-          });
-        }
-      }
-    });
-
-    // Deduplicate relationships
-    const unique = [];
-    const seen = new Set();
-    matches.forEach((m) => {
-      const key = `${m.type}-${m.customerId}-${m.loanId}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(m);
-      }
-    });
-
-    return unique;
-  } catch (err) {
-    console.error("Error reading relationships from application data:", err);
-    return [];
-  }
-};
-
 // Summary KPI Card matching MotoLend UI
 const SummaryCard = ({ icon: Icon, title, value }) => {
   return (
@@ -206,8 +100,137 @@ const GuarantorReferral = () => {
   // Real relationship data for the currently selected record
   const selectedRecordRelationships = useMemo(
     () => getRecordRelationships(selectedRecord),
-    [selectedRecord]
+    [selectedRecord, records]
   );
+
+  // Commissions for the selected record
+  const selectedRecordCommissions = useMemo(
+    () => (selectedRecord ? getRecordCommissions(selectedRecord) : []),
+    [selectedRecord, records]
+  );
+
+  // Determine if the selected record is a Referral (pure guarantors should not see commission section or add button)
+  const isReferralRecord = useMemo(() => {
+    if (!selectedRecord) return false;
+    const rels = selectedRecordRelationships || [];
+    const hasReferralRel = rels.some((r) => r.type === "Referral");
+    const hasCommissions = selectedRecordCommissions.length > 0;
+    const isGuarantorOnly = rels.length > 0 && rels.every((r) => r.type === "Guarantor") && !hasCommissions;
+    if (isGuarantorOnly) return false;
+    return hasReferralRel || hasCommissions || rels.length === 0;
+  }, [selectedRecord, selectedRecordRelationships, selectedRecordCommissions]);
+
+  // Modal states for Add Commission
+  const [isAddCommissionModalOpen, setIsAddCommissionModalOpen] = useState(false);
+  const [commissionFormData, setCommissionFormData] = useState({
+    selectedLoanKey: "",
+    loanId: "",
+    customerId: "",
+    customerName: "",
+    amount: "",
+    date: new Date().toISOString().slice(0, 10),
+    notes: "",
+  });
+  const [commissionErrors, setCommissionErrors] = useState({});
+  const [isSavingCommission, setIsSavingCommission] = useState(false);
+
+  // Eligible loans for this referral person
+  const commissionEligibleLoans = useMemo(() => {
+    if (!selectedRecord) return [];
+    const rels = selectedRecordRelationships || [];
+    const loans = [];
+    rels.forEach((rel) => {
+      if (rel.loanId && rel.loanId !== "—") {
+        loans.push({
+          key: `${rel.loanId}-${rel.customerId}`,
+          loanId: rel.loanId,
+          customerId: rel.customerId || "—",
+          customerName: rel.customerName || "Customer",
+          label: `${rel.loanId} — ${rel.customerName || "Customer"} (${rel.customerId || "—"})`,
+        });
+      }
+    });
+    return loans;
+  }, [selectedRecord, selectedRecordRelationships]);
+
+  const handleOpenAddCommission = (record) => {
+    const rels = getRecordRelationships(record) || [];
+    const defaultLoan = rels.find((r) => r.loanId && r.loanId !== "—");
+    setCommissionFormData({
+      selectedLoanKey: defaultLoan ? `${defaultLoan.loanId}-${defaultLoan.customerId}` : "__custom__",
+      loanId: defaultLoan?.loanId || "",
+      customerId: defaultLoan?.customerId || "",
+      customerName: defaultLoan?.customerName || "",
+      amount: "",
+      date: new Date().toISOString().slice(0, 10),
+      notes: "",
+    });
+    setCommissionErrors({});
+    setIsAddCommissionModalOpen(true);
+  };
+
+  const handleCommissionLoanSelect = (key) => {
+    if (key === "__custom__") {
+      setCommissionFormData((prev) => ({
+        ...prev,
+        selectedLoanKey: "__custom__",
+        loanId: "",
+        customerId: "",
+        customerName: "",
+      }));
+    } else {
+      const found = commissionEligibleLoans.find((item) => item.key === key);
+      if (found) {
+        setCommissionFormData((prev) => ({
+          ...prev,
+          selectedLoanKey: key,
+          loanId: found.loanId,
+          customerId: found.customerId,
+          customerName: found.customerName,
+        }));
+      }
+    }
+  };
+
+  const handleSaveCommissionSubmit = (e) => {
+    e.preventDefault();
+    if (isSavingCommission) return;
+
+    const num = Number(commissionFormData.amount);
+    if (isNaN(num) || num <= 0) {
+      setCommissionErrors({ amount: "Please enter a valid positive commission amount (₹)." });
+      return;
+    }
+
+    setIsSavingCommission(true);
+    try {
+      addReferralCommission({
+        personId: selectedRecord.id,
+        referralName: selectedRecord.fullName,
+        referralPhone: selectedRecord.phone,
+        customerId: commissionFormData.customerId || "—",
+        customerName: commissionFormData.customerName || "Customer",
+        loanId: commissionFormData.loanId || "—",
+        amount: num,
+        date: commissionFormData.date,
+        notes: commissionFormData.notes,
+      });
+
+      // Reload records to refresh state across components
+      loadRecords();
+      const updated = getGuarantorReferralRecords();
+      const refreshed = updated.find((r) => r.id === selectedRecord.id);
+      if (refreshed) {
+        setSelectedRecord(refreshed);
+      }
+      setIsAddCommissionModalOpen(false);
+    } catch (err) {
+      console.error("Failed to add referral commission:", err);
+      alert("Failed to save commission. Please try again.");
+    } finally {
+      setIsSavingCommission(false);
+    }
+  };
 
   // Form states
   const [formData, setFormData] = useState({
@@ -225,34 +248,11 @@ const GuarantorReferral = () => {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Load and normalize records from shared localStorage
+  // Load records from shared storage
   const loadRecords = () => {
     try {
-      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-
-      // Ensure every record has a clean permanent GR-XXXXX formatted ID
-      let maxCounter = 1;
-      const normalized = stored.map((item, index) => {
-        if (item.id && /^GR-\d{5}$/i.test(item.id)) {
-          const num = parseInt(item.id.replace(/^GR-/i, ""), 10);
-          if (num >= maxCounter) maxCounter = num + 1;
-          return item;
-        }
-        const assignedId = `GR-${String(index + 1).padStart(5, "0")}`;
-        maxCounter = Math.max(maxCounter, index + 2);
-        return {
-          ...item,
-          id: assignedId,
-          createdAt: item.createdAt || new Date().toISOString(),
-        };
-      });
-
-      // Update storage if any IDs were updated
-      if (JSON.stringify(stored) !== JSON.stringify(normalized)) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-      }
-
-      setRecords(normalized);
+      const stored = getGuarantorReferralRecords();
+      setRecords(stored);
     } catch (err) {
       console.error("Failed to load guarantor/referral records:", err);
       setRecords([]);
@@ -262,12 +262,16 @@ const GuarantorReferral = () => {
   useEffect(() => {
     loadRecords();
     window.addEventListener("storage", loadRecords);
-    return () => window.removeEventListener("storage", loadRecords);
+    window.addEventListener(UPDATE_EVENT_NAME, loadRecords);
+    return () => {
+      window.removeEventListener("storage", loadRecords);
+      window.removeEventListener(UPDATE_EVENT_NAME, loadRecords);
+    };
   }, []);
 
   // Prevent background page scrolling when modal is open
   useEffect(() => {
-    if (isModalOpen || selectedRecord || previewDoc) {
+    if (isModalOpen || selectedRecord || previewDoc || isAddCommissionModalOpen) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -275,7 +279,7 @@ const GuarantorReferral = () => {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [isModalOpen, selectedRecord, previewDoc]);
+  }, [isModalOpen, selectedRecord, previewDoc, isAddCommissionModalOpen]);
 
   // Reset form
   const resetForm = () => {
@@ -435,8 +439,8 @@ const GuarantorReferral = () => {
     setIsSubmitting(true);
 
     try {
-      const currentStored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-      const nextId = generateNextId(currentStored);
+      const currentStored = getGuarantorReferralRecords();
+      const nextId = generateNextGuarantorId(currentStored);
 
       const newRecord = {
         id: nextId,
@@ -455,12 +459,13 @@ const GuarantorReferral = () => {
             title: d.title || "Document",
             file: d.file,
           })),
+        relationships: [],
         createdAt: new Date().toISOString(),
       };
 
       // Persist to shared storage
       const updated = [newRecord, ...currentStored];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      saveGuarantorReferralRecords(updated);
 
       // Immediately update local state without requiring manual page refresh
       setRecords(updated);
@@ -1190,13 +1195,14 @@ const GuarantorReferral = () => {
                           <tr key={rel.id || idx} className="hover:bg-slate-50/70 transition-colors">
                             <td className="px-3.5 py-3 whitespace-nowrap">
                               <span
-                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border ${
+                                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border ${
                                   rel.type === "Guarantor"
                                     ? "bg-emerald-50 text-[#006052] border-emerald-200"
-                                    : "bg-slate-100 text-[#0F1E36] border-slate-200"
+                                    : "bg-blue-50 text-[#0F1E36] border-blue-200"
                                 }`}
                               >
-                                {rel.type}
+                                <span>{rel.type} for</span>
+                                <strong className="font-bold">{rel.customerName || "Customer"}</strong>
                               </span>
                             </td>
                             <td className="px-3.5 py-3 font-mono font-bold text-[#006052] whitespace-nowrap">
@@ -1226,11 +1232,108 @@ const GuarantorReferral = () => {
                       No Relationships Recorded
                     </h4>
                     <p className="mt-1.5 max-w-sm text-xs sm:text-sm text-slate-500 leading-relaxed italic">
-                      This person has not yet been linked to any customer or loan as a guarantor or referral.
+                      This person has not yet been linked to any customer or loan.
                     </p>
                   </div>
                 )}
               </div>
+
+              {/* Section: Referral Commission (Displayed for Referrals only; not shown for Guarantors) */}
+              {isReferralRecord && (
+                <div className="pt-4 border-t border-slate-100 space-y-3">
+                  <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <Coins className="h-4 w-4 text-[#006052]" />
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F1E36]">
+                        Referral Commission History
+                      </h3>
+                      {selectedRecordCommissions.length > 0 && (
+                        <span className="rounded bg-emerald-50 text-[#006052] border border-emerald-200 px-2 py-0.5 text-[11px] font-bold">
+                          Total: ₹{selectedRecordCommissions.reduce((sum, c) => sum + Number(c.amount || 0), 0).toLocaleString("en-IN")}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* + Add Commission Button - Referral View ONLY */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAddCommission(selectedRecord)}
+                      className="inline-flex items-center gap-1 rounded-md bg-[#006052] px-2.5 py-1 text-xs font-bold text-white shadow-2xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors cursor-pointer"
+                      title="Add commission for this referral"
+                    >
+                      <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                      <span>+ Add Commission</span>
+                    </button>
+                  </div>
+
+                  {selectedRecordCommissions.length > 0 ? (
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-2xs">
+                      <table className="w-full text-left text-xs sm:text-sm">
+                        <thead className="bg-[#0F1E36] text-white">
+                          <tr>
+                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
+                              Customer ID
+                            </th>
+                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
+                              Customer Name
+                            </th>
+                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px]">
+                              Loan ID
+                            </th>
+                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px] text-right">
+                              Commission Amount
+                            </th>
+                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px] text-center">
+                              Status
+                            </th>
+                            <th className="px-3.5 py-2.5 font-semibold uppercase tracking-wider text-[11px] text-center">
+                              Date
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {selectedRecordCommissions.map((comm, idx) => (
+                            <tr key={comm.id || idx} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="px-3.5 py-3 font-mono font-bold text-[#006052] whitespace-nowrap">
+                                {comm.customerId || "—"}
+                              </td>
+                              <td className="px-3.5 py-3 font-semibold text-slate-900">
+                                {comm.customerName || "Customer"}
+                              </td>
+                              <td className="px-3.5 py-3 font-mono text-slate-700 whitespace-nowrap">
+                                {comm.loanId || "—"}
+                              </td>
+                              <td className="px-3.5 py-3 font-bold text-emerald-800 text-right whitespace-nowrap">
+                                ₹{Number(comm.amount || 0).toLocaleString("en-IN")}
+                              </td>
+                              <td className="px-3.5 py-3 text-center whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold border ${
+                                    comm.status === "Paid"
+                                      ? "bg-emerald-50 text-[#006052] border-emerald-200"
+                                      : "bg-amber-50 text-amber-800 border border-amber-200"
+                                  }`}
+                                >
+                                  {comm.status === "Paid" ? "● Paid" : "○ Pending"}
+                                </span>
+                              </td>
+                              <td className="px-3.5 py-3 text-slate-500 text-center whitespace-nowrap">
+                                {formatAddedDate(comm.date || comm.createdAt)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-[#F8FAFC] p-4 text-center">
+                      <p className="text-xs font-medium text-slate-500 italic">
+                        No referral commission recorded.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Section: Uploaded Documents */}
                 <div className="pt-4 border-t border-slate-100 space-y-3">
@@ -1363,6 +1466,190 @@ const GuarantorReferral = () => {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          COMPACT ADD COMMISSION MODAL (Referral View Only)
+      ========================================================= */}
+      {isAddCommissionModalOpen && selectedRecord && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isSavingCommission) {
+              setIsAddCommissionModalOpen(false);
+            }
+          }}
+        >
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 animate-in zoom-in-95 duration-200"
+            role="dialog"
+            aria-modal="true"
+          >
+            {/* Compact Modal Header */}
+            <div className="bg-[#0F1E36] px-5 py-3.5 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-400/30">
+                  <Coins className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white tracking-tight leading-tight">
+                    + Add Referral Commission
+                  </h3>
+                  <p className="text-[11px] text-slate-300 truncate max-w-[260px]">
+                    For: {selectedRecord.fullName} ({selectedRecord.id})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isSavingCommission}
+                onClick={() => setIsAddCommissionModalOpen(false)}
+                className="rounded-lg p-1 text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveCommissionSubmit} className="p-5 space-y-3.5 bg-white">
+              {/* Loan & Customer Context */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Related Loan / Customer Context <span className="text-red-500">*</span>
+                </label>
+                {commissionEligibleLoans.length > 0 ? (
+                  <select
+                    value={commissionFormData.selectedLoanKey}
+                    onChange={(e) => handleCommissionLoanSelect(e.target.value)}
+                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs sm:text-sm font-medium text-slate-800 focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30"
+                  >
+                    {commissionEligibleLoans.map((item) => (
+                      <option key={item.key} value={item.key}>
+                        {item.label}
+                      </option>
+                    ))}
+                    <option value="__custom__">Manual / Other Loan Entry...</option>
+                  </select>
+                ) : null}
+
+                {/* If manual or no linked loans, show manual inputs */}
+                {(commissionEligibleLoans.length === 0 || commissionFormData.selectedLoanKey === "__custom__") && (
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <div>
+                      <input
+                        type="text"
+                        placeholder="Loan ID (e.g. LN00001)"
+                        value={commissionFormData.loanId}
+                        onChange={(e) =>
+                          setCommissionFormData((prev) => ({ ...prev, loanId: e.target.value }))
+                        }
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 focus:border-[#006052] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="text"
+                        placeholder="Customer Name"
+                        value={commissionFormData.customerName}
+                        onChange={(e) =>
+                          setCommissionFormData((prev) => ({ ...prev, customerName: e.target.value }))
+                        }
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 focus:border-[#006052] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Commission Amount */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Commission Amount (₹) <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="any"
+                    autoFocus
+                    value={commissionFormData.amount}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCommissionFormData((prev) => ({ ...prev, amount: val }));
+                      if (commissionErrors.amount) {
+                        setCommissionErrors((prev) => ({ ...prev, amount: null }));
+                      }
+                    }}
+                    placeholder="e.g. 1500"
+                    className={`h-9 w-full rounded-md border bg-white pl-8 pr-3 text-xs sm:text-sm font-bold text-slate-900 focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30 ${
+                      commissionErrors.amount ? "border-red-400" : "border-slate-300"
+                    }`}
+                  />
+                </div>
+                {commissionErrors.amount && (
+                  <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    {commissionErrors.amount}
+                  </p>
+                )}
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Commission Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={commissionFormData.date}
+                  onChange={(e) =>
+                    setCommissionFormData((prev) => ({ ...prev, date: e.target.value }))
+                  }
+                  className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs sm:text-sm text-slate-800 focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30"
+                />
+              </div>
+
+              {/* Notes (Optional) */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Notes / Remarks (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={commissionFormData.notes}
+                  onChange={(e) =>
+                    setCommissionFormData((prev) => ({ ...prev, notes: e.target.value }))
+                  }
+                  placeholder="e.g. Loan disbursement referral incentive"
+                  className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-800 focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30"
+                />
+              </div>
+
+              {/* Footer Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={isSavingCommission}
+                  onClick={() => setIsAddCommissionModalOpen(false)}
+                  className="rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingCommission}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#006052] px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#004d42] active:bg-[#003d34] transition cursor-pointer disabled:opacity-50"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>{isSavingCommission ? "Saving..." : "Save Commission"}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

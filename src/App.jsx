@@ -16,6 +16,7 @@ import Dashboard from './pages/Dashboard'
 import UserManagement from './pages/UserManagement'
 import Reminder from './pages/Reminder'
 import GuarantorReferral from './pages/customer/GuarantorReferral'
+import ReferralCommission from './pages/customer/ReferralCommission'
 
 function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
@@ -36,6 +37,8 @@ function App() {
             <Route path="/customers" element={<Customer />} />
             <Route path="/guarantor-referral" element={<GuarantorReferral />} />
             <Route path="/customers/guarantor-referral" element={<GuarantorReferral />} />
+            <Route path="/referral-commission" element={<ReferralCommission />} />
+            <Route path="/customers/referral-commission" element={<ReferralCommission />} />
             <Route path="/investors" element={<Investors />} />
             <Route path="/ledger" element={<Ledger />} />
             <Route path="/collection" element={<Collection />} />

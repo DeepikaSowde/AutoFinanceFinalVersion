@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 
 import CustomerTab from '../components/CustomerTab'
 import VehicleTab from '../components/Vehicletab'
-import GuarantorTab from '../components/Guarantortab'
 import LoanTab from '../components/Loantab'
 import ReviewTab from '../components/Reviewtab'
 import RepaymentScheduleModal from '../components/RepaymentScheduleModal'
@@ -20,6 +19,7 @@ import {
 
 import { calculateRepayment } from '../components/Loantab'
 import { CheckCircle2, X } from 'lucide-react'
+import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
 
 const STEPS = [
   { key: 'customer', labelKey: 'app.steps.customer', titleKey: 'app.titles.customer', subtitleKey: 'app.subtitles.customer' },
@@ -44,18 +44,25 @@ const initialForm = () => ({
     financierEndorsement: 'No', insuranceFile: null, remarks: '',
   },
   guarantor: {
-    required: 'Yes',
-    name: '', countryCode: '+91', mobile: '', relationship: '', profession: '', residenceType: 'Own House',
+    name: '', fullName: '', countryCode: '+91', mobile: '', phone: '',
     address: '', area: '', landmark: '', pincode: '',
-    aadhaarNo: '', aadhaarFile: null, panNo: '', panFile: null,
-    dlNo: '', dlFile: null, voterNo: '', voterFile: null,
-    photo: null, verificationStatus: '', remarks: '',
+    aadhaarNo: '', aadhaarNumber: '', aadhaarFile: null, additionalDocs: [],
+    guarantorId: '', id: '',
+  },
+  referral: {
+    name: '', fullName: '', countryCode: '+91', mobile: '', phone: '',
+    address: '', area: '', landmark: '', pincode: '',
+    aadhaarNo: '', aadhaarNumber: '', aadhaarFile: null, additionalDocs: [],
+    referralId: '', id: '',
+    commissionPercentage: '',
+    commissionAmount: '',
+    payCommission: false,
+    paymentMode: 'Cash',
   },
   loan: {
     vehicleAmount: null,
     loanAmount: '',
-    referredBy: '',
-    referredByCommission: '',
+    relationshipOption: 'none',
     downPayment: '', interestType: 'Flat', interestRate: '', paymentFrequency: '',
     tenure: '', tenureUnit: 'Months', firstDueDate: '', documentCharge: '',
     customizeRules: false, gracePeriod: '', latePenalty: '', penaltyType: 'Per Day',
@@ -64,38 +71,57 @@ const initialForm = () => ({
 
 /* ---------- stepper ---------- */
 const Stepper = ({ current, onStepClick, t }) => (
-  <div className="overflow-x-auto pb-1 -mx-2 px-2 sm:mx-0 sm:px-0">
-    <ol className="flex items-start min-w-[440px] sm:min-w-0">
+  <nav aria-label="Application Progress" className="overflow-x-auto py-0.5">
+    <ol className="flex items-center min-w-[360px] sm:min-w-0">
       {STEPS.map((s, i) => {
         const done = i < current
         const active = i === current
+        const isLast = i === STEPS.length - 1
+
         return (
-          <li key={s.key} className="flex flex-1 items-start last:flex-none">
+          <li key={s.key} className="flex items-center last:flex-none">
             <button
               type="button"
               onClick={() => onStepClick(i)}
-              className="flex flex-col items-center gap-1 focus:outline-none cursor-pointer group"
+              className="group flex items-center gap-1.5 focus:outline-none cursor-pointer"
               aria-current={active ? 'step' : undefined}
             >
               <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold transition-all ${
-                  done || active
-                    ? 'border-emerald-800 bg-emerald-800 text-white shadow-xs'
-                    : 'border-slate-300 bg-white text-slate-500 group-hover:border-slate-400'
-                } ${active ? 'ring-3 ring-emerald-100' : ''}`}
+                className={`flex h-5 w-5 sm:h-5.5 sm:w-5.5 items-center justify-center rounded-full text-[10px] sm:text-[11px] font-bold transition-all shrink-0 ${
+                  active
+                    ? 'bg-[#006052] text-white ring-2 ring-emerald-200/90 shadow-2xs'
+                    : done
+                    ? 'bg-[#006052] text-white shadow-2xs'
+                    : 'border border-slate-300 bg-white text-slate-400 group-hover:border-slate-400 group-hover:text-slate-600'
+                }`}
               >
                 {done ? '✓' : i + 1}
               </span>
-              <span className={`text-[10px] sm:text-xs whitespace-nowrap transition-colors ${active ? 'font-semibold text-slate-900' : 'text-slate-500 group-hover:text-slate-700'}`}>{t(s.labelKey)}</span>
+              <span
+                className={`text-[11px] sm:text-xs whitespace-nowrap transition-colors ${
+                  active
+                    ? 'font-bold text-[#0F1E36]'
+                    : done
+                    ? 'font-semibold text-slate-700 group-hover:text-slate-900'
+                    : 'text-slate-400 group-hover:text-slate-600'
+                }`}
+              >
+                {t(s.labelKey)}
+              </span>
             </button>
-            {i < STEPS.length - 1 && (
-              <span className={`mx-1 mt-3 h-0.5 flex-1 sm:mx-2 transition-colors ${done ? 'bg-emerald-700' : 'bg-slate-200'}`} />
+
+            {!isLast && (
+              <div
+                className={`mx-2 sm:mx-3 h-[1.5px] w-4 sm:w-7 transition-colors shrink-0 ${
+                  done ? 'bg-[#006052]' : 'bg-slate-200'
+                }`}
+              />
             )}
           </li>
         )
       })}
     </ol>
-  </div>
+  </nav>
 )
 
 /* ---------- page ---------- */
@@ -103,10 +129,30 @@ const NewLoan = () => {
   const { t } = useTranslation()
 
   const [step, setStep] = useState(0)
-  const [customerSection, setCustomerSection] = useState('customer')
 
   const [form, setForm] = useState(() => {
-    return getCustomerOnboarding() || initialForm()
+    const saved = getCustomerOnboarding()
+    const init = initialForm()
+    if (!saved) return init
+    return {
+      ...init,
+      ...saved,
+      guarantor: { ...init.guarantor, ...(saved.guarantor || {}) },
+      referral: { ...init.referral, ...(saved.referral || {}) },
+      loan: {
+        ...init.loan,
+        ...(saved.loan || {}),
+        relationshipOption:
+          saved.loan?.relationshipOption ||
+          (saved.guarantor?.name && saved.referral?.name
+            ? 'both'
+            : saved.guarantor?.name
+            ? 'guarantor'
+            : saved.referral?.name
+            ? 'referral'
+            : 'none'),
+      },
+    }
   })
 
   const [verified, setVerified] = useState(false)
@@ -116,33 +162,59 @@ const NewLoan = () => {
     saveCustomerOnboarding(form)
   }, [form])
 
-  const update = (section) => (field, value) =>
+  const update = (section) => (fieldOrObj, value) =>
+    setForm((f) => {
+      if (typeof fieldOrObj === 'object' && fieldOrObj !== null) {
+        return {
+          ...f,
+          [section]: {
+            ...f[section],
+            ...fieldOrObj,
+          },
+        }
+      }
+      return {
+        ...f,
+        [section]: {
+          ...f[section],
+          [fieldOrObj]: value,
+        },
+      }
+    })
+
+  const clearGuarantor = () => {
     setForm((f) => ({
       ...f,
-      [section]: {
-        ...f[section],
-        [field]: value,
+      guarantor: {
+        name: '', fullName: '', countryCode: '+91', mobile: '', phone: '',
+        address: '', area: '', landmark: '', pincode: '',
+        aadhaarNo: '', aadhaarNumber: '', aadhaarFile: null, additionalDocs: [],
+        guarantorId: '', id: '',
       },
     }))
+  }
+
+  const clearReferral = () => {
+    setForm((f) => ({
+      ...f,
+      referral: {
+        name: '', fullName: '', countryCode: '+91', mobile: '', phone: '',
+        address: '', area: '', landmark: '', pincode: '',
+        aadhaarNo: '', aadhaarNumber: '', aadhaarFile: null, additionalDocs: [],
+        referralId: '', id: '',
+        commissionPercentage: '',
+        commissionAmount: '',
+        payCommission: false,
+        paymentMode: 'Cash',
+      },
+    }))
+  }
 
   const current = STEPS[step]
   const isFirst = step === 0
   const isLast = step === STEPS.length - 1
   const goNext = () => setStep((s) => Math.min(s + 1, STEPS.length - 1))
   const goBack = () => setStep((s) => Math.max(s - 1, 0))
-  const goFromCustomer = () => {
-    if (customerSection === 'customer' && form.guarantor.required === 'Yes') {
-      setCustomerSection('guarantor')
-      return
-    }
-    setStep(1)
-  }
-  const updateGuarantor = (field, value) => {
-    update('guarantor')(field, value)
-    if (field === 'required' && value === 'Yes') {
-      setCustomerSection('guarantor')
-    }
-  }
 
   const [showSuccess, setShowSuccess] = useState(false)
   const [submittedLoan, setSubmittedLoan] = useState(null)
@@ -251,7 +323,67 @@ const NewLoan = () => {
       
       newEntry = await compressObjectImages(newEntry);
       
-      // 4. Update existing customer or create new
+      // 4. Record relationships in shared Guarantor / Referral collection
+      try {
+        const relOpt = form.loan?.relationshipOption || "none";
+        const custName = (form.customer?.name || "Customer").trim();
+        const assocDate = new Date().toISOString();
+
+        // 1. Guarantor relationship (when Both or Guarantor only is selected)
+        if (relOpt === "both" || relOpt === "guarantor") {
+          const gName = (form.guarantor?.fullName || form.guarantor?.name || "").trim();
+          const gPhone = (form.guarantor?.phone || form.guarantor?.mobile || "").trim();
+          if (gName || gPhone) {
+            const gRecord = recordPersonRelationship({
+              person: form.guarantor,
+              type: "Guarantor",
+              customerId: customerId,
+              customerName: custName,
+              loanId: loanId,
+              associatedDate: assocDate,
+            });
+            if (gRecord && gRecord.id) {
+              newEntry.guarantor = {
+                ...newEntry.guarantor,
+                guarantorId: gRecord.id,
+                id: gRecord.id,
+              };
+            }
+          }
+        }
+
+        // 2. Referral relationship (when Both or Referral only is selected)
+        if (relOpt === "both" || relOpt === "referral") {
+          const rName = (form.referral?.fullName || form.referral?.name || "").trim();
+          const rPhone = (form.referral?.phone || form.referral?.mobile || "").trim();
+          if (rName || rPhone) {
+            const refRecord = recordPersonRelationship({
+              person: form.referral,
+              type: "Referral",
+              customerId: customerId,
+              customerName: custName,
+              loanId: loanId,
+              associatedDate: assocDate,
+              commissionPercentage: form.referral?.commissionPercentage,
+              commissionAmount: form.referral?.commissionAmount,
+              payCommission: form.referral?.payCommission,
+              paymentMode: form.referral?.paymentMode || "Cash",
+              loanAmount: principal,
+            });
+            if (refRecord && refRecord.id) {
+              newEntry.referral = {
+                ...newEntry.referral,
+                referralId: refRecord.id,
+                id: refRecord.id,
+              };
+            }
+          }
+        }
+      } catch (relError) {
+        console.error("Failed to record guarantor/referral relationship:", relError);
+      }
+
+      // 5. Update existing customer or create new
       const existingCustomerIndex = customersList.findIndex(c => c.customerId === customerId || (c.customer && c.customer.mobile === mobile))
       if (existingCustomerIndex >= 0) {
         // If customer exists, don't duplicate identical image strings
@@ -274,7 +406,7 @@ const NewLoan = () => {
         customersList.push(newEntry)
       }
       
-      // 5. Save to local storage
+      // 6. Save to local storage
       try {
         localStorage.setItem("motoLendCustomersList_data", JSON.stringify(customersList))
       } catch (storageError) {
@@ -284,7 +416,7 @@ const NewLoan = () => {
         }
         throw storageError;
       }
-      
+
       // 6. Show Popup
       setSubmittedLoan(newEntry)
       setShowSuccess(true)
@@ -300,7 +432,6 @@ const NewLoan = () => {
     clearCustomerOnboarding()
     setForm(initialForm())
     setStep(0)
-    setCustomerSection('customer')
     setVerified(false)
   }
 
@@ -313,63 +444,32 @@ const NewLoan = () => {
   const primaryBtn = 'inline-flex items-center justify-center gap-1.5 sm:gap-2 rounded-md bg-emerald-800 px-4 sm:px-5 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50 transition-colors'
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-2 py-2 sm:px-4 sm:py-3 h-full flex flex-col flex-1 min-h-0">
+    <div className="mx-auto w-full max-w-4xl lg:max-w-5xl px-3 py-2 sm:px-4 sm:py-2.5 flex flex-col h-[calc(100vh-1rem)] sm:h-[calc(100vh-1.5rem)] max-h-[96vh]">
       {/* Top Navigation */}
       <div className="shrink-0 mb-1.5 flex items-center justify-between">
         <button
           type="button"
           onClick={() => navigate('/loans')}
-          className="group inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-500 hover:text-emerald-800 transition-colors focus:outline-none"
+          className="group inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-emerald-800 transition-colors focus:outline-none"
         >
-          <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform group-hover:-translate-x-0.5" />
+          <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
           <span>Back to Loans</span>
         </button>
       </div>
 
-      <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs flex-1 min-h-0">
-        {/* Header */}
-        <div className="shrink-0 space-y-2 px-3 pt-3 sm:px-5 sm:pt-3.5 border-b border-slate-100 pb-2.5">
+      <div className="flex flex-col flex-1 min-h-0 rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden">
+        {/* Header: Title on Left, Chain Stepper on Right */}
+        <div className="shrink-0 px-4 py-2.5 sm:px-5 sm:py-3 border-b border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-white">
           <div>
-            <h1 className="text-base font-bold text-slate-900 sm:text-lg tracking-tight">{t(current.titleKey)}</h1>
-            <p className="text-xs text-slate-500">{t(current.subtitleKey)}</p>
+            <h1 className="text-base sm:text-lg font-bold text-[#0F1E36] tracking-tight leading-tight">{t(current.titleKey)}</h1>
+            <p className="text-xs text-slate-500 leading-tight mt-0.5">{t(current.subtitleKey)}</p>
           </div>
           <Stepper current={step} onStepClick={setStep} t={t} />
         </div>
 
-        {/* Active tab */}
-        <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5 sm:py-3.5 min-h-0 bg-white">
-          {step === 0 && (
-            <div className="space-y-2.5">
-              <div className="rounded-lg border border-slate-200 bg-white p-1">
-                <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                  {[
-                    { id: 'customer', label: t('app.sections.customer'), description: t('app.sections.customerDescription') },
-                    { id: 'guarantor', label: t('app.sections.guarantor'), description: t('app.sections.guarantorDescription') },
-                  ].map((section) => {
-                    const active = customerSection === section.id
-                    return (
-                      <button
-                        key={section.id}
-                        type="button"
-                        onClick={() => setCustomerSection(section.id)}
-                        className={`rounded-md px-3 py-1.5 text-left transition cursor-pointer ${
-                          active ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200' : 'text-slate-500 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span className="block text-xs sm:text-sm font-semibold">{section.label}</span>
-                        <span className="text-[10px] sm:text-[11px] opacity-80">{section.description}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-              {customerSection === 'customer' ? (
-                <CustomerTab data={form.customer} onChange={update('customer')} />
-              ) : (
-                <GuarantorTab data={form.guarantor} onChange={updateGuarantor} />
-              )}
-            </div>
-          )}
+        {/* Consistent content area with fixed available height based on viewport */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 sm:px-5 sm:py-3.5 bg-white">
+          {step === 0 && <CustomerTab data={form.customer} onChange={update('customer')} />}
           {step === 1 && <VehicleTab data={form.vehicle} onChange={update('vehicle')} onFetchVehicle={handleFetchVehicle} />}
           {step === 2 && (
             <LoanTab
@@ -377,38 +477,52 @@ const NewLoan = () => {
               vehicleAmountFromVehicle={form.vehicle.amount}
               onChange={update('loan')}
               onViewSchedule={handleViewSchedule}
+              guarantorData={form.guarantor}
+              referralData={form.referral}
+              onGuarantorChange={update('guarantor')}
+              onGuarantorClear={clearGuarantor}
+              onReferralChange={update('referral')}
+              onReferralClear={clearReferral}
             />
           )}
           {step === 3 && <ReviewTab form={form} onViewSchedule={handleViewSchedule} />}
         </div>
 
-        {/* Footer */}
-        <div className="flex shrink-0 flex-col gap-2.5 border-t border-slate-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-5 bg-slate-50">
+        {/* Bottom Action Bar: Consistently positioned at the bottom */}
+        <div className="flex shrink-0 items-center justify-between border-t border-slate-200 px-4 py-2.5 sm:px-5 sm:py-3 bg-slate-50">
           <div>
             {!isFirst && (
-              <button type="button" onClick={goBack} className={`${outlineBtn} inline-flex w-full items-center justify-center gap-1.5 sm:w-auto`}>
-                <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {t('app.back')}
+              <button type="button" onClick={goBack} className={`${outlineBtn} inline-flex items-center justify-center gap-1.5 py-1.5 px-3.5 text-xs sm:text-sm`}>
+                <ArrowLeft className="h-3.5 w-3.5" /> {t('app.back')}
               </button>
             )}
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-2">
             {isLast && (
-              <label className="flex items-center gap-2 text-xs text-slate-600">
-                <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} className="h-4 w-4 accent-emerald-700" />
-                {t('app.verifiedDetails')}
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 mr-2">
+                <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} className="h-3.5 w-3.5 accent-emerald-700" />
+                <span>{t('app.verifiedDetails')}</span>
               </label>
             )}
-            <button type="button" onClick={handleSaveDraft} className={outlineBtn}>{t('app.saveDraft')}</button>
+            <button
+              type="button"
+              onClick={() => {
+                saveCustomerOnboarding(form)
+                handleSaveDraft()
+                alert("Application draft saved successfully.")
+              }}
+              className={`${outlineBtn} py-1.5 px-3.5 text-xs sm:text-sm`}
+            >
+              {t('app.saveDraft')}
+            </button>
             {isLast ? (
-              <button type="button" onClick={handleSubmit} disabled={!verified} className={primaryBtn}>
-                {t('app.submitApplication')} <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <button type="button" onClick={handleSubmit} disabled={!verified} className={`${primaryBtn} py-1.5 px-4 text-xs sm:text-sm`}>
+                {t('app.submitApplication')} <ArrowRight className="h-3.5 w-3.5" />
               </button>
             ) : (
-              <button type="button" onClick={step === 0 ? goFromCustomer : goNext} className={primaryBtn}>
-                {t('app.next')}: {step === 0 && customerSection === 'customer' && form.guarantor.required === 'Yes'
-                  ? t('app.sections.guarantor')
-                  : t(STEPS[step + 1].labelKey)} <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <button type="button" onClick={goNext} className={`${primaryBtn} py-1.5 px-4 text-xs sm:text-sm`}>
+                {t('app.next')}: {t(STEPS[step + 1].labelKey)} <ArrowRight className="h-3.5 w-3.5" />
               </button>
             )}
           </div>

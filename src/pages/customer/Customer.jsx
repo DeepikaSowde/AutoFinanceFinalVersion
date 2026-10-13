@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Eye,
   UserCheck,
+  Coins,
 } from "lucide-react";
 
 import { getCustomerOnboarding } from "../../utils/customerOnboardingStorage";
@@ -223,14 +224,25 @@ const Customer = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => navigate("/guarantor-referral")}
-          className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-[#006052] px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer sm:self-auto shrink-0"
-        >
-          <UserCheck className="h-4 w-4" strokeWidth={2} />
-          <span>Guarantor / Referral</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 self-start sm:self-auto shrink-0">
+          <button
+            type="button"
+            onClick={() => navigate("/guarantor-referral")}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#006052] px-3.5 py-2.5 sm:px-4 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer shrink-0"
+          >
+            <UserCheck className="h-4 w-4" strokeWidth={2} />
+            <span>Guarantor / Referral</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate("/referral-commission")}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#006052] bg-white text-[#006052] hover:bg-emerald-50 active:bg-emerald-100/70 px-3.5 py-2.5 sm:px-4 text-xs sm:text-sm font-semibold shadow-2xs transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer shrink-0"
+          >
+            <Coins className="h-4 w-4 text-[#006052]" strokeWidth={2} />
+            <span>Referral Commission</span>
+          </button>
+        </div>
 
       </div>
 
