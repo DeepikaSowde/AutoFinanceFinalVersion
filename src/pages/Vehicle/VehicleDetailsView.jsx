@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { calculateVehicleLoanOverdue } from '../../utils/vehicleOverdueCalculation';
+import VehicleStatusHistoryModal, { getChronologicalVehicleHistory } from '../../components/vehicle/VehicleStatusHistoryModal';
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(Number(val))) return '₹0';
@@ -73,13 +74,14 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
   const [imgError, setImgError] = useState(false);
 
   // Modal states for Seized Vehicle Actions
-  const [activeModal, setActiveModal] = useState(null); // 'release' | 'sold' | 'editSeizure' | null
+  const [activeModal, setActiveModal] = useState(null); // 'release' | 'sold' | 'editSeizure' | 'history' | null
 
   // Release Form State
   const [releaseDate, setReleaseDate] = useState(new Date().toISOString().split('T')[0]);
-  const [releaseReason, setReleaseReason] = useState('Payment Cleared');
+  const [releasedTo, setReleasedTo] = useState('');
   const [clearedAmount, setClearedAmount] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
+  const [releaseSuccessToast, setReleaseSuccessToast] = useState(false);
 
   // Sale Form State
   const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0]);
@@ -127,14 +129,17 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
       });
 
       if (found) {
+        const rawStat = (found.vehicleStatus || found.vehicle?.status || prev.vehicleStatus || 'Active').trim();
+        const normStat = rawStat.toLowerCase() === 'released' ? 'Active' : rawStat;
         setRecord((prev) => ({
           ...prev,
           ...found,
-          vehicleStatus: found.vehicleStatus || found.vehicle?.status || prev.vehicleStatus,
+          vehicleStatus: normStat,
           statusHistory: found.statusHistory || found.vehicle?.statusHistory || prev.statusHistory,
           vehicle: {
             ...(prev.vehicle || {}),
             ...(found.vehicle || {}),
+            status: normStat,
           },
         }));
       }
@@ -153,7 +158,8 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
   const customer = record?.customer || {};
   const loan = record?.loan || {};
 
-  const currentStatus = (record?.vehicleStatus || vehicle?.status || 'Seized').trim();
+  const rawCurrentStatus = (record?.vehicleStatus || vehicle?.status || 'Seized').trim();
+  const currentStatus = rawCurrentStatus.toLowerCase() === 'released' ? 'Active' : rawCurrentStatus;
   const isSeized = currentStatus.toLowerCase() === 'seized';
 
   const regNo = vehicle.regNo || record?.regNo || 'Unregistered';
@@ -199,7 +205,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
   // Handle open Release modal
   const handleOpenRelease = () => {
     setReleaseDate(new Date().toISOString().split('T')[0]);
-    setReleaseReason('Payment Cleared');
+    setReleasedTo(customer.name || '');
     setClearedAmount(overdueInfo.overdueAmount > 0 ? String(overdueInfo.overdueAmount) : '');
     setReleaseNotes('');
     setFormErrors({});
@@ -304,7 +310,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
     e.preventDefault();
     const errors = {};
     if (!releaseDate) errors.releaseDate = 'Release date is required';
-    if (!releaseReason.trim()) errors.releaseReason = 'Release reason is required';
+    if (!releasedTo.trim()) errors.releasedTo = 'Released to / recipient name is required';
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
@@ -312,39 +318,53 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
     }
 
     const newHistoryEntry = {
+      vehicleId: record.loanId || record.vehicleId || vehicle.regNo || '',
       fromStatus: 'Seized',
-      toStatus: 'Released',
+      toStatus: 'Active',
+      eventType: 'release',
       date: new Date().toISOString(),
       releaseDate,
-      reason: releaseReason.trim(),
+      releasedTo: releasedTo.trim(),
+      recipient: releasedTo.trim(),
       clearedAmount: clearedAmount ? Number(clearedAmount) : null,
       notes: releaseNotes.trim(),
+      reason: releaseNotes.trim()
+        ? `Released to ${releasedTo.trim()} - ${releaseNotes.trim()}`
+        : `Released to ${releasedTo.trim()}`,
+      performedBy: 'Admin',
     };
 
     updateVehicleInStorage((entry) => {
-      const currentHist = entry.statusHistory || entry.vehicle?.statusHistory || [];
-      const updatedHist = [newHistoryEntry, ...currentHist];
+      const currentHist = Array.isArray(entry.statusHistory)
+        ? entry.statusHistory
+        : (Array.isArray(entry.vehicle?.statusHistory) ? entry.vehicle.statusHistory : []);
+      const updatedHist = [...currentHist, newHistoryEntry];
 
       return {
         ...entry,
-        vehicleStatus: 'Released',
+        vehicleStatus: 'Active',
         statusHistory: updatedHist,
         vehicle: {
           ...(entry.vehicle || {}),
-          status: 'Released',
+          status: 'Active',
           statusHistory: updatedHist,
           releaseDetails: {
             releaseDate,
-            reason: releaseReason.trim(),
-            clearedAmount: clearedAmount ? Number(clearedAmount) : null,
+            releasedTo: releasedTo.trim(),
+            recipient: releasedTo.trim(),
             notes: releaseNotes.trim(),
+            clearedAmount: clearedAmount ? Number(clearedAmount) : null,
             recordedAt: new Date().toISOString(),
           },
+          // Preserve the vehicle's previous seizure details and all earlier history
+          seizureDetails: entry.vehicle?.seizureDetails || entry.seizureDetails,
         },
       };
     });
 
     setActiveModal(null);
+    setReleaseSuccessToast(true);
+    setTimeout(() => setReleaseSuccessToast(false), 5000);
   };
 
   // Save Mark as Sold
@@ -362,8 +382,10 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
     }
 
     const newHistoryEntry = {
-      fromStatus: 'Seized',
+      vehicleId: record.loanId || record.vehicleId || vehicle.regNo || '',
+      fromStatus: currentStatus,
       toStatus: 'Sold',
+      eventType: 'sale',
       date: new Date().toISOString(),
       saleDate,
       salePrice: Number(salePrice),
@@ -372,11 +394,14 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
       proceedsReceived: proceedsReceived ? Number(proceedsReceived) : Number(salePrice),
       notes: saleNotes.trim(),
       reason: `Vehicle Sold for ₹${Number(salePrice).toLocaleString('en-IN')}`,
+      performedBy: 'Admin',
     };
 
     updateVehicleInStorage((entry) => {
-      const currentHist = entry.statusHistory || entry.vehicle?.statusHistory || [];
-      const updatedHist = [newHistoryEntry, ...currentHist];
+      const currentHist = Array.isArray(entry.statusHistory)
+        ? entry.statusHistory
+        : (Array.isArray(entry.vehicle?.statusHistory) ? entry.vehicle.statusHistory : []);
+      const updatedHist = [...currentHist, newHistoryEntry];
 
       return {
         ...entry,
@@ -395,6 +420,8 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
             notes: saleNotes.trim(),
             recordedAt: new Date().toISOString(),
           },
+          // Preserve existing seizure details
+          seizureDetails: entry.vehicle?.seizureDetails || entry.seizureDetails,
         },
       };
     });
@@ -415,18 +442,52 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
           <span>Back to Vehicle Management</span>
         </button>
 
-        {/* Current Status Pill */}
-        <div className="inline-flex items-center gap-2">
+        {/* Current Status Pill & Action */}
+        <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-500">Current Status:</span>
           <span
             className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-2xs ${
-              STATUS_BADGES[currentStatus] || STATUS_BADGES.Seized
+              STATUS_BADGES[currentStatus] || STATUS_BADGES.Active
             }`}
           >
             {currentStatus}
           </span>
+          <button
+            type="button"
+            onClick={() => setActiveModal('history')}
+            className="ml-1 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-[#006052] bg-white hover:bg-emerald-50/70 text-[#006052] text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+          >
+            <History className="h-3.5 w-3.5" />
+            <span>View Status History</span>
+          </button>
         </div>
       </div>
+
+      {/* Success Notification Banner for Release */}
+      {releaseSuccessToast && (
+        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center justify-between shadow-2xs animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <Check className="h-4.5 w-4.5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-emerald-950">
+                Vehicle Successfully Released!
+              </p>
+              <p className="text-xs text-emerald-800">
+                Current status has been changed to <strong>Active</strong>. The release event has been saved to the permanent history timeline.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReleaseSuccessToast(false)}
+            className="text-emerald-700 hover:text-emerald-900 p-1 rounded-lg cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* =========================================================
           1. COMPACT VEHICLE SUMMARY (No redundant specifications)
@@ -599,7 +660,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
             </div>
 
             {/* =========================================================
-                4. VEHICLE ACTIONS (Release, Sold, Edit)
+                4. VEHICLE ACTIONS (Release, Sold, Edit, History)
             ========================================================= */}
             <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
@@ -622,138 +683,191 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                   <DollarSign className="h-4 w-4 text-slate-500" />
                   <span>Mark as Sold</span>
                 </button>
+
+                {/* Edit Seizure Details - Outlined Secondary Button with Edit Icon */}
+                <button
+                  type="button"
+                  onClick={handleOpenEditSeizure}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-semibold shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Edit className="h-4 w-4 text-slate-500" />
+                  <span>Edit Seizure Details</span>
+                </button>
               </div>
 
-              {/* Edit Seizure Details - Outlined Secondary Button with Edit Icon */}
+              {/* View Status History - Accessible Action */}
               <button
                 type="button"
-                onClick={handleOpenEditSeizure}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-semibold shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+                onClick={() => setActiveModal('history')}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-[#006052] bg-white hover:bg-emerald-50/70 text-[#006052] text-xs sm:text-sm font-bold shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-2"
               >
-                <Edit className="h-4 w-4 text-slate-500" />
-                <span>Edit Seizure Details</span>
+                <History className="h-4 w-4 text-[#006052]" />
+                <span>View Status History</span>
               </button>
             </div>
           </div>
         </div>
       ) : (
-        /* Status Info Banner for Released / Sold / Active */
-        <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-5">
-          <h2 className="text-sm font-bold text-slate-800 mb-1">Status Overview</h2>
-          <p className="text-xs text-slate-600">
-            This vehicle is currently marked as <span className="font-bold">{currentStatus}</span>. Full repossession
-            and seizure actions are accessible when a vehicle is under active seizure.
-          </p>
+        /* Status Info Banner for Active / Sold */
+        <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-bold text-slate-800 mb-1">Status Overview</h2>
+            <p className="text-xs text-slate-600">
+              This vehicle is currently marked as <span className="font-bold text-[#006052]">{currentStatus}</span>.
+              {currentStatus === 'Active' && ' Vehicle is operational and under active customer account.'}
+              {currentStatus === 'Sold' && ' Vehicle repossession has ended with sale liquidation.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveModal('history')}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[#006052] text-[#006052] hover:bg-emerald-50 bg-white text-xs sm:text-sm font-bold shadow-2xs transition-colors cursor-pointer w-fit shrink-0"
+          >
+            <History className="h-4 w-4 text-[#006052]" />
+            <span>View Status History</span>
+          </button>
         </div>
       )}
 
       {/* =========================================================
-          5. VEHICLE STATUS HISTORY (Compact Timeline)
+          5. VEHICLE STATUS HISTORY (Chronological Timeline)
       ========================================================= */}
       <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
-        <div className="px-5 sm:px-6 py-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center gap-2 font-bold text-slate-900 text-sm">
-          <History className="h-4 w-4 text-[#006052]" />
-          <span>Vehicle Status History</span>
+        <div className="px-5 sm:px-6 py-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3 font-bold text-slate-900 text-sm">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-[#006052]" />
+            <span>Vehicle Status History</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveModal('history')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#006052] bg-white hover:bg-emerald-50/70 text-[#006052] text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+          >
+            <History className="h-3.5 w-3.5" />
+            <span>View Full Timeline Modal</span>
+          </button>
         </div>
 
         <div className="p-5 sm:p-6">
-          {statusHistory.length === 0 ? (
-            <div className="py-8 text-center rounded-xl bg-slate-50/80 border border-slate-100">
-              <div className="h-10 w-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2.5">
-                <History className="h-5 w-5" />
-              </div>
-              <h4 className="text-sm font-bold text-slate-700">No status changes recorded</h4>
-              <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-                No previous status transitions have been logged for this vehicle.
-              </p>
-            </div>
-          ) : (
-            <div className="relative pl-6 border-l-2 border-slate-200 space-y-5">
-              {statusHistory.map((item, idx) => (
-                <div key={idx} className="relative">
-                  {/* Timeline Bullet */}
-                  <div
-                    className={`absolute -left-[31px] top-1 h-3.5 w-3.5 rounded-full border-2 border-white shadow-xs ${
-                      item.toStatus === 'Seized'
-                        ? 'bg-[#EA580C]'
-                        : item.toStatus === 'Released'
-                        ? 'bg-[#16A34A]'
-                        : item.toStatus === 'Sold'
-                        ? 'bg-[#64748B]'
-                        : 'bg-[#006052]'
-                    }`}
-                  />
+          {(() => {
+            const timelineEvents = getChronologicalVehicleHistory(record);
+            if (timelineEvents.length === 0) {
+              return (
+                <div className="py-8 text-center rounded-xl bg-slate-50/80 border border-slate-100">
+                  <div className="h-10 w-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2.5">
+                    <History className="h-5 w-5" />
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-700">No status changes recorded</h4>
+                  <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                    Vehicle currently holds its initial Active status.
+                  </p>
+                </div>
+              );
+            }
 
-                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-1.5 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900">
-                          {item.fromStatus ? `${item.fromStatus} → ` : ''}{item.toStatus || 'Status Change'}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            STATUS_BADGES[item.toStatus] || 'bg-slate-600 text-white'
-                          }`}
-                        >
-                          {item.toStatus}
+            return (
+              <div className="relative pl-6 border-l-2 border-slate-200 space-y-5">
+                {timelineEvents.map((item, idx) => (
+                  <div key={item.id || idx} className="relative">
+                    {/* Timeline Bullet */}
+                    <div
+                      className={`absolute -left-[31px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-white shadow-xs ${
+                        item.eventType === 'seizure' || item.toStatus === 'Seized'
+                          ? 'bg-[#EA580C]'
+                          : item.eventType === 'release' || item.statusBadge?.includes('Released')
+                          ? 'bg-[#006052]'
+                          : item.eventType === 'sale' || item.toStatus === 'Sold'
+                          ? 'bg-[#64748B]'
+                          : 'bg-[#2563EB]'
+                      }`}
+                    />
+
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-1.5 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900">
+                            {item.title || (item.fromStatus ? `${item.fromStatus} → ${item.toStatus}` : item.toStatus)}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              item.badgeColor || 'bg-slate-600 text-white'
+                            }`}
+                          >
+                            {item.statusBadge || item.toStatus}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          {formatDateTime(item.date)}
                         </span>
                       </div>
-                      <span className="text-[11px] text-slate-500 font-medium">
-                        {formatDateTime(item.date)}
-                      </span>
-                    </div>
 
-                    {item.reason && (
-                      <p className="text-slate-600">
-                        <span className="font-semibold text-slate-700">Reason:</span> {item.reason}
-                      </p>
-                    )}
-                    {item.seizureDate && (
-                      <p className="text-slate-600">
-                        <span className="font-semibold text-slate-700">Seizure Date:</span> {formatDate(item.seizureDate)}
-                      </p>
-                    )}
-                    {item.releaseDate && (
-                      <p className="text-slate-600">
-                        <span className="font-semibold text-slate-700">Release Date:</span> {formatDate(item.releaseDate)}
-                      </p>
-                    )}
-                    {item.saleDate && (
-                      <p className="text-slate-600">
-                        <span className="font-semibold text-slate-700">Sale Date:</span> {formatDate(item.saleDate)}
-                      </p>
-                    )}
-                    {item.salePrice && (
-                      <p className="text-slate-600">
-                        <span className="font-semibold text-slate-700">Sale Price:</span> {formatCurrency(item.salePrice)}
-                      </p>
-                    )}
-                    {item.buyerName && (
-                      <p className="text-slate-600">
-                        <span className="font-semibold text-slate-700">Buyer:</span> {item.buyerName}{' '}
-                        {item.buyerPhone ? `(${item.buyerPhone})` : ''}
-                      </p>
-                    )}
-                    {item.storageLocation && (
-                      <p className="text-slate-600">
-                        <span className="font-semibold text-slate-700">Storage:</span> {item.storageLocation}
-                      </p>
-                    )}
-                    {item.condition && (
-                      <p className="text-slate-600">
-                        <span className="font-semibold text-slate-700">Condition:</span> {item.condition}
-                      </p>
-                    )}
-                    {item.notes && (
-                      <p className="text-slate-600">
-                        <span className="font-semibold text-slate-700">Notes:</span> {item.notes}
-                      </p>
-                    )}
+                      {item.fromStatus && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Transition:</span> {item.fromStatus} → {item.toStatus}
+                        </p>
+                      )}
+                      {item.releasedTo && (
+                        <p className="text-slate-700 font-semibold">
+                          <span className="text-slate-500 font-medium">Released To / Recipient:</span> {item.releasedTo}
+                        </p>
+                      )}
+                      {item.clearedAmount && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Settlement Amount:</span> {formatCurrency(item.clearedAmount)}
+                        </p>
+                      )}
+                      {item.reason && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Reason / Notes:</span> {item.reason}
+                        </p>
+                      )}
+                      {item.eventDate && item.eventType === 'seizure' && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Seizure Date:</span> {formatDate(item.eventDate)}
+                        </p>
+                      )}
+                      {item.eventDate && item.eventType === 'release' && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Release Date:</span> {formatDate(item.eventDate)}
+                        </p>
+                      )}
+                      {item.saleDate && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Sale Date:</span> {formatDate(item.saleDate)}
+                        </p>
+                      )}
+                      {item.salePrice && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Sale Price:</span> {formatCurrency(item.salePrice)}
+                        </p>
+                      )}
+                      {item.buyerName && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Buyer:</span> {item.buyerName}{' '}
+                          {item.buyerPhone ? `(${item.buyerPhone})` : ''}
+                        </p>
+                      )}
+                      {item.storageLocation && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Storage:</span> {item.storageLocation}
+                        </p>
+                      )}
+                      {item.condition && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Condition:</span> {item.condition}
+                        </p>
+                      )}
+                      {item.notes && item.notes !== item.reason && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Remarks:</span> {item.notes}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -776,19 +890,30 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Release Vehicle</h3>
-                  <p className="text-xs text-slate-500">Restore vehicle to Released status</p>
+                  <p className="text-xs text-slate-500">Restore vehicle status from Seized to Active</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <form onSubmit={handleConfirmRelease} className="p-5 space-y-4 text-xs sm:text-sm">
+              {/* Vehicle Snapshot */}
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-slate-500 font-medium">Releasing Vehicle:</span>
+                  <p className="font-bold text-slate-900">{regNo} • {makeModel}</p>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#EA580C] text-white">
+                  Currently Seized
+                </span>
+              </div>
+
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
                   Release Date <span className="text-red-500">*</span>
@@ -806,23 +931,23 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Reason for Release <span className="text-red-500">*</span>
+                  Released To / Recipient Name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  value={releaseReason}
-                  onChange={(e) => setReleaseReason(e.target.value)}
-                  placeholder="e.g. Full dues cleared, restructuring agreed, NOC issued"
+                  value={releasedTo}
+                  onChange={(e) => setReleasedTo(e.target.value)}
+                  placeholder="e.g. Rahul Sharma (Owner) / Authorized Representative"
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#006052]/20 focus:border-[#006052]"
                 />
-                {formErrors.releaseReason && (
-                  <p className="text-xs text-red-500 mt-1">{formErrors.releaseReason}</p>
+                {formErrors.releasedTo && (
+                  <p className="text-xs text-red-500 mt-1">{formErrors.releasedTo}</p>
                 )}
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Cleared / Settlement Amount (₹)
+                  Cleared / Settlement Amount (₹) <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
                 <input
                   type="number"
@@ -837,13 +962,13 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Release Notes (Optional)
+                  Release Notes <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
                 <textarea
                   rows={2}
                   value={releaseNotes}
                   onChange={(e) => setReleaseNotes(e.target.value)}
-                  placeholder="Handover person, gate pass number, inspection notes..."
+                  placeholder="Handover person, gate pass number, condition upon release, etc."
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#006052]/20 focus:border-[#006052]"
                 />
               </div>
@@ -1136,6 +1261,13 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
           </div>
         </div>
       )}
+
+      {/* 4. VEHICLE STATUS HISTORY MODAL */}
+      <VehicleStatusHistoryModal
+        isOpen={activeModal === 'history'}
+        onClose={() => setActiveModal(null)}
+        vehicleRecord={record}
+      />
     </div>
   );
 };
