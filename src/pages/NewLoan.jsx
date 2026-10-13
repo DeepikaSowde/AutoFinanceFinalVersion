@@ -269,8 +269,13 @@ const NewLoan = () => {
       const loanCount = customersList.length + 1
       const loanId = `LN${loanCount.toString().padStart(5, '0')}`
       
-      const mobile = form.customer.mobile || ""
-      const customerId = `CUS-${mobile.slice(-5) || "000"}`
+      const rawMobile = form.customer.mobile ? form.customer.mobile.trim() : "";
+      let customerId = "";
+      if (rawMobile.length >= 5 && !/^0+$/.test(rawMobile.slice(-5))) {
+        customerId = `CUS-${rawMobile.slice(-5)}`;
+      } else {
+        customerId = `CUS-${String(customersList.length + 1).padStart(5, '0')}`;
+      }
 
       // 2. Calculate EMI & Due Date
       const vehicleAmount = form.loan.vehicleAmount !== null && form.loan.vehicleAmount !== '' ? Number(form.loan.vehicleAmount) : Number(form.vehicle.amount || 0)
@@ -384,7 +389,19 @@ const NewLoan = () => {
       }
 
       // 5. Update existing customer or create new
-      const existingCustomerIndex = customersList.findIndex(c => c.customerId === customerId || (c.customer && c.customer.mobile === mobile))
+      const currentCustName = (form.customer?.name || "").trim().toLowerCase();
+      const existingCustomerIndex = customersList.findIndex(c => {
+        const existingName = (c.customer?.name || "").trim().toLowerCase();
+        const existingMobile = (c.customer?.mobile || "").trim();
+        const existingCId = c.customerId || c.customer?.customerId;
+        if (existingCId && existingCId === customerId && currentCustName && existingName === currentCustName) {
+          return true;
+        }
+        if (rawMobile.length >= 10 && existingMobile === rawMobile && currentCustName && existingName === currentCustName) {
+          return true;
+        }
+        return false;
+      });
       if (existingCustomerIndex >= 0) {
         // If customer exists, don't duplicate identical image strings
         const existing = customersList[existingCustomerIndex];

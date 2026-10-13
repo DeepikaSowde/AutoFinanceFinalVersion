@@ -411,14 +411,14 @@ const IncomeView = () => {
       <div className="flex flex-col lg:flex-row gap-6 w-full min-w-0 items-start">
         <div className="w-full lg:w-[60%] min-w-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="overflow-x-auto w-full min-w-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <table className="w-full min-w-[620px] text-left border-collapse">
+            <table className="w-full min-w-[560px] sm:min-w-[600px] text-left border-collapse">
               <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 shadow-[0_1px_0_0_#e2e8f0]">
                 <tr>
-                  <th className="px-4 sm:px-5 py-4 text-left text-[12px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap w-[120px]">Date</th>
-                  <th className="px-4 sm:px-5 py-4 text-left text-[12px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 min-w-[200px]">Description</th>
-                  <th className="px-4 sm:px-5 py-4 text-left text-[12px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap w-[110px]">Amount</th>
-                  <th className="px-4 sm:px-5 py-4 text-left text-[12px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap w-[130px]">Type</th>
-                  <th className="px-3 sm:px-5 py-4 text-right text-[12px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[48px]"></th>
+                  <th className="px-3.5 sm:px-5 py-3.5 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap w-[110px]">Date</th>
+                  <th className="px-3 sm:px-5 py-3.5 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 min-w-[180px]">Description</th>
+                  <th className="px-3 sm:px-5 py-3.5 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap w-[110px]">Amount</th>
+                  <th className="px-3 sm:px-5 py-3.5 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap w-[125px]">Type</th>
+                  <th className="px-2 sm:px-4 py-3.5 text-center text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[45px]"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -433,12 +433,12 @@ const IncomeView = () => {
                   const Icon = getTypeIcon(inc.type);
                   return (
                     <tr key={inc.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => setViewTransaction(inc)}>
-                      <td className="px-4 sm:px-5 py-3.5 whitespace-nowrap">
+                      <td className="px-3.5 sm:px-5 py-3.5 whitespace-nowrap">
                         <p className="font-semibold text-[13px] sm:text-[14px] text-slate-800">
                           {new Date(inc.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
                         </p>
                       </td>
-                      <td className="px-4 sm:px-5 py-3.5">
+                      <td className="px-3 sm:px-5 py-3.5">
                         <div className="flex items-start gap-2.5 sm:gap-3">
                           <div className={`mt-0.5 flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full ${getTypeIconBg(inc.type)}`}>
                             <Icon className={`h-4 w-4 ${getTypeIconColor(inc.type)}`} />
@@ -481,16 +481,16 @@ const IncomeView = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 sm:px-5 py-3.5 whitespace-nowrap">
+                      <td className="px-3 sm:px-5 py-3.5 whitespace-nowrap">
                         <span className="font-bold text-[13px] sm:text-[14px] text-emerald-600">{formatCurrency(inc.displayAmount)}</span>
                       </td>
-                      <td className="px-4 sm:px-5 py-3.5 whitespace-nowrap">
+                      <td className="px-3 sm:px-5 py-3.5 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider whitespace-nowrap border ${getTypeBadgeStyle(inc.type)}`}>
                           {inc.type}
                         </span>
                       </td>
-                      <td className="px-3 sm:px-5 py-3.5 text-right whitespace-nowrap">
-                        <button className="p-1 sm:p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors opacity-80 sm:opacity-0 sm:group-hover:opacity-100">
+                      <td className="px-2 sm:px-4 py-3.5 text-center whitespace-nowrap">
+                        <button className="p-1 sm:p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors opacity-100 sm:opacity-80 sm:hover:opacity-100">
                           <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
                         </button>
                       </td>

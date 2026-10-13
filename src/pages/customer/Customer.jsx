@@ -24,19 +24,29 @@ const formatCurrency = (value) => {
   return `₹${amount.toLocaleString("en-IN")}`;
 };
 
-const getCustomerId = (data) => {
+const getCustomerId = (data, index) => {
   if (!data) return null;
   if (data.customerId) return data.customerId;
   if (data.customer?.customerId) return data.customer.customerId;
-  if (data.customer?.mobile) return `CUS-${data.customer.mobile.slice(-5)}`;
-  if (data.mobile) return `CUS-${data.mobile.slice(-5)}`;
+  if (data.customer?.mobile && data.customer.mobile.trim().length >= 5 && !/^0+$/.test(data.customer.mobile.trim().slice(-5))) {
+    return `CUS-${data.customer.mobile.trim().slice(-5)}`;
+  }
+  if (data.mobile && data.mobile.trim().length >= 5 && !/^0+$/.test(data.mobile.trim().slice(-5))) {
+    return `CUS-${data.mobile.trim().slice(-5)}`;
+  }
+  if (index !== undefined && index !== null && index >= 0) {
+    return `CUS-${String(index + 1).padStart(3, "0")}`;
+  }
   return null;
 };
 
-const getLoanId = (data, customerId) => {
+const getLoanId = (data, customerId, index) => {
   if (!data) return null;
   if (data.loanId) return data.loanId;
   if (data.loan?.loanId) return data.loan.loanId;
+  if (index !== undefined && index !== null && index >= 0) {
+    return `LN-${String(index + 1).padStart(3, "0")}`;
+  }
   if (customerId) return `LN-${customerId.replace("CUS-", "")}`;
   return null;
 };
@@ -133,13 +143,13 @@ const Customer = () => {
   const hasCustomer = customerData.length > 0;
 
   const processedCustomers = useMemo(() => {
-    return customerData.map(data => {
+    return customerData.map((data, index) => {
       const customer = data.customer || {};
       const vehicle = data.vehicle || {};
       const loan = data.loan || {};
 
-      const customerId = getCustomerId(data);
-      const loanId = getLoanId(data, customerId);
+      const customerId = getCustomerId(data, index);
+      const loanId = getLoanId(data, customerId, index);
 
       const loanCalc = calculateLoanOutstanding(data, allPayments);
       const loanAmount = loanCalc.principal;

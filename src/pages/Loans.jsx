@@ -131,9 +131,15 @@ export default function Loans() {
 
       const customerId =
         record.customerId ||
-        (customer.mobile ? `CUS-${customer.mobile.slice(-5)}` : `CUS-${index}`);
+        record.customer?.customerId ||
+        (customer.mobile && customer.mobile.trim().length >= 5 && !/^0+$/.test(customer.mobile.trim().slice(-5))
+          ? `CUS-${customer.mobile.trim().slice(-5)}`
+          : `CUS-${String(index + 1).padStart(3, "0")}`);
 
-      const loanId = record.loanId || `LN-${String(index + 1).padStart(3, "0")}`;
+      const loanId =
+        record.loanId ||
+        record.loan?.loanId ||
+        `LN-${String(index + 1).padStart(3, "0")}`;
 
       const customerName = customer.name || "Unknown Customer";
       const customerMobile = customer.mobile || "";
@@ -275,13 +281,14 @@ export default function Loans() {
     }
   };
 
-  // If a loan details view is requested
+  // If a loan / customer view is requested
   if (viewingLoan) {
     return (
-      <LoanDetailsView
-        loanId={viewingLoan.loanId}
+      <CustomerView
         customerId={viewingLoan.customerId}
+        initialLoanId={viewingLoan.loanId}
         onBack={() => setViewingLoan(null)}
+        backLabel="Back to Loans"
       />
     );
   }
