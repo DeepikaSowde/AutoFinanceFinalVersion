@@ -819,6 +819,18 @@ export const syncDocumentChargeIncome = ({
     };
 
     if (existingIndex >= 0) {
+      const existing = incomeList[existingIndex];
+      const isIdentical =
+        Number(existing.amount || 0) === chargeNum &&
+        (existing.date || "").slice(0, 10) === dateVal &&
+        (existing.mode || "Cash") === (mode || "Cash") &&
+        (existing.customerName || "Customer") === custName &&
+        existing.customerId === (customerId || "—");
+
+      if (isIdentical) {
+        return existing;
+      }
+
       incomeList[existingIndex] = {
         ...incomeList[existingIndex],
         ...incomeEntry,

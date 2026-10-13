@@ -144,7 +144,10 @@ const Customer = () => {
       const loanCalc = calculateLoanOutstanding(data, allPayments);
       const loanAmount = loanCalc.principal;
       const outstandingAmount = loanCalc.outstandingAmount;
-      const customerStatus = data.status || (customer.name ? "Active" : "—");
+      const customerStatus =
+        data.status === "Closed" || loanCalc.status === "Closed"
+          ? "Closed"
+          : (data.status || loanCalc.status || (customer.name ? "Active" : "—"));
 
       return {
         ...data,
@@ -202,8 +205,9 @@ const Customer = () => {
   }
 
   const totalCustomers = processedCustomers.length;
-  const totalAmountDeployed = processedCustomers.reduce((sum, item) => sum + item.loanAmount, 0);
-  const totalOutstanding = processedCustomers.reduce((sum, item) => sum + item.outstandingAmount, 0);
+  const activeLoans = processedCustomers.filter(item => item.status === "Active");
+  const totalActiveDeployed = activeLoans.reduce((sum, item) => sum + item.loanAmount, 0);
+  const totalActiveOutstanding = activeLoans.reduce((sum, item) => sum + item.outstandingAmount, 0);
 
   return (
     <div className="bg-white px-3 pb-6 sm:px-6 lg:px-8">
@@ -260,17 +264,17 @@ const Customer = () => {
 
         <SummaryCard
           icon={Database}
-          title="Total Amount Deployed"
+          title="Total Active Deployed"
           value={formatCurrency(
-            totalAmountDeployed
+            totalActiveDeployed
           )}
         />
 
         <SummaryCard
           icon={WalletCards}
-          title="Total Outstanding"
+          title="Total Active Outstanding"
           value={formatCurrency(
-            totalOutstanding
+            totalActiveOutstanding
           )}
         />
 
