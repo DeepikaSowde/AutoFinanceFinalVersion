@@ -12,6 +12,7 @@ import { vehiclesRouter } from "./routes/vehicles.js";
 import { collectionsRouter } from "./routes/collections.js";
 import { draftsRouter } from "./routes/drafts.js";
 import { guarantorReferralsRouter } from "./routes/guarantorReferrals.js";
+import { superadminRouter } from "./superadmin/routes.js";
 import {
   categoriesRouter,
   expensesRouter,
@@ -22,11 +23,27 @@ import {
   remindersRouter,
 } from "./routes/finance.js";
 
+// Browser origins allowed to call /api/superadmin (the separate admin app),
+// comma-separated. The lender API keeps its open CORS policy.
+const adminOrigins = () =>
+  (process.env.ADMIN_APP_ORIGIN || "http://localhost:5174")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
 export const createApp = () => {
   const app = express();
 
-  app.use(cors());
+  // Behind Render / a load balancer: req.ip is the client, for rate limiting.
+  app.set("trust proxy", 1);
+
   app.use(express.json({ limit: "15mb" }));
+
+  // Super admin API: its own sign-in, and only the admin app may call it
+  // from a browser. Mounted before the lender CORS so that never applies here.
+  app.use("/api/superadmin", cors({ origin: adminOrigins() }), superadminRouter);
+
+  app.use(cors());
 
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
