@@ -2,14 +2,18 @@
 //
 // The Guarantor / Referral register. Readable by anyone who can see
 // customers or create loans (New Loan picks guarantors from it); adding to
-// it needs customer or loan "add" access.
+// it, or linking a person to a loan, needs customer or loan "add" access.
+// A further commission for a person books an expense, so it needs
+// expense "add".
 
 import { Router } from "express";
 
 import {
+  addPersonCommission,
   createGuarantorReferral,
   getGuarantorReferralById,
   getGuarantorReferrals,
+  linkPersonToLoan,
 } from "../services/guarantorReferralRepository.js";
 import { requirePermission } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
@@ -45,5 +49,23 @@ guarantorReferralsRouter.post(
   requirePermission("customers.add", "loans.add"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await createGuarantorReferral(req.body || {}, req.user));
+  })
+);
+
+// Records the guarantor / referrer of a loan just created (and a referral's
+// commission). The person is added to the register if new.
+guarantorReferralsRouter.post(
+  "/link",
+  requirePermission("customers.add", "loans.add"),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await linkPersonToLoan(req.body || {}, req.user));
+  })
+);
+
+guarantorReferralsRouter.post(
+  "/:id/commissions",
+  requirePermission("expense.add"),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await addPersonCommission(req.params.id, req.body || {}));
   })
 );

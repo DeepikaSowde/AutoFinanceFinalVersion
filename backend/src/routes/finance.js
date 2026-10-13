@@ -363,7 +363,7 @@ export const referralsRouter = Router();
 
 referralsRouter.get(
   "/",
-  requirePermission("expense.view"),
+  requirePermission("expense.view", "customers.view"),
   asyncHandler(async (req, res) => {
     res.json(await getReferrals());
   })

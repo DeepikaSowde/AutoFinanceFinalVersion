@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { loadGuarantorReferral, loadGuarantorReferrals } from '../services/guarantorApi';
 import { useTranslation } from "react-i18next";
 import {
   Field,
@@ -16,8 +15,16 @@ import {
   FileText,
   Users,
   Download,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
-
+import {
+  normalizePhone,
+  findRecordsByMobile,
+  getGuarantorReferralRecords,
+  loadGuarantorReferralRecord,
+  UPDATE_EVENT_NAME,
+} from "../utils/guarantorReferralStorage";
 
 // Helper: Convert File to Base64 with metadata
 const fileToBase64 = (file) => {
@@ -40,11 +47,14 @@ const fileToBase64 = (file) => {
 const GuarantorTab = ({ data = {}, onChange }) => {
   const { t } = useTranslation();
 
-  // Modal and preview states
+  // Modal, preview, and feedback states
   const [isFetchModalOpen, setIsFetchModalOpen] = useState(false);
   const [fetchSearch, setFetchSearch] = useState("");
   const [previewDoc, setPreviewDoc] = useState(null);
   const [fetchedFromId, setFetchedFromId] = useState(data.guarantorId || data.id || null);
+  const [fetchFeedback, setFetchFeedback] = useState(null);
+  const [ambiguousMatches, setAmbiguousMatches] = useState(null);
+  const [recordsVersion, setRecordsVersion] = useState(0);
 
   // Keep guarantor required set to 'Yes'
   useEffect(() => {
@@ -52,6 +62,19 @@ const GuarantorTab = ({ data = {}, onChange }) => {
       onChange("required", "Yes");
     }
   }, [data.required, onChange]);
+
+  // Subscribe to real-time updates from shared storage
+  useEffect(() => {
+    const handleUpdate = () => {
+      setRecordsVersion((v) => v + 1);
+    };
+    window.addEventListener(UPDATE_EVENT_NAME, handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+    return () => {
+      window.removeEventListener(UPDATE_EVENT_NAME, handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
+    };
+  }, []);
 
   // Derived values supporting both conventions
   const fullNameVal = data.fullName ?? data.name ?? "";
@@ -61,44 +84,44 @@ const GuarantorTab = ({ data = {}, onChange }) => {
     return Array.isArray(data.additionalDocs) ? data.additionalDocs : [];
   }, [data.additionalDocs]);
 
-  // Register records for the Fetch popup, loaded from the API when it opens.
-  const [sharedRecords, setSharedRecords] = useState([]);
-  useEffect(() => {
-    if (!isFetchModalOpen) return;
-    let active = true;
-    loadGuarantorReferrals()
-      .then((list) => active && setSharedRecords(list))
-      .catch((error) => active && alert(error.message || "Could not load the guarantor register."));
-    return () => {
-      active = false;
-    };
-  }, [isFetchModalOpen]);
+  // Read shared directory records
+  const sharedRecords = useMemo(() => {
+    return getGuarantorReferralRecords();
+  }, [isFetchModalOpen, recordsVersion]);
 
-  // Filter shared records
+  // Filter shared records for modal display
   const filteredRecords = useMemo(() => {
+    if (ambiguousMatches && ambiguousMatches.length > 0) {
+      return ambiguousMatches;
+    }
     if (!fetchSearch.trim()) return sharedRecords;
     const q = fetchSearch.toLowerCase().trim();
+    const cleanQ = normalizePhone(q);
+
     return sharedRecords.filter((r) => {
+      const recPhoneNorm = normalizePhone(r.phone);
       return (
         r.id?.toLowerCase().includes(q) ||
         r.fullName?.toLowerCase().includes(q) ||
-        r.phone?.includes(q) ||
+        (cleanQ && recPhoneNorm.includes(cleanQ)) ||
         r.address?.toLowerCase().includes(q) ||
         r.area?.toLowerCase().includes(q) ||
         r.landmark?.toLowerCase().includes(q) ||
         r.aadhaarNumber?.includes(q)
       );
     });
-  }, [sharedRecords, fetchSearch]);
+  }, [sharedRecords, fetchSearch, ambiguousMatches]);
 
-  // Handle selecting a record from Fetch modal
+  // Handle selecting a record from Fetch
   const handleSelectRecord = async (summary) => {
     if (!summary) return;
+
+    // The register list has no document contents; load this person in full.
     let record;
     try {
-      record = await loadGuarantorReferral(summary.id);
+      record = await loadGuarantorReferralRecord(summary.id);
     } catch (error) {
-      alert(error.message || "Could not load this guarantor.");
+      alert(error.message || "Could not load this person's details.");
       return;
     }
 
@@ -113,13 +136,64 @@ const GuarantorTab = ({ data = {}, onChange }) => {
     onChange("aadhaarNo", record.aadhaarNumber || "");
     onChange("aadhaarNumber", record.aadhaarNumber || "");
     onChange("aadhaarFile", record.aadhaarFile || null);
-    onChange("additionalDocs", record.additionalDocs || []);
+    onChange("additionalDocs", Array.isArray(record.additionalDocs) ? record.additionalDocs : []);
     onChange("guarantorId", record.id || "");
     onChange("id", record.id || "");
     onChange("required", "Yes");
 
     setFetchedFromId(record.id || record.fullName);
     setIsFetchModalOpen(false);
+    setAmbiguousMatches(null);
+  };
+
+  /**
+   * Primary Fetch by Mobile Number Handler
+   * 
+   * 1. Searches existing shared records using the entered mobile number.
+   * 2. Normalizes the number to 10 digits to eliminate formatting discrepancies.
+   * 3. If 1 match -> automatically populates all details without blocking.
+   * 4. If multiple matches -> opens disambiguation modal clearly.
+   * 5. If no match -> shows clear message and allows manual entry without blocking.
+   */
+  const handleFetchClick = () => {
+    const rawMobile = phoneVal.trim();
+    const cleanMobile = normalizePhone(rawMobile);
+
+    // If a 10-digit mobile number is entered in the form
+    if (cleanMobile && cleanMobile.length === 10) {
+      const matches = findRecordsByMobile(cleanMobile);
+
+      if (matches.length === 1) {
+        // Exactly 1 match found -> automatically populate all available details!
+        const matched = matches[0];
+        handleSelectRecord(matched);
+        setFetchFeedback({
+          type: "success",
+          message: `Loaded details for ${matched.fullName} (ID: ${matched.id}) from mobile +91 ${cleanMobile}`,
+        });
+      } else if (matches.length > 1) {
+        // Multiple records match the same mobile number -> handle ambiguity clearly!
+        setAmbiguousMatches(matches);
+        setFetchSearch(cleanMobile);
+        setIsFetchModalOpen(true);
+        setFetchFeedback({
+          type: "warning",
+          message: `Multiple records found with mobile +91 ${cleanMobile}. Please select the intended person.`,
+        });
+      } else {
+        // Mobile not found -> do not block admin, allow manual entry
+        setFetchFeedback({
+          type: "notFound",
+          message: `No matching guarantor/referral record found for mobile +91 ${cleanMobile}. You can enter details manually below.`,
+        });
+      }
+    } else {
+      // If mobile number field is empty or incomplete, open the search/browse modal
+      setAmbiguousMatches(null);
+      setFetchSearch(cleanMobile || "");
+      setIsFetchModalOpen(true);
+      setFetchFeedback(null);
+    }
   };
 
   // Handle Aadhaar file
@@ -179,7 +253,7 @@ const GuarantorTab = ({ data = {}, onChange }) => {
   return (
     <div className="space-y-2.5">
       {/* =========================================================
-          HEADER (Matches CustomerTab exactly: bg-emerald-50)
+          HEADER (Matches CustomerTab: bg-emerald-50)
       ========================================================= */}
       <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-1.5 sm:px-4 sm:py-2">
         <div>
@@ -195,21 +269,51 @@ const GuarantorTab = ({ data = {}, onChange }) => {
             </span>
           )}
 
-          {/* Fetch Button */}
+          {/* Fetch Button (Triggers search by mobile number or open dialog) */}
           <button
             type="button"
-            onClick={() => {
-              setIsFetchModalOpen(true);
-              setFetchSearch("");
-            }}
-            className="inline-flex items-center gap-1 rounded-md bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-            title="Fetch from shared Guarantor / Referral records"
+            onClick={handleFetchClick}
+            className="inline-flex items-center gap-1 rounded-md bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white px-3 py-1 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            title="Fetch guarantor/referral details by mobile number"
           >
             <Search className="h-3.5 w-3.5" />
             <span>Fetch</span>
           </button>
         </div>
       </div>
+
+      {/* Fetch Feedback Banners */}
+      {fetchFeedback?.type === "notFound" && (
+        <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs text-amber-900 animate-in fade-in duration-150">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>{fetchFeedback.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFetchFeedback(null)}
+            className="text-amber-700 hover:text-amber-900 text-[11px] font-medium underline cursor-pointer shrink-0 ml-2"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {fetchFeedback?.type === "success" && (
+        <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs text-emerald-900 animate-in fade-in duration-150">
+          <div className="flex items-center gap-2 min-w-0">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>{fetchFeedback.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFetchFeedback(null)}
+            className="text-emerald-700 hover:text-emerald-900 text-[11px] font-medium underline cursor-pointer shrink-0 ml-2"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* =========================================================
           MAIN CONTENT (2-Column Layout matching CustomerTab)
@@ -233,17 +337,31 @@ const GuarantorTab = ({ data = {}, onChange }) => {
                 />
               </Field>
 
-              {/* 2. Phone Number */}
+              {/* 2. Phone Number with Fetch Action */}
               <Field label="Phone Number" required>
-                <PhoneInput
-                  code={data.countryCode || "+91"}
-                  mobile={phoneVal}
-                  onCodeChange={(value) => onChange("countryCode", value)}
-                  onMobileChange={(value) => {
-                    onChange("mobile", value);
-                    onChange("phone", value);
-                  }}
-                />
+                <div className="flex gap-1.5">
+                  <div className="flex-1 min-w-0">
+                    <PhoneInput
+                      code={data.countryCode || "+91"}
+                      mobile={phoneVal}
+                      onCodeChange={(value) => onChange("countryCode", value)}
+                      onMobileChange={(value) => {
+                        onChange("mobile", value);
+                        onChange("phone", value);
+                        // Reset fetch feedback when user types a new number
+                        if (fetchFeedback) setFetchFeedback(null);
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleFetchClick}
+                    className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:border-emerald-600 hover:text-emerald-800 transition-colors cursor-pointer shrink-0"
+                    title="Fetch details by this mobile number"
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </Field>
 
               {/* 3. Address (Multiline) */}
@@ -465,7 +583,10 @@ const GuarantorTab = ({ data = {}, onChange }) => {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setIsFetchModalOpen(false);
+            if (e.target === e.currentTarget) {
+              setIsFetchModalOpen(false);
+              setAmbiguousMatches(null);
+            }
           }}
         >
           <div
@@ -477,45 +598,64 @@ const GuarantorTab = ({ data = {}, onChange }) => {
             <div className="bg-[#0F1E36] px-5 py-4 text-white flex items-center justify-between shrink-0">
               <div>
                 <h3 className="text-base font-bold text-white tracking-tight">
-                  Fetch Guarantor / Referral
+                  {ambiguousMatches
+                    ? "Select Matching Record"
+                    : "Fetch Guarantor / Referral"}
                 </h3>
                 <p className="text-xs text-slate-300 mt-0.5">
-                  Select a record from the shared directory to populate guarantor details
+                  {ambiguousMatches
+                    ? `Multiple records found with mobile +91 ${fetchSearch}. Select the correct person:`
+                    : "Search by mobile number, ID, or name from the shared directory"}
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={() => setIsFetchModalOpen(false)}
+                onClick={() => {
+                  setIsFetchModalOpen(false);
+                  setAmbiguousMatches(null);
+                }}
                 className="rounded-lg p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Search Input */}
-            <div className="p-4 border-b border-slate-100 bg-[#F8FAFC]">
-              <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  autoFocus
-                  value={fetchSearch}
-                  onChange={(e) => setFetchSearch(e.target.value)}
-                  placeholder="Search by ID (GR-XXXXX), name, phone, address, or Aadhaar..."
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#006052] focus:ring-2 focus:ring-[#006052]/20 outline-none transition-all"
-                />
-                {fetchSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setFetchSearch("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
+            {/* Ambiguity Alert Notice if multiple matches */}
+            {ambiguousMatches && ambiguousMatches.length > 1 && (
+              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center gap-2 text-xs text-amber-900">
+                <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                <span>
+                  <strong>{ambiguousMatches.length} records</strong> match mobile number <strong>+91 {fetchSearch}</strong>. Please select the intended person below.
+                </span>
               </div>
-            </div>
+            )}
+
+            {/* Search Input (only shown if not in fixed ambiguous match selection) */}
+            {!ambiguousMatches && (
+              <div className="p-4 border-b border-slate-100 bg-[#F8FAFC]">
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={fetchSearch}
+                    onChange={(e) => setFetchSearch(e.target.value)}
+                    placeholder="Search by mobile number (e.g. 9876543210), ID (GR-00001), or name..."
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#006052] focus:ring-2 focus:ring-[#006052]/20 outline-none transition-all"
+                  />
+                  {fetchSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setFetchSearch("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Records List or Empty State */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
@@ -605,7 +745,7 @@ const GuarantorTab = ({ data = {}, onChange }) => {
                   <p className="mt-1 text-xs text-slate-500 max-w-sm leading-relaxed">
                     {sharedRecords.length === 0
                       ? "There are no guarantor or referral records registered in the system yet. You can fill in the details manually."
-                      : "No record matches your search query. Please try searching with a different name, ID, or phone number, or enter details manually."}
+                      : "No record matches your search query. Please try searching with a different mobile number, ID, or name, or enter details manually in the form."}
                   </p>
                 </div>
               )}
@@ -618,7 +758,10 @@ const GuarantorTab = ({ data = {}, onChange }) => {
               </span>
               <button
                 type="button"
-                onClick={() => setIsFetchModalOpen(false)}
+                onClick={() => {
+                  setIsFetchModalOpen(false);
+                  setAmbiguousMatches(null);
+                }}
                 className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 Close

@@ -100,26 +100,32 @@ const validate = (expense) => {
   }
 };
 
+// Inserts an expense on the caller's transaction and returns its id, so other
+// records (a paid referral commission) can be booked together with it.
+export const insertExpense = async (client, expense = {}) => {
+  validate(expense);
+
+  const result = await client.query(
+    `INSERT INTO expenses
+      (id, amount, status, category, sub_category, expense_date, payment_mode, paid_by,
+       vendor, reference, description, remarks, details, created_by, tenant_id)
+     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     RETURNING pk`,
+    [...toValues(expense), currentTenantId()]
+  );
+
+  const pk = result.rows[0].pk;
+  const id = `EXP-${pad(pk)}`;
+
+  await client.query("UPDATE expenses SET id = $1 WHERE pk = $2", [id, pk]);
+
+  return id;
+};
+
 export const addExpense = async (expense = {}) => {
   validate(expense);
 
-  const expenseId = await withTransaction(async (client) => {
-    const result = await client.query(
-      `INSERT INTO expenses
-        (id, amount, status, category, sub_category, expense_date, payment_mode, paid_by,
-         vendor, reference, description, remarks, details, created_by, tenant_id)
-       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       RETURNING pk`,
-      [...toValues(expense), currentTenantId()]
-    );
-
-    const pk = result.rows[0].pk;
-    const id = `EXP-${pad(pk)}`;
-
-    await client.query("UPDATE expenses SET id = $1 WHERE pk = $2", [id, pk]);
-
-    return id;
-  });
+  const expenseId = await withTransaction((client) => insertExpense(client, expense));
 
   return getExpenseById(expenseId);
 };

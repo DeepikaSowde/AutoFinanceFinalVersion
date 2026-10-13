@@ -37,6 +37,7 @@ export const PAGE_ACCESS = {
   '/collection': ['collections.view'],
   '/customers': ['customers.view'],
   '/guarantor-referral': ['customers.view', 'loans.add'],
+  '/referral-commission': ['customers.view', 'expense.view'],
   '/ledger': ['ledger.view'],
   '/investors': ['investor.view'],
   '/vehicle': ['vehicles.view'],

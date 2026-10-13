@@ -121,8 +121,14 @@ const toRc = (vehicle) => ({
   remarks: vehicle.remarks || '',
 })
 
-const toGuarantor = (guarantor) => ({
-  hasGuarantor: guarantor.required === 'Yes',
+// Which of guarantor / referral the loan form chose ("none", "both",
+// "guarantor", "referral"). Older forms said "required: Yes" instead.
+const relationshipOptionOf = (form) => form.loan?.relationshipOption || (form.guarantor?.required === 'Yes' ? 'guarantor' : 'none')
+const hasGuarantorIn = (form) => ['both', 'guarantor'].includes(relationshipOptionOf(form))
+const hasReferralIn = (form) => ['both', 'referral'].includes(relationshipOptionOf(form))
+
+const toGuarantor = (guarantor, hasGuarantor = guarantor.required === 'Yes') => ({
+  hasGuarantor,
   personal: {
     // The register record this guarantor was picked from, if any.
     guarantorId: guarantor.guarantorId || '',
@@ -154,6 +160,26 @@ export const principalOf = (form) => {
   return Math.max(vehicleAmount - Number(form.loan.downPayment || 0), 0)
 }
 
+// The referrer as noted on the loan. The register keeps the person and the
+// commission record; this copy lets the loan show who referred it.
+const toReferral = (form) => {
+  const referral = form.referral || {}
+  if (!hasReferralIn(form)) {
+    return { referredBy: form.loan.referredBy || '', commission: form.loan.referredByCommission || '' }
+  }
+  const percentage = Number(referral.commissionPercentage) || 0
+  const amount = Number(referral.commissionAmount) || (percentage > 0 ? Math.round((principalOf(form) * percentage) / 100) : 0)
+  return {
+    referredBy: (referral.fullName || referral.name || '').trim(),
+    phone: (referral.phone || referral.mobile || '').trim(),
+    referralId: referral.referralId || referral.id || '',
+    percentage,
+    commission: amount || '',
+    payCommission: referral.payCommission === true,
+    paymentMode: referral.paymentMode || 'Cash',
+  }
+}
+
 const toLoan = (form) => {
   const { loan } = form
   return {
@@ -180,10 +206,7 @@ const toLoan = (form) => {
         type: loan.penaltyType || '',
         amount: Number(loan.latePenalty) || 0,
       },
-      referral: {
-        referredBy: loan.referredBy || '',
-        commission: loan.referredByCommission || '',
-      },
+      referral: toReferral(form),
     },
     status: 'Active',
     // The server draws the principal from the investor pool in the same
@@ -307,13 +330,35 @@ const nextDueDateOf = (loan) => {
   return unpaid?.dueDate || ''
 }
 
-const toEntry = (record, loan) => {
+// The loan's referral, from its commission record when there is one.
+const referralFrom = (charges, commission) => {
+  const noted = charges.referral || {}
+  const name = commission?.agentName || noted.referredBy || ''
+  if (!name) return null
+  return {
+    name,
+    fullName: name,
+    phone: commission?.agentPhone || noted.phone || '',
+    mobile: commission?.agentPhone || noted.phone || '',
+    referralId: commission?.personId || noted.referralId || '',
+    id: commission?.personId || noted.referralId || '',
+    commissionId: commission?.id || '',
+    commissionPercentage: Number(commission?.percentage ?? noted.percentage) || '',
+    commissionAmount: Number(commission?.amount ?? noted.commission) || '',
+    payCommission: commission ? commission.status === 'Paid' : noted.payCommission === true,
+    paymentMode: commission?.paymentMode || noted.paymentMode || '',
+  }
+}
+
+const toEntry = (record, loan, commissions = []) => {
   const personal = record.customer.personal || {}
   const rc = record.rc || {}
   const vehicle = record.vehicle || {}
   const guarantor = record.guarantor || {}
   const gPersonal = guarantor.personal || {}
   const charges = loan.charges || {}
+  const referral = referralFrom(charges, commissions.find((c) => c.loanId === loan.id))
+  const hasGuarantor = Boolean(guarantor.hasGuarantor)
 
   return {
     customer: {
@@ -405,9 +450,11 @@ const toEntry = (record, loan) => {
       gracePeriod: charges.graceDays || '',
       latePenalty: charges.penalty?.amount || '',
       penaltyType: charges.penalty?.type || '',
-      referredBy: charges.referral?.referredBy || '',
+      referredBy: referral?.name || '',
       referredByCommission: charges.referral?.commission || '',
+      relationshipOption: hasGuarantor && referral ? 'both' : hasGuarantor ? 'guarantor' : referral ? 'referral' : 'none',
     },
+    referral: referral || {},
     customerId: record.customer.id,
     loanId: loan.id,
     loanAmount: loan.loanAmount,
@@ -427,8 +474,10 @@ const toEntry = (record, loan) => {
 const loansOf = (record) => [record.loan, ...(record.loans || [])].filter((loan) => loan?.id)
 
 export const loadCustomerEntries = async () => {
-  const records = await apiGet('/customers')
-  const entries = records.flatMap((record) => loansOf(record).map((loan) => toEntry(record, loan)))
+  // Commissions add the referrer's register id and paid status; someone who
+  // cannot read them still gets the loans.
+  const [records, commissions] = await Promise.all([apiGet('/customers'), apiGet('/referrals').catch(() => [])])
+  const entries = records.flatMap((record) => loansOf(record).map((loan) => toEntry(record, loan, commissions)))
   return entries
 }
 
@@ -463,7 +512,7 @@ export const submitLoanApplication = async (form) => {
       customer: toCustomer(form.customer),
       vehicle: toVehicle(form.vehicle),
       rc: toRc(form.vehicle),
-      guarantor: toGuarantor(form.guarantor),
+      guarantor: toGuarantor(form.guarantor, hasGuarantorIn(form)),
       loan,
     })
   }

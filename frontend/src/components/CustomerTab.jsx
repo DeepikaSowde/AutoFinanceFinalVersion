@@ -6,10 +6,10 @@ import {
   Input,
   Textarea,
   PhoneInput,
-  SectionCard,
 } from "./Formcontrols";
 
 import {
+  User,
   Plus,
   Trash2,
   Eye,
@@ -128,137 +128,145 @@ const CustomerTab = ({ data = {}, onChange }) => {
   };
 
   return (
-    <div className="space-y-2.5">
-      {/* Header */}
-      <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-1.5 sm:px-4 sm:py-2">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-900 sm:text-base">
-            {t("customer.information")}
-          </h2>
-        </div>
-
-        <span className="shrink-0 rounded-md bg-white px-2 py-0.5 text-[10px] sm:text-[11px] font-medium text-emerald-700">
-          {t("steps.stepOf", { current: 1, total: 4 })}
-        </span>
-      </div>
-
-      {/* Main Content */}
-      <div className="grid grid-cols-1 gap-2.5 xl:grid-cols-3">
+    <div className="space-y-3">
+      {/* Main Content: Balanced 2-Column Split (Customer Details on Left, KYC on Right) */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
         {/* =====================================================
-            CUSTOMER DETAILS
+            1. CUSTOMER DETAILS (Larger Portion: 7 of 12 cols)
         ====================================================== */}
+        <div className="md:col-span-7">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
+            {/* Card Header with subtle green accent */}
+            <div className="bg-emerald-50/70 border-b border-emerald-100/80 px-3.5 py-2 sm:px-4 sm:py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-100 text-[#006052] border border-emerald-200">
+                  <User className="h-3.5 w-3.5" />
+                </span>
+                <h3 className="text-xs sm:text-sm font-bold text-[#0F1E36]">
+                  {t("customer.details")}
+                </h3>
+              </div>
+              <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/60 px-2 py-0.5 rounded border border-emerald-200/70">
+                Primary Information
+              </span>
+            </div>
 
-        <div className="xl:col-span-2">
-          <SectionCard title={t("customer.details")}>
-            <div className="grid grid-cols-1 gap-x-3 gap-y-2 md:grid-cols-2 lg:grid-cols-3">
-              {/* Application Date */}
-              <Field label={t("customer.applicationDate")}>
-                <Input
-                  type="date"
-                  value={data.applicationDate || ""}
-                  readOnly
-                  className="bg-slate-50"
-                />
-              </Field>
+            <div className="p-3.5 sm:p-4 space-y-3">
+              {/* Row 1: Customer Name & Mobile Number */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Customer Name */}
+                <Field label={t("customer.name")} required>
+                  <Input
+                    value={data.name || ""}
+                    onChange={set("name")}
+                    placeholder={t("customer.enterName")}
+                    className="h-9 text-xs sm:text-sm"
+                  />
+                </Field>
 
-              {/* Customer Name */}
-              <Field label={t("customer.name")} required>
-                <Input
-                  value={data.name || ""}
-                  onChange={set("name")}
-                  placeholder={t("customer.enterName")}
-                />
-              </Field>
+                {/* Mobile Number */}
+                <Field label={t("customer.mobileNumber")} required>
+                  <PhoneInput
+                    code={data.countryCode || "+91"}
+                    mobile={data.mobile || ""}
+                    onCodeChange={(value) => onChange("countryCode", value)}
+                    onMobileChange={(value) => onChange("mobile", value)}
+                  />
+                </Field>
+              </div>
 
-              {/* Mobile Number */}
-              <Field label={t("customer.mobileNumber")} required>
-                <PhoneInput
-                  code={data.countryCode || "+91"}
-                  mobile={data.mobile || ""}
-                  onCodeChange={(value) =>
-                    onChange("countryCode", value)
-                  }
-                  onMobileChange={(value) =>
-                    onChange("mobile", value)
-                  }
-                />
-              </Field>
+              {/* Row 2: Application Date & Pincode */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Application Date */}
+                <Field label={t("customer.applicationDate")}>
+                  <Input
+                    type="date"
+                    value={data.applicationDate || ""}
+                    readOnly
+                    className="h-9 text-xs sm:text-sm bg-slate-50 text-slate-600 cursor-not-allowed"
+                  />
+                </Field>
 
-              {/* Address */}
-              <Field
-                label={t("customer.address")}
-                required
-                className="md:col-span-3"
-              >
+                {/* Pincode */}
+                <Field label={t("customer.pincode")}>
+                  <Input
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={data.pincode || ""}
+                    onChange={(e) =>
+                      onChange("pincode", e.target.value.replace(/\D/g, ""))
+                    }
+                    placeholder={t("customer.enterPincode")}
+                    className="h-9 font-mono text-xs sm:text-sm"
+                  />
+                </Field>
+              </div>
+
+              {/* Row 3: Address (Comfortably Wide across full width) */}
+              <Field label={t("customer.address")} required>
                 <Textarea
                   rows={2}
                   value={data.address || ""}
                   onChange={set("address")}
                   placeholder={t("customer.enterFullAddress")}
-                  className="min-h-[44px] resize-none"
+                  className="min-h-[48px] resize-none text-xs sm:text-sm"
                 />
               </Field>
+
+              {/* Row 4: Area / Locality & Landmark */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Area / Locality */}
+                <Field label={t("customer.areaLocality")}>
+                  <Input
+                    value={data.area || ""}
+                    onChange={set("area")}
+                    placeholder={t("customer.enterAreaLocality")}
+                    className="h-9 text-xs sm:text-sm"
+                  />
+                </Field>
+
+                {/* Landmark */}
+                <Field label={t("customer.landmark")}>
+                  <Input
+                    value={data.landmark || ""}
+                    onChange={set("landmark")}
+                    placeholder={t("customer.enterLandmark")}
+                    className="h-9 text-xs sm:text-sm"
+                  />
+                </Field>
+              </div>
             </div>
-
-            {/* Location Details */}
-            <div className="mt-2 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-3">
-              {/* Area / Locality */}
-              <Field label={t("customer.areaLocality")}>
-                <Input
-                  value={data.area || ""}
-                  onChange={set("area")}
-                  placeholder={t("customer.enterAreaLocality")}
-                />
-              </Field>
-
-              {/* Landmark */}
-              <Field label={t("customer.landmark")}>
-                <Input
-                  value={data.landmark || ""}
-                  onChange={set("landmark")}
-                  placeholder={t("customer.enterLandmark")}
-                />
-              </Field>
-
-              {/* Pincode */}
-              <Field label={t("customer.pincode")}>
-                <Input
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={data.pincode || ""}
-                  onChange={(e) =>
-                    onChange(
-                      "pincode",
-                      e.target.value.replace(/\D/g, "")
-                    )
-                  }
-                  placeholder={t("customer.enterPincode")}
-                />
-              </Field>
-            </div>
-          </SectionCard>
+          </div>
         </div>
 
         {/* =====================================================
-            KYC DOCUMENTS - RIGHT SIDE (Aadhaar, Driving Licence + Dynamic Docs)
+            2. KYC & IDENTITY DOCUMENTS (Right Column: 5 of 12 cols)
         ====================================================== */}
+        <div className="md:col-span-5">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
+            {/* Card Header with + Document Button */}
+            <div className="bg-emerald-50/70 border-b border-emerald-100/80 px-3.5 py-2 sm:px-4 sm:py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-100 text-[#006052] border border-emerald-200">
+                  <FileText className="h-3.5 w-3.5" />
+                </span>
+                <h3 className="text-xs sm:text-sm font-bold text-[#0F1E36]">
+                  {t("kyc.title")}
+                </h3>
+              </div>
 
-        <div className="xl:col-span-1">
-          <SectionCard
-            title={t("kyc.title")}
-            right={
               <button
                 type="button"
                 onClick={handleAddAdditionalDoc}
-                className="inline-flex items-center gap-1 rounded bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 rounded bg-white hover:bg-emerald-50 text-[#006052] border border-emerald-300 px-2 py-0.5 text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
                 title="Add another document"
               >
                 <Plus className="h-3 w-3" strokeWidth={2.5} />
-                <span>Document</span>
+                <span>+ Document</span>
               </button>
-            }
-          >
-            <div className="space-y-2">
+            </div>
+
+            <div className="p-3.5 sm:p-4 space-y-3">
               {/* 1. Aadhaar (Visible by default) */}
               <KycRow
                 label={t("kyc.aadhaarNumber")}
@@ -268,9 +276,7 @@ const CustomerTab = ({ data = {}, onChange }) => {
                 onValue={(value) =>
                   onChange("aadhaarNo", value.replace(/\D/g, "").slice(0, 12))
                 }
-                onFile={(file) =>
-                  handleFileChange("aadhaarFile", file)
-                }
+                onFile={(file) => handleFileChange("aadhaarFile", file)}
                 onPreview={(file) =>
                   setPreviewDoc({
                     title: `Aadhaar - ${data.name || "Customer"}`,
@@ -285,12 +291,8 @@ const CustomerTab = ({ data = {}, onChange }) => {
                 placeholder={t("kyc.enterDl")}
                 value={data.dlNo || ""}
                 file={data.dlFile}
-                onValue={(value) =>
-                  onChange("dlNo", value)
-                }
-                onFile={(file) =>
-                  handleFileChange("dlFile", file)
-                }
+                onValue={(value) => onChange("dlNo", value)}
+                onFile={(file) => handleFileChange("dlFile", file)}
                 onPreview={(file) =>
                   setPreviewDoc({
                     title: `Driving Licence - ${data.name || "Customer"}`,
@@ -303,10 +305,10 @@ const CustomerTab = ({ data = {}, onChange }) => {
               {additionalDocs.map((doc, idx) => (
                 <div
                   key={doc.id || idx}
-                  className="border-b border-slate-100 pb-2 last:border-0 last:pb-0"
+                  className="rounded-lg border border-slate-200/90 bg-[#F8FAFC] p-2.5 space-y-1.5"
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[11px] font-medium text-slate-600">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold text-slate-700">
                       Additional Document #{idx + 1}
                     </label>
                     <button
@@ -326,10 +328,10 @@ const CustomerTab = ({ data = {}, onChange }) => {
                         handleUpdateDocTitle(doc.id, e.target.value)
                       }
                       placeholder="e.g. PAN Card, Voter ID"
-                      className="min-w-0 flex-1 text-xs"
+                      className="min-w-0 flex-1 text-xs sm:text-sm h-9 bg-white"
                     />
 
-                    <label className="flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-emerald-600 hover:text-emerald-800 cursor-pointer transition-colors">
+                    <label className="flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 sm:px-3 text-xs font-semibold text-slate-700 hover:border-[#006052] hover:text-[#006052] cursor-pointer transition-colors shadow-2xs h-9">
                       <Upload className="h-3.5 w-3.5 text-slate-500" />
                       <span>{doc.file ? "Change" : "Upload"}</span>
                       <input
@@ -344,31 +346,34 @@ const CustomerTab = ({ data = {}, onChange }) => {
                     </label>
                   </div>
 
-                  {/* Uploaded File Status */}
                   {doc.file && (
-                    <div className="mt-1 flex items-center justify-between text-[11px] text-emerald-700 bg-emerald-50/70 rounded px-2 py-0.5">
-                      <span className="truncate max-w-[170px] flex items-center gap-1">
-                        ✓ {doc.file.name || "Document"}
+                    <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-900">
+                      <span className="truncate max-w-[150px] sm:max-w-[180px] text-[11px] font-medium flex items-center gap-1">
+                        <FileText className="h-3 w-3 text-[#006052] shrink-0" />
+                        <span className="truncate">{doc.file.name || "Document"}</span>
                       </span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setPreviewDoc({
-                              title: `${doc.title || "Document"} - ${data.name || "Customer"}`,
-                              file: doc.file,
-                            })
-                          }
-                          className="text-emerald-800 hover:underline cursor-pointer font-medium"
-                        >
-                          View
-                        </button>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-1">
+                        {previewDoc && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewDoc({
+                                title: `${doc.title || "Document"} - ${data.name || "Customer"}`,
+                                file: doc.file,
+                              })
+                            }
+                            className="text-[11px] font-semibold text-[#006052] hover:underline cursor-pointer"
+                          >
+                            View
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleUpdateDocFile(doc.id, null)}
                           className="text-slate-400 hover:text-red-600 cursor-pointer ml-1"
+                          title="Remove file"
                         >
-                          ✕
+                          <X className="h-3 w-3" />
                         </button>
                       </div>
                     </div>
@@ -376,7 +381,7 @@ const CustomerTab = ({ data = {}, onChange }) => {
                 </div>
               ))}
             </div>
-          </SectionCard>
+          </div>
         </div>
       </div>
 
@@ -394,7 +399,7 @@ const CustomerTab = ({ data = {}, onChange }) => {
           >
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
-                <FileText className="h-4 w-4 text-emerald-700" />
+                <FileText className="h-4 w-4 text-[#006052]" />
                 {previewDoc.title}
               </h3>
               <button
@@ -437,7 +442,7 @@ const CustomerTab = ({ data = {}, onChange }) => {
                 <a
                   href={previewDoc.file.data}
                   download={previewDoc.file.name || "document"}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800 transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#006052] px-4 py-2 text-xs font-semibold text-white hover:bg-[#004d42] transition-colors"
                 >
                   <Download className="h-3.5 w-3.5" />
                   <span>Download Document</span>
@@ -472,20 +477,27 @@ export const KycRow = ({
   onPreview,
 }) => {
   return (
-    <div className="border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-      <label className="mb-1 block text-xs font-medium text-slate-700">
-        {label}
-      </label>
+    <div className="rounded-lg border border-slate-200/90 bg-[#F8FAFC] p-2.5 space-y-1.5">
+      <div className="flex items-center justify-between">
+        <label className="text-[11px] font-semibold text-slate-700">
+          {label}
+        </label>
+        {file && (
+          <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-200">
+            Uploaded
+          </span>
+        )}
+      </div>
 
       <div className="flex gap-2">
         <Input
           value={value || ""}
           onChange={(e) => onValue(e.target.value)}
           placeholder={placeholder}
-          className="min-w-0 flex-1 font-mono"
+          className="min-w-0 flex-1 font-mono text-xs sm:text-sm h-9 bg-white"
         />
 
-        <label className="flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-emerald-600 hover:text-emerald-800 cursor-pointer transition-colors">
+        <label className="flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 sm:px-3 text-xs font-semibold text-slate-700 hover:border-[#006052] hover:text-[#006052] cursor-pointer transition-colors shadow-2xs h-9">
           <Upload className="h-3.5 w-3.5 text-slate-500" />
           <span>{file ? "Change" : "Upload"}</span>
           <input
@@ -500,18 +512,19 @@ export const KycRow = ({
         </label>
       </div>
 
-      {/* Uploaded file status with View and Clear */}
+      {/* Uploaded File Status */}
       {file && (
-        <div className="mt-1 flex items-center justify-between text-[11px] text-emerald-700 bg-emerald-50/70 rounded px-2 py-0.5">
-          <span className="truncate max-w-[170px] flex items-center gap-1">
-            ✓ {file.name || "Document Uploaded"}
+        <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-900">
+          <span className="truncate max-w-[150px] sm:max-w-[180px] text-[11px] font-medium flex items-center gap-1">
+            <FileText className="h-3 w-3 text-[#006052] shrink-0" />
+            <span className="truncate">{file.name || "Document"}</span>
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 shrink-0 ml-1">
             {onPreview && (
               <button
                 type="button"
                 onClick={() => onPreview(file)}
-                className="text-emerald-800 hover:underline cursor-pointer font-medium"
+                className="text-[11px] font-semibold text-[#006052] hover:underline cursor-pointer"
               >
                 View
               </button>
@@ -522,7 +535,7 @@ export const KycRow = ({
               className="text-slate-400 hover:text-red-600 cursor-pointer ml-1"
               title="Remove file"
             >
-              ✕
+              <X className="h-3 w-3" />
             </button>
           </div>
         </div>

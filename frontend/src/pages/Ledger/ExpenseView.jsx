@@ -77,7 +77,10 @@ const ExpenseView = ({ onAddExpense, data }) => {
   const loanAmountTotal = customersList.reduce((sum, c) => sum + Number(c.loanAmount || 0), 0);
 
   const commissionExpenses = expenseData.filter(exp => exp.category?.toLowerCase().includes('commission'));
-  const partyCommissionTotal = commissionExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0) + customersList.reduce((sum, c) => sum + Number(c.referredByCommission || 0), 0);
+  const unlinkedCustomerCommissions = customersList
+    .filter(c => !commissionExpenses.some(e => (e.loanId && e.loanId === c.loanId) || (e.customerId && e.customerId === c.customerId)))
+    .reduce((sum, c) => sum + Number(c.referredByCommission || 0), 0);
+  const partyCommissionTotal = commissionExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0) + unlinkedCustomerCommissions;
 
   const chitExpenses = expenseData.filter(exp => exp.category?.toLowerCase().includes('chit'));
   const chitPaidTotal = chitExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
@@ -230,6 +233,7 @@ const ExpenseView = ({ onAddExpense, data }) => {
             className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 shadow-sm outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] transition-all"
           >
             <option value="All">All Categories</option>
+            <option value="Referral Commission">Referral Commission</option>
             <option value="Investor Withdrawal">Investor Withdrawal</option>
             <option value="Rent">Rent</option>
             <option value="Salary">Salary</option>
@@ -299,6 +303,8 @@ const ExpenseView = ({ onAddExpense, data }) => {
                         <span className={`inline-flex items-center w-fit rounded-md px-2 py-0.5 text-[11px] sm:text-[12px] font-bold shadow-sm border truncate max-w-full ${
                           exp.category === 'Investor Withdrawal'
                             ? 'bg-purple-100 text-purple-800 border-purple-200'
+                            : exp.category === 'Referral Commission'
+                            ? 'bg-blue-100 text-[#0F1E36] border-blue-200'
                             : 'bg-emerald-100 text-emerald-800 border-emerald-200/50'
                         }`}>
                           {exp.category}
@@ -306,6 +312,10 @@ const ExpenseView = ({ onAddExpense, data }) => {
                         {exp.investorName ? (
                           <span className="text-[11px] font-semibold text-slate-600 mt-1 truncate">
                             {exp.investorName}
+                          </span>
+                        ) : exp.referrerName ? (
+                          <span className="text-[11px] font-semibold text-[#006052] mt-0.5 truncate max-w-[200px]">
+                            Ref: {exp.referrerName} {exp.loanId && exp.loanId !== '—' ? `(${exp.loanId})` : ''}
                           </span>
                         ) : exp.remarks ? (
                           <span className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[180px]">
@@ -447,6 +457,36 @@ const ExpenseView = ({ onAddExpense, data }) => {
                 </div>
               )}
 
+              {/* Special Referral Commission Highlight */}
+              {(viewTransaction.category === 'Referral Commission' || viewTransaction.referrerName) && (
+                <div className="rounded-xl bg-blue-50/80 p-4 border border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#0F1E36]">Referral Commission Expense</span>
+                    <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full">Referral Payout</span>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-blue-200/60 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] font-medium text-slate-500">Referrer</span>
+                      <span className="text-[13px] font-bold text-slate-900">{viewTransaction.referrerName || "—"}</span>
+                    </div>
+                    {viewTransaction.customerName && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[12px] font-medium text-slate-500">Customer</span>
+                        <span className="text-[13px] font-semibold text-slate-700">
+                          {viewTransaction.customerName} {viewTransaction.customerId && viewTransaction.customerId !== '—' ? `(${viewTransaction.customerId})` : ''}
+                        </span>
+                      </div>
+                    )}
+                    {viewTransaction.loanId && viewTransaction.loanId !== '—' && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[12px] font-medium text-slate-500">Loan ID</span>
+                        <span className="text-[13px] font-mono font-bold text-[#006052]">{viewTransaction.loanId}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-y-5 gap-x-4">
                 <div>
                   <p className="text-[12px] font-medium text-slate-500 mb-1">Expense ID</p>
@@ -467,6 +507,8 @@ const ExpenseView = ({ onAddExpense, data }) => {
                       <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-semibold ${
                         viewTransaction.category === 'Investor Withdrawal'
                           ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                          : viewTransaction.category === 'Referral Commission'
+                          ? 'bg-blue-100 text-[#0F1E36] border border-blue-200'
                           : 'bg-slate-100 text-slate-600'
                       }`}>
                         {viewTransaction.category}

@@ -99,7 +99,8 @@ const ReviewTab = ({
   const {
     customer,
     vehicle,
-    guarantor,
+    guarantor = {},
+    referral = {},
     loan,
   } = form
 
@@ -115,6 +116,31 @@ const ReviewTab = ({
 
   const reducingBalance =
     loan.interestType === 'Reducing Balance'
+
+  const relationshipOption = loan.relationshipOption || 'none'
+  const hasGuarantor = relationshipOption === 'both' || relationshipOption === 'guarantor'
+  const hasReferral = relationshipOption === 'both' || relationshipOption === 'referral'
+
+  const formatPersonAddress = (person) => {
+    if (!person) return '—'
+    const parts = [person.area, person.landmark, person.address, person.pincode].filter(Boolean)
+    return parts.length > 0 ? parts.join(', ') : '—'
+  }
+
+  const formatPersonPhone = (person) => {
+    if (!person) return '—'
+    const p = person.phone || person.mobile
+    if (!p) return '—'
+    return `${person.countryCode || '+91'} ${p}`
+  }
+
+  const formatPersonAadhaar = (person) => {
+    if (!person) return '—'
+    const raw = person.aadhaarNumber || person.aadhaarNo
+    if (!raw) return '—'
+    const clean = String(raw).replace(/\D/g, '')
+    return clean.replace(/(\d{4})(?=\d)/g, '$1 ').trim() || '—'
+  }
 
   /* =======================================================
      DISPLAY TRANSLATIONS FOR STORED VALUES
@@ -262,60 +288,98 @@ const ReviewTab = ({
           </div>
         </Card>
 
-        {/* GUARANTOR */}
+        {/* GUARANTOR & REFERRAL */}
 
-        <Card title={t('review.guarantor')}>
-          {guarantor.required === 'Yes' ? (
-
+        {hasGuarantor && (
+          <Card title="Guarantor Details">
             <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
-
               <Row
-                label={t('review.name')}
-                value={dash(guarantor.name)}
+                label="Full Name"
+                value={dash(guarantor.fullName || guarantor.name)}
               />
-
               <Row
-                label={t('review.mobile')}
-                value={
-                  guarantor.mobile
-                    ? `${guarantor.countryCode || ''} ${guarantor.mobile}`
-                    : '—'
-                }
+                label="Mobile Number"
+                value={formatPersonPhone(guarantor)}
               />
-
               <Row
-                label={t('review.relationship')}
-                value={translateOption(
-                  'relationships',
-                  guarantor.relationship
-                )}
+                label="Aadhaar Number"
+                value={formatPersonAadhaar(guarantor)}
               />
-
               <Row
-                label={t('review.residence')}
-                value={translateOption(
-                  'residence',
-                  guarantor.residenceType
-                )}
+                label="Address"
+                value={formatPersonAddress(guarantor)}
               />
-
+              {(guarantor.aadhaarFile || (Array.isArray(guarantor.additionalDocs) && guarantor.additionalDocs.length > 0)) && (
+                <Row
+                  label="Documents Attached"
+                  value={`${(guarantor.aadhaarFile ? 1 : 0) + (guarantor.additionalDocs?.length || 0)} Document(s)`}
+                />
+              )}
             </div>
+          </Card>
+        )}
 
-          ) : (
-
-            <div className="flex items-center justify-between py-1">
-
-              <span className="text-xs text-slate-500">
-                {t('review.guarantorRequired')}
-              </span>
-
-              <span className="text-xs font-medium text-slate-800">
-                {t('common.no')}
-              </span>
-
+        {hasReferral && (
+          <Card title="Referral Details">
+            <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
+              <Row
+                label="Full Name"
+                value={dash(referral.fullName || referral.name)}
+              />
+              <Row
+                label="Mobile Number"
+                value={formatPersonPhone(referral)}
+              />
+              <Row
+                label="Aadhaar Number"
+                value={formatPersonAadhaar(referral)}
+              />
+              <Row
+                label="Address"
+                value={formatPersonAddress(referral)}
+              />
+              {(referral.aadhaarFile || (Array.isArray(referral.additionalDocs) && referral.additionalDocs.length > 0)) && (
+                <Row
+                  label="Documents Attached"
+                  value={`${(referral.aadhaarFile ? 1 : 0) + (referral.additionalDocs?.length || 0)} Document(s)`}
+                />
+              )}
+              {referral.commissionPercentage && (
+                <Row
+                  label="Commission (%)"
+                  value={`${referral.commissionPercentage}%`}
+                />
+              )}
+              {referral.commissionAmount && (
+                <Row
+                  label="Commission Amount"
+                  value={`₹${Number(referral.commissionAmount).toLocaleString("en-IN")}`}
+                />
+              )}
+              {(referral.commissionPercentage || referral.commissionAmount) && (
+                <Row
+                  label="Commission Payment"
+                  value={
+                    referral.payCommission
+                      ? `Paid on loan creation (${referral.paymentMode || "Cash"})`
+                      : "Pending (Pay Later)"
+                  }
+                />
+              )}
             </div>
-          )}
-        </Card>
+          </Card>
+        )}
+
+        {!hasGuarantor && !hasReferral && (
+          <Card title="Guarantor & Referral">
+            <div className="py-2">
+              <p className="text-xs font-semibold text-slate-700">No additional contacts</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                No guarantor or referral details are required for this loan.
+              </p>
+            </div>
+          </Card>
+        )}
 
       </div>
 

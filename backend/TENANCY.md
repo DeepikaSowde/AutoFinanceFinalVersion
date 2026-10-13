@@ -47,7 +47,8 @@ Tables read directly: users, customers, vehicles, loans, collections,
 investors, investor_transactions, expenses, incomes, categories,
 referral_commissions, reminders, loan_drafts, guarantor_referrals,
 reloan_rules, reloan_eligibility_checks, app_settings (`NOT NULL`, migration
-003).
+003), and guarantor_referral_links (created `NOT NULL` in migration 004; it
+records which register person guaranteed or referred which loan).
 
 Child tables — guarantors, rc_details, installments, payment_allocations,
 vehicle_events — have no column: they are only ever reached through their

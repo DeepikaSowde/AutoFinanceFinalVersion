@@ -493,8 +493,32 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     <div className="col-span-1 sm:col-span-2 border-t border-slate-100 pt-4 mt-1">
                       <FieldValue label="Full Address" value={[selectedLoanData.customer?.address, selectedLoanData.customer?.area, selectedLoanData.customer?.landmark, selectedLoanData.customer?.pincode].filter(Boolean).join(', ')} />
                     </div>
-                    <div className="col-span-1 sm:col-span-2 border-t border-slate-100 pt-4 mt-1">
-                      <FieldValue label="Referred By" value={selectedLoanData.loan?.referredBy} />
+                    <div className="col-span-1 sm:col-span-2 border-t border-slate-100 pt-4 mt-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FieldValue
+                        label="Referred By"
+                        value={
+                          selectedLoanData.referral?.fullName ||
+                          selectedLoanData.referral?.name ||
+                          selectedLoanData.loan?.referredBy ||
+                          selectedLoanData.customer?.referredBy
+                        }
+                      />
+                      {(selectedLoanData.referral?.referralId || selectedLoanData.referral?.id) && (
+                        <FieldValue
+                          label="Referral ID"
+                          value={selectedLoanData.referral.referralId || selectedLoanData.referral.id}
+                        />
+                      )}
+                      {selectedLoanData.referral?.commissionAmount && (
+                        <FieldValue
+                          label="Referral Commission"
+                          value={`₹${Number(selectedLoanData.referral.commissionAmount).toLocaleString('en-IN')}${
+                            selectedLoanData.referral.commissionPercentage
+                              ? ` (${selectedLoanData.referral.commissionPercentage}%)`
+                              : ''
+                          } — ${selectedLoanData.referral.payCommission ? 'Paid' : 'Pending'}`}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
