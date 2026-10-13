@@ -4,6 +4,7 @@
 // books a matching expense so it shows up in All Expenses and the ledger.
 
 import { query, withTransaction } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 import { addExpense } from "./expenseRepository.js";
 
 const roundMoney = (value) => {
@@ -37,14 +38,15 @@ const mapReferral = (row) => ({
 
 export const getReferrals = async () => {
   const result = await query(
-    "SELECT * FROM referral_commissions ORDER BY commission_date DESC NULLS LAST, pk DESC"
+    "SELECT * FROM referral_commissions WHERE tenant_id = $1 ORDER BY commission_date DESC NULLS LAST, pk DESC",
+    [currentTenantId()]
   );
 
   return result.rows.map(mapReferral);
 };
 
 export const getReferralById = async (referralId) => {
-  const result = await query("SELECT * FROM referral_commissions WHERE id = $1", [referralId]);
+  const result = await query("SELECT * FROM referral_commissions WHERE id = $1 AND tenant_id = $2", [referralId, currentTenantId()]);
 
   return result.rows[0] ? mapReferral(result.rows[0]) : null;
 };
@@ -68,8 +70,8 @@ export const addReferral = async (referral = {}) => {
     const result = await client.query(
       `INSERT INTO referral_commissions
         (id, agent_name, agent_type, customer_name, loan_number, amount, status,
-         commission_date, remarks)
-       VALUES ('', $1, $2, $3, $4, $5, 'Pending', $6, $7)
+         commission_date, remarks, tenant_id)
+       VALUES ('', $1, $2, $3, $4, $5, 'Pending', $6, $7, $8)
        RETURNING pk`,
       [
         agentName,
@@ -79,6 +81,7 @@ export const addReferral = async (referral = {}) => {
         roundMoney(referral.amount),
         referral.commissionDate || today(),
         referral.remarks || "",
+        currentTenantId(),
       ]
     );
 
@@ -124,15 +127,15 @@ export const markReferralPaid = async (referralId, payment = {}) => {
   await query(
     `UPDATE referral_commissions
      SET status = 'Paid', paid_date = $2, payment_mode = $3, expense_id = $4, updated_at = now()
-     WHERE id = $1`,
-    [referralId, paidDate, paymentMode, expense.id]
+     WHERE id = $1 AND tenant_id = $5`,
+    [referralId, paidDate, paymentMode, expense.id, currentTenantId()]
   );
 
   return getReferralById(referralId);
 };
 
 export const deleteReferral = async (referralId) => {
-  const result = await query("DELETE FROM referral_commissions WHERE id = $1", [referralId]);
+  const result = await query("DELETE FROM referral_commissions WHERE id = $1 AND tenant_id = $2", [referralId, currentTenantId()]);
 
   return result.rowCount > 0;
 };

@@ -5,6 +5,7 @@
 // filtered and summed travels in the details jsonb column.
 
 import { query, withTransaction } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 
 const roundMoney = (value) => {
   const number = Number(value);
@@ -76,13 +77,13 @@ const toValues = (expense) => [
 ];
 
 export const getExpenses = async () => {
-  const result = await query("SELECT * FROM expenses ORDER BY pk DESC");
+  const result = await query("SELECT * FROM expenses WHERE tenant_id = $1 ORDER BY pk DESC", [currentTenantId()]);
 
   return result.rows.map(mapExpense);
 };
 
 export const getExpenseById = async (expenseId) => {
-  const result = await query("SELECT * FROM expenses WHERE id = $1", [expenseId]);
+  const result = await query("SELECT * FROM expenses WHERE id = $1 AND tenant_id = $2", [expenseId, currentTenantId()]);
 
   return result.rows[0] ? mapExpense(result.rows[0]) : null;
 };
@@ -106,10 +107,10 @@ export const addExpense = async (expense = {}) => {
     const result = await client.query(
       `INSERT INTO expenses
         (id, amount, status, category, sub_category, expense_date, payment_mode, paid_by,
-         vendor, reference, description, remarks, details, created_by)
-       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         vendor, reference, description, remarks, details, created_by, tenant_id)
+       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING pk`,
-      toValues(expense)
+      [...toValues(expense), currentTenantId()]
     );
 
     const pk = result.rows[0].pk;
@@ -135,15 +136,15 @@ export const updateExpense = async (expenseId, updates = {}) => {
       amount = $2, status = $3, category = $4, sub_category = $5, expense_date = $6,
       payment_mode = $7, paid_by = $8, vendor = $9, reference = $10, description = $11,
       remarks = $12, details = $13, created_by = $14, updated_at = now()
-     WHERE id = $1`,
-    [expenseId, ...toValues({ ...existing, ...updates })]
+     WHERE id = $1 AND tenant_id = $15`,
+    [expenseId, ...toValues({ ...existing, ...updates }), currentTenantId()]
   );
 
   return getExpenseById(expenseId);
 };
 
 export const deleteExpense = async (expenseId) => {
-  const result = await query("DELETE FROM expenses WHERE id = $1", [expenseId]);
+  const result = await query("DELETE FROM expenses WHERE id = $1 AND tenant_id = $2", [expenseId, currentTenantId()]);
 
   return result.rowCount > 0;
 };

@@ -20,6 +20,10 @@ types.setTypeParser(types.builtins.NUMERIC, (value) =>
   value === null ? null : Number(value)
 );
 
+// DATE columns (tenant valid_until, payment periods) come back as the plain
+// "YYYY-MM-DD" text they hold, not a timezone-shifted Date.
+types.setTypeParser(types.builtins.DATE, (value) => value);
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const rawConnectionString = process.env.DATABASE_URL;

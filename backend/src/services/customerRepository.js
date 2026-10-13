@@ -5,6 +5,7 @@
 // React app consumes, so UI code needs no reshaping.
 
 import { query, withTransaction } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 import { calculateLoan } from "./loanCalculator.js";
 import { generateRepaymentSchedule } from "./repaymentSchedule.js";
 import { fundLoanInTransaction } from "./investorRepository.js";
@@ -168,7 +169,7 @@ const mapLoan = (row, installmentRows, allocationRows, previousLoanRow) => {
 ========================================================= */
 
 export const getCustomerRow = async (customerId) => {
-  const result = await query("SELECT * FROM customers WHERE id = $1", [customerId]);
+  const result = await query("SELECT * FROM customers WHERE id = $1 AND tenant_id = $2", [customerId, currentTenantId()]);
 
   return result.rows[0];
 };
@@ -263,7 +264,7 @@ export const buildCustomerRecord = async (customerRow) => {
 ========================================================= */
 
 export const getCustomers = async () => {
-  const result = await query("SELECT * FROM customers ORDER BY pk ASC");
+  const result = await query("SELECT * FROM customers WHERE tenant_id = $1 ORDER BY pk ASC", [currentTenantId()]);
 
   return Promise.all(result.rows.map(buildCustomerRecord));
 };
@@ -300,8 +301,8 @@ const insertVehicle = async (client, customerPk, vehicle = {}) => {
   const result = await client.query(
     `INSERT INTO vehicles
       (id, customer_pk, vehicle_type, brand, model, variant, colour, manufacturing_year,
-       fuel_type, vehicle_value, photo, status)
-     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE')
+       fuel_type, vehicle_value, photo, status, tenant_id)
+     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE', $11)
      RETURNING pk`,
     [
       customerPk,
@@ -314,6 +315,7 @@ const insertVehicle = async (client, customerPk, vehicle = {}) => {
       vehicle.fuelType || "",
       Number(vehicle.vehicleValue) || 0,
       JSON.stringify(vehicle.photo || {}),
+      currentTenantId(),
     ]
   );
 
@@ -440,9 +442,9 @@ export const insertLoan = async (client, customerPk, vehiclePk, loan = {}, optio
       (id, loan_number, customer_pk, vehicle_pk, previous_loan_pk, is_primary,
        vehicle_amount, down_payment, loan_amount, interest_rate, interest_type,
        repayment_method, repayment_frequency, tenure, tenure_unit, first_due_date,
-       calculation, charges, collection, funding, remarks, status)
+       calculation, charges, collection, funding, remarks, status, tenant_id)
      VALUES ('', '', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-             $15, $16, $17, $18, $19, $20)
+             $15, $16, $17, $18, $19, $20, $21)
      RETURNING pk`,
     [
       customerPk,
@@ -476,6 +478,7 @@ export const insertLoan = async (client, customerPk, vehiclePk, loan = {}, optio
       JSON.stringify(loan.funding || {}),
       loan.remarks || "",
       loan.status || "Active",
+      currentTenantId(),
     ]
   );
 
@@ -507,8 +510,8 @@ const fundIfRequested = (client, loanPk, loan = {}) =>
 export const createCustomer = async (payload = {}) => {
   const customerId = await withTransaction(async (client) => {
     const result = await client.query(
-      `INSERT INTO customers (id, customer_number, status, personal, kyc, documents, photo)
-       VALUES ('', '', $1, $2, $3, $4, $5)
+      `INSERT INTO customers (id, customer_number, status, personal, kyc, documents, photo, tenant_id)
+       VALUES ('', '', $1, $2, $3, $4, $5, $6)
        RETURNING pk`,
       [
         payload.customer?.status || "Active",
@@ -516,6 +519,7 @@ export const createCustomer = async (payload = {}) => {
         JSON.stringify(payload.customer?.kyc || {}),
         JSON.stringify(payload.customer?.documents || emptyDocuments()),
         JSON.stringify(payload.customer?.photo || emptyPhoto()),
+        currentTenantId(),
       ]
     );
 
@@ -615,13 +619,14 @@ export const updateCustomer = async (customerId, payload = {}) => {
       await client.query(
         `UPDATE loans SET
           remarks = $2, status = $3, funding = $4, charges = $5, updated_at = now()
-         WHERE id = $1`,
+         WHERE id = $1 AND tenant_id = $6`,
         [
           existing.loan.id,
           payload.loan.remarks ?? existing.loan.remarks ?? "",
           payload.loan.status || existing.loan.status,
           JSON.stringify({ ...existing.loan.funding, ...(payload.loan.funding || {}) }),
           JSON.stringify({ ...existing.loan.charges, ...(payload.loan.charges || {}) }),
+          currentTenantId(),
         ]
       );
     }
@@ -631,7 +636,7 @@ export const updateCustomer = async (customerId, payload = {}) => {
 };
 
 export const deleteCustomer = async (customerId) => {
-  const result = await query("DELETE FROM customers WHERE id = $1", [customerId]);
+  const result = await query("DELETE FROM customers WHERE id = $1 AND tenant_id = $2", [customerId, currentTenantId()]);
 
   return result.rowCount > 0;
 };

@@ -5,6 +5,7 @@
 // beyond the columns that get filtered/summed.
 
 import { query, withTransaction } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 
 const roundMoney = (value) => {
   const number = Number(value);
@@ -73,13 +74,13 @@ const toValues = (income) => [
 ];
 
 export const getIncomes = async () => {
-  const result = await query("SELECT * FROM incomes ORDER BY pk DESC");
+  const result = await query("SELECT * FROM incomes WHERE tenant_id = $1 ORDER BY pk DESC", [currentTenantId()]);
 
   return result.rows.map(mapIncome);
 };
 
 export const getIncomeById = async (incomeId) => {
-  const result = await query("SELECT * FROM incomes WHERE id = $1", [incomeId]);
+  const result = await query("SELECT * FROM incomes WHERE id = $1 AND tenant_id = $2", [incomeId, currentTenantId()]);
 
   return result.rows[0] ? mapIncome(result.rows[0]) : null;
 };
@@ -103,10 +104,10 @@ export const addIncome = async (income = {}) => {
     const result = await client.query(
       `INSERT INTO incomes
         (id, amount, status, category, sub_category, income_date, payment_mode, received_from,
-         reference, description, remarks, details, created_by)
-       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         reference, description, remarks, details, created_by, tenant_id)
+       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING pk`,
-      toValues(income)
+      [...toValues(income), currentTenantId()]
     );
 
     const pk = result.rows[0].pk;
@@ -132,15 +133,15 @@ export const updateIncome = async (incomeId, updates = {}) => {
       amount = $2, status = $3, category = $4, sub_category = $5, income_date = $6,
       payment_mode = $7, received_from = $8, reference = $9, description = $10,
       remarks = $11, details = $12, created_by = $13, updated_at = now()
-     WHERE id = $1`,
-    [incomeId, ...toValues({ ...existing, ...updates })]
+     WHERE id = $1 AND tenant_id = $14`,
+    [incomeId, ...toValues({ ...existing, ...updates }), currentTenantId()]
   );
 
   return getIncomeById(incomeId);
 };
 
 export const deleteIncome = async (incomeId) => {
-  const result = await query("DELETE FROM incomes WHERE id = $1", [incomeId]);
+  const result = await query("DELETE FROM incomes WHERE id = $1 AND tenant_id = $2", [incomeId, currentTenantId()]);
 
   return result.rowCount > 0;
 };

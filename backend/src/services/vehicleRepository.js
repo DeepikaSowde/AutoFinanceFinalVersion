@@ -5,6 +5,7 @@
 // now applied server-side where they cannot be bypassed.
 
 import { query, withTransaction } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 import { buildCustomerRecord, buildLoan, mapVehicle } from "./customerRepository.js";
 
 export const VEHICLE_STATUS = {
@@ -30,7 +31,7 @@ class TransitionError extends Error {
 }
 
 const getVehicleRow = async (vehicleId) => {
-  const result = await query("SELECT * FROM vehicles WHERE id = $1", [vehicleId]);
+  const result = await query("SELECT * FROM vehicles WHERE id = $1 AND tenant_id = $2", [vehicleId, currentTenantId()]);
 
   return result.rows[0];
 };
@@ -74,7 +75,7 @@ const decorateVehicle = async (vehicleRow) => {
 };
 
 export const getVehicles = async () => {
-  const result = await query("SELECT * FROM vehicles ORDER BY pk ASC");
+  const result = await query("SELECT * FROM vehicles WHERE tenant_id = $1 ORDER BY pk ASC", [currentTenantId()]);
 
   return Promise.all(result.rows.map(decorateVehicle));
 };
@@ -86,7 +87,7 @@ export const getVehicleById = async (vehicleId) => {
 };
 
 export const getVehiclesByStatus = async (status) => {
-  const result = await query("SELECT * FROM vehicles WHERE status = $1 ORDER BY pk ASC", [status]);
+  const result = await query("SELECT * FROM vehicles WHERE status = $1 AND tenant_id = $2 ORDER BY pk ASC", [status, currentTenantId()]);
 
   return Promise.all(result.rows.map(decorateVehicle));
 };
@@ -362,7 +363,7 @@ export const updateSeizureDetails = async (vehicleId, details = {}, performedBy)
 };
 
 export const getVehicleStatusCounts = async () => {
-  const result = await query("SELECT status, COUNT(*)::int AS count FROM vehicles GROUP BY status");
+  const result = await query("SELECT status, COUNT(*)::int AS count FROM vehicles WHERE tenant_id = $1 GROUP BY status", [currentTenantId()]);
 
   const counts = { total: 0, active: 0, seized: 0, pendingSale: 0, released: 0, sold: 0 };
 

@@ -5,6 +5,7 @@
 // than stored, so the numbers cannot drift out of sync.
 
 import { query, withTransaction } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 
 const roundMoney = (value) => {
   const number = Number(value);
@@ -109,7 +110,8 @@ const mapInvestor = (row) => {
 
 export const getInvestors = async () => {
   const result = await query(
-    `${SELECT_INVESTORS_WITH_TOTALS} GROUP BY investors.pk ORDER BY investors.pk ASC`
+    `${SELECT_INVESTORS_WITH_TOTALS} WHERE investors.tenant_id = $1 GROUP BY investors.pk ORDER BY investors.pk ASC`,
+    [currentTenantId()]
   );
 
   return result.rows.map(mapInvestor);
@@ -117,8 +119,8 @@ export const getInvestors = async () => {
 
 export const getInvestorById = async (investorId) => {
   const result = await query(
-    `${SELECT_INVESTORS_WITH_TOTALS} WHERE investors.id = $1 GROUP BY investors.pk`,
-    [investorId]
+    `${SELECT_INVESTORS_WITH_TOTALS} WHERE investors.id = $1 AND investors.tenant_id = $2 GROUP BY investors.pk`,
+    [investorId, currentTenantId()]
   );
 
   return result.rows[0] ? mapInvestor(result.rows[0]) : null;
@@ -126,14 +128,17 @@ export const getInvestorById = async (investorId) => {
 
 export const getInvestorTransactions = async (investorId) => {
   if (!investorId) {
-    const result = await query(`${SELECT_TRANSACTIONS} ORDER BY investor_transactions.pk ASC`);
+    const result = await query(
+      `${SELECT_TRANSACTIONS} WHERE investor_transactions.tenant_id = $1 ORDER BY investor_transactions.pk ASC`,
+      [currentTenantId()]
+    );
 
     return result.rows.map(mapTransaction);
   }
 
   const result = await query(
-    `${SELECT_TRANSACTIONS} WHERE investors.id = $1 ORDER BY investor_transactions.pk ASC`,
-    [investorId]
+    `${SELECT_TRANSACTIONS} WHERE investors.id = $1 AND investor_transactions.tenant_id = $2 ORDER BY investor_transactions.pk ASC`,
+    [investorId, currentTenantId()]
   );
 
   return result.rows.map(mapTransaction);
@@ -150,8 +155,10 @@ export const getFundingSummary = async (client) => {
        COALESCE(SUM(amount) FILTER (WHERE type = 'Investment'), 0) AS invested,
        COALESCE(SUM(amount) FILTER (WHERE type = 'Loan Allocation'), 0) AS allocated,
        COALESCE(SUM(amount) FILTER (WHERE type = 'Withdrawal'), 0) AS withdrawn,
-       (SELECT COUNT(*)::int FROM investors) AS investor_count
-     FROM investor_transactions`
+       (SELECT COUNT(*)::int FROM investors WHERE tenant_id = $1) AS investor_count
+     FROM investor_transactions
+     WHERE tenant_id = $1`,
+    [currentTenantId()]
   );
 
   const row = result.rows[0];
@@ -159,7 +166,7 @@ export const getFundingSummary = async (client) => {
   const distributedToLoans = roundMoney(row.allocated);
   const withdrawn = roundMoney(row.withdrawn);
 
-  const freeze = await run("SELECT value FROM app_settings WHERE key = 'opening_freeze'");
+  const freeze = await run("SELECT value FROM app_settings WHERE key = 'opening_freeze' AND tenant_id = $1", [currentTenantId()]);
 
   return {
     totalInvestors: row.investor_count,
@@ -236,8 +243,8 @@ const insertTransaction = async (
   const result = await client.query(
     `INSERT INTO investor_transactions
       (id, investor_pk, type, amount, date, reference, investment_mode, notes, loan_pk, loan_number,
-       kind, payment_mode, reason)
-     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       kind, payment_mode, reason, tenant_id)
+     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING pk`,
     [
       investorPk,
@@ -252,6 +259,7 @@ const insertTransaction = async (
       kind,
       paymentMode,
       reason,
+      currentTenantId(),
     ]
   );
 
@@ -276,8 +284,8 @@ export const createInvestor = async (input = {}) => {
     const result = await client.query(
       `INSERT INTO investors
         (id, name, mobile_number, email, address, city, state, pincode, investor_type,
-         pan, bank_details, investment, status, remarks)
-       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Active', $12)
+         pan, bank_details, investment, status, remarks, tenant_id)
+       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Active', $12, $13)
        RETURNING pk`,
       [
         String(input.name).trim(),
@@ -301,6 +309,7 @@ export const createInvestor = async (input = {}) => {
           investmentMode: input.investment.investmentMode || "Bank Transfer",
         }),
         String(input.remarks || "").trim(),
+        currentTenantId(),
       ]
     );
 
@@ -336,7 +345,7 @@ export const addInvestorInvestment = async ({
 } = {}) => {
   const value = Number(amount);
 
-  const investorResult = await query("SELECT pk FROM investors WHERE id = $1", [investorId]);
+  const investorResult = await query("SELECT pk FROM investors WHERE id = $1 AND tenant_id = $2", [investorId, currentTenantId()]);
   const investorRow = investorResult.rows[0];
 
   if (!investorRow) {
@@ -400,7 +409,9 @@ export const createInvestorEntry = async (input = {}) => {
 
   const investorId = await withTransaction(async (client) => {
     if (origin === "Opening") {
-      const frozen = await client.query("SELECT value FROM app_settings WHERE key = 'opening_freeze'");
+      const frozen = await client.query("SELECT value FROM app_settings WHERE key = 'opening_freeze' AND tenant_id = $1", [
+        currentTenantId(),
+      ]);
 
       if (frozen.rows[0]?.value?.frozen) {
         throw new InvestorError("Opening Balance Setup is frozen.", 409);
@@ -409,8 +420,8 @@ export const createInvestorEntry = async (input = {}) => {
 
     const result = await client.query(
       `INSERT INTO investors
-        (id, name, mobile_number, email, pan, bank_details, investment, status)
-       VALUES ('', $1, $2, $3, $4, $5, $6, 'Active')
+        (id, name, mobile_number, email, pan, bank_details, investment, status, tenant_id)
+       VALUES ('', $1, $2, $3, $4, $5, $6, 'Active', $7)
        RETURNING pk`,
       [
         name,
@@ -427,6 +438,7 @@ export const createInvestorEntry = async (input = {}) => {
           initialAmount: roundMoney(amount),
           investmentDate: input.date,
         }),
+        currentTenantId(),
       ]
     );
 
@@ -475,11 +487,11 @@ export const debitInvestor = async ({
   }
 
   const transactionId = await withTransaction(async (client) => {
-    await client.query("SELECT pg_advisory_xact_lock(hashtext('investment_pool'))");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('investment_pool:' || $1::text))", [currentTenantId()]);
 
     const result = await client.query(
-      `${SELECT_INVESTORS_WITH_TOTALS} WHERE investors.id = $1 GROUP BY investors.pk`,
-      [investorId]
+      `${SELECT_INVESTORS_WITH_TOTALS} WHERE investors.id = $1 AND investors.tenant_id = $2 GROUP BY investors.pk`,
+      [investorId, currentTenantId()]
     );
 
     if (!result.rows[0]) {
@@ -533,11 +545,14 @@ export const freezeOpeningBalances = async () => {
   const freeze = { frozen: true, date: new Date().toISOString().slice(0, 10) };
 
   await withTransaction(async (client) => {
-    await client.query("UPDATE investor_transactions SET locked = true WHERE kind = 'Opening Balance'");
     await client.query(
-      `INSERT INTO app_settings (key, value) VALUES ('opening_freeze', $1)
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-      [JSON.stringify(freeze)]
+      "UPDATE investor_transactions SET locked = true WHERE kind = 'Opening Balance' AND tenant_id = $1",
+      [currentTenantId()]
+    );
+    await client.query(
+      `INSERT INTO app_settings (tenant_id, key, value) VALUES ($2, 'opening_freeze', $1)
+       ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify(freeze), currentTenantId()]
     );
   });
 
@@ -571,11 +586,11 @@ export const fundLoanInTransaction = async (
   }
 
   // Serialises every pool allocation for the length of this transaction.
-  await client.query("SELECT pg_advisory_xact_lock(hashtext('investment_pool'))");
+  await client.query("SELECT pg_advisory_xact_lock(hashtext('investment_pool:' || $1::text))", [currentTenantId()]);
 
   const loanResult = await client.query(
-    "SELECT * FROM loans WHERE pk = $1 OR id = $2 OR loan_number = $3",
-    [loanPk ?? -1, loanId || "", loanNumber || ""]
+    "SELECT * FROM loans WHERE (pk = $1 OR id = $2 OR loan_number = $3) AND tenant_id = $4",
+    [loanPk ?? -1, loanId || "", loanNumber || "", currentTenantId()]
   );
 
   const loanRow = loanResult.rows[0];

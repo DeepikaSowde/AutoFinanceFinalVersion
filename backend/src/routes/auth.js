@@ -11,6 +11,8 @@ import {
   updateUser,
 } from "../services/auth.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
+import { loadTenant } from "../middleware/tenant.js";
+import { getTenantAccess } from "../services/tenantAccess.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
 export const authRouter = Router();
@@ -24,6 +26,10 @@ authRouter.post(
 
     if (!session) {
       return res.status(401).json({ error: "Invalid username or password." });
+    }
+
+    if (session.blocked) {
+      return res.status(403).json({ error: session.blocked.message, code: session.blocked.code });
     }
 
     res.json(session);
@@ -42,9 +48,22 @@ authRouter.post(
   })
 );
 
-authRouter.get("/me", requireAuth, (req, res) => {
-  res.json({ user: req.user });
-});
+// Works even when the lender is suspended or expired, so the app can say why.
+authRouter.get(
+  "/me",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const tenant = await getTenantAccess(req.user.tenantId);
+
+    res.json({
+      user: req.user,
+      tenant: tenant
+        ? { name: tenant.name, status: tenant.blocked ? (tenant.status === "suspended" ? "suspended" : "expired") : tenant.status, valid_until: tenant.validUntil }
+        : null,
+      features: tenant?.features ?? [],
+    });
+  })
+);
 
 /* =========================================================
    USER MANAGEMENT (admin-only)
@@ -53,6 +72,7 @@ authRouter.get("/me", requireAuth, (req, res) => {
 authRouter.get(
   "/users",
   requireAuth,
+  loadTenant,
   requireRole("admin"),
   asyncHandler(async (req, res) => {
     res.json(await getUsers());
@@ -62,6 +82,7 @@ authRouter.get(
 authRouter.post(
   "/users",
   requireAuth,
+  loadTenant,
   requireRole("admin"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await createUser(req.body || {}));
@@ -71,6 +92,7 @@ authRouter.post(
 authRouter.put(
   "/users/:userId",
   requireAuth,
+  loadTenant,
   requireRole("admin"),
   asyncHandler(async (req, res) => {
     const user = await updateUser(req.params.userId, req.body || {}, req.user.userId);
@@ -86,6 +108,7 @@ authRouter.put(
 authRouter.delete(
   "/users/:userId",
   requireAuth,
+  loadTenant,
   requireRole("admin"),
   asyncHandler(async (req, res) => {
     if (!(await deleteUser(req.params.userId, req.user.userId))) {

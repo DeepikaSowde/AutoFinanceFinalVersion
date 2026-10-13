@@ -6,6 +6,7 @@
 // write-once record of each check.
 
 import { query, withTransaction } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 
 const pad = (number, length = 4) => String(number).padStart(length, "0");
 
@@ -23,7 +24,7 @@ export const DEFAULT_RELOAN_RULES = {
 };
 
 export const getReLoanRules = async () => {
-  const result = await query("SELECT rules FROM reloan_rules WHERE pk = 1");
+  const result = await query("SELECT rules FROM reloan_rules WHERE tenant_id = $1", [currentTenantId()]);
 
   return { ...DEFAULT_RELOAN_RULES, ...(result.rows[0]?.rules ?? {}) };
 };
@@ -32,10 +33,10 @@ export const saveReLoanRules = async (rules = {}) => {
   const merged = { ...(await getReLoanRules()), ...rules };
 
   await query(
-    `INSERT INTO reloan_rules (pk, rules, updated_at)
-     VALUES (1, $1, now())
-     ON CONFLICT (pk) DO UPDATE SET rules = EXCLUDED.rules, updated_at = now()`,
-    [JSON.stringify(merged)]
+    `INSERT INTO reloan_rules (tenant_id, rules, updated_at)
+     VALUES ($2, $1, now())
+     ON CONFLICT (tenant_id) DO UPDATE SET rules = EXCLUDED.rules, updated_at = now()`,
+    [JSON.stringify(merged), currentTenantId()]
   );
 
   return merged;
@@ -64,10 +65,13 @@ const SELECT_CHECKS = `
 export const getEligibilityChecks = async (loanId) => {
   const result = loanId
     ? await query(
-        `${SELECT_CHECKS} WHERE loans.id = $1 ORDER BY reloan_eligibility_checks.pk DESC`,
-        [loanId]
+        `${SELECT_CHECKS} WHERE loans.id = $1 AND reloan_eligibility_checks.tenant_id = $2 ORDER BY reloan_eligibility_checks.pk DESC`,
+        [loanId, currentTenantId()]
       )
-    : await query(`${SELECT_CHECKS} ORDER BY reloan_eligibility_checks.pk DESC`);
+    : await query(
+        `${SELECT_CHECKS} WHERE reloan_eligibility_checks.tenant_id = $1 ORDER BY reloan_eligibility_checks.pk DESC`,
+        [currentTenantId()]
+      );
 
   return result.rows.map(mapCheck);
 };
@@ -76,17 +80,17 @@ export const saveEligibilityCheck = async (result = {}) => {
   const checkId = await withTransaction(async (client) => {
     const [customerResult, loanResult] = await Promise.all([
       result.customerId
-        ? client.query("SELECT pk FROM customers WHERE id = $1", [result.customerId])
+        ? client.query("SELECT pk FROM customers WHERE id = $1 AND tenant_id = $2", [result.customerId, currentTenantId()])
         : Promise.resolve({ rows: [] }),
       result.loanId
-        ? client.query("SELECT pk FROM loans WHERE id = $1", [result.loanId])
+        ? client.query("SELECT pk FROM loans WHERE id = $1 AND tenant_id = $2", [result.loanId, currentTenantId()])
         : Promise.resolve({ rows: [] }),
     ]);
 
     const insert = await client.query(
       `INSERT INTO reloan_eligibility_checks
-        (id, customer_pk, loan_pk, eligible, status, result, checked_at)
-       VALUES ('', $1, $2, $3, $4, $5, COALESCE($6::timestamptz, now()))
+        (id, customer_pk, loan_pk, eligible, status, result, checked_at, tenant_id)
+       VALUES ('', $1, $2, $3, $4, $5, COALESCE($6::timestamptz, now()), $7)
        RETURNING pk`,
       [
         customerResult.rows[0]?.pk ?? null,
@@ -95,6 +99,7 @@ export const saveEligibilityCheck = async (result = {}) => {
         result.status || "NOT_ELIGIBLE",
         JSON.stringify(result),
         result.checkedAt || null,
+        currentTenantId(),
       ]
     );
 

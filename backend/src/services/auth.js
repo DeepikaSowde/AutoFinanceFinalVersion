@@ -7,6 +7,8 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 import { query } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
+import { getTenantAccess } from "./tenantAccess.js";
 import { DEFAULT_STAFF_PERMISSIONS, normalizePermissions } from "./permissions.js";
 
 const SESSION_TTL_HOURS = 12;
@@ -14,13 +16,13 @@ const SESSION_TTL_HOURS = 12;
 const hashPassword = (password, salt) =>
   scryptSync(password, salt, 64).toString("hex");
 
-const createPasswordRecord = (password) => {
+export const createPasswordRecord = (password) => {
   const salt = randomBytes(16).toString("hex");
 
   return { salt, hash: hashPassword(password, salt) };
 };
 
-const verifyPassword = (password, salt, expectedHash) => {
+export const verifyPassword = (password, salt, expectedHash) => {
   const actual = Buffer.from(hashPassword(password, salt), "hex");
   const expected = Buffer.from(expectedHash, "hex");
 
@@ -52,8 +54,8 @@ export const seedUsers = async () => {
     const { salt, hash } = createPasswordRecord(user.password);
 
     await query(
-      `INSERT INTO users (id, username, password_hash, password_salt, name, role, permissions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO users (id, username, password_hash, password_salt, name, role, permissions, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT min(id) FROM tenants))
        ON CONFLICT (username) DO NOTHING`,
       [
         user.id,
@@ -78,6 +80,7 @@ const toPublicUser = (row) => ({
   name: row.name,
   role: row.role,
   permissions: permissionsFor(row),
+  tenantId: row.tenant_id,
 });
 
 export const login = async (username, password) => {
@@ -88,6 +91,12 @@ export const login = async (username, password) => {
 
   if (!row || !verifyPassword(String(password || ""), row.password_salt, row.password_hash)) {
     return null;
+  }
+
+  const tenant = await getTenantAccess(row.tenant_id);
+
+  if (!tenant || tenant.blocked) {
+    return { blocked: tenant?.blocked ?? { code: "TENANT_NOT_FOUND", message: "Your account is not linked to a lender." } };
   }
 
   const token = randomBytes(32).toString("hex");
@@ -132,7 +141,9 @@ const checkPasswordLength = (password) => {
 };
 
 const countAdmins = async () => {
-  const result = await query("SELECT COUNT(*)::int AS count FROM users WHERE role = 'admin'");
+  const result = await query("SELECT COUNT(*)::int AS count FROM users WHERE role = 'admin' AND tenant_id = $1", [
+    currentTenantId(),
+  ]);
 
   return result.rows[0].count;
 };
@@ -147,7 +158,7 @@ const toManagedUser = (row) => ({
 });
 
 export const getUsers = async () => {
-  const result = await query("SELECT * FROM users ORDER BY created_at ASC");
+  const result = await query("SELECT * FROM users WHERE tenant_id = $1 ORDER BY created_at ASC", [currentTenantId()]);
 
   return result.rows.map(toManagedUser);
 };
@@ -181,10 +192,10 @@ export const createUser = async ({ username, password, name, role, permissions }
   const id = `${cleanRole.toUpperCase()}-${pad(pkResult.rows[0].max + 1)}`;
 
   const saved = await query(
-    `INSERT INTO users (id, username, password_hash, password_salt, name, role, permissions)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO users (id, username, password_hash, password_salt, name, role, permissions, tenant_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [id, cleanUsername, hash, salt, cleanName, cleanRole, cleanPermissions]
+    [id, cleanUsername, hash, salt, cleanName, cleanRole, cleanPermissions, currentTenantId()]
   );
 
   return toManagedUser(saved.rows[0]);
@@ -195,7 +206,7 @@ export const createUser = async ({ username, password, name, role, permissions }
  * out of the payload keep their current value.
  */
 export const updateUser = async (userId, updates = {}, requestingUserId) => {
-  const result = await query("SELECT * FROM users WHERE id = $1", [userId]);
+  const result = await query("SELECT * FROM users WHERE id = $1 AND tenant_id = $2", [userId, currentTenantId()]);
   const row = result.rows[0];
 
   if (!row) {
@@ -239,9 +250,9 @@ export const updateUser = async (userId, updates = {}, requestingUserId) => {
   const saved = await query(
     `UPDATE users
      SET name = $2, role = $3, permissions = $4, password_salt = $5, password_hash = $6
-     WHERE id = $1
+     WHERE id = $1 AND tenant_id = $7
      RETURNING *`,
-    [userId, name, role, permissions, salt, hash]
+    [userId, name, role, permissions, salt, hash, currentTenantId()]
   );
 
   // A reset password signs that user out of every other session.
@@ -257,7 +268,7 @@ export const deleteUser = async (userId, requestingUserId) => {
     throw httpError("You can't remove your own account while signed in.");
   }
 
-  const target = await query("SELECT * FROM users WHERE id = $1", [userId]);
+  const target = await query("SELECT * FROM users WHERE id = $1 AND tenant_id = $2", [userId, currentTenantId()]);
 
   if (!target.rows[0]) {
     return false;
@@ -267,7 +278,7 @@ export const deleteUser = async (userId, requestingUserId) => {
     throw httpError("At least one admin account must remain.");
   }
 
-  const result = await query("DELETE FROM users WHERE id = $1", [userId]);
+  const result = await query("DELETE FROM users WHERE id = $1 AND tenant_id = $2", [userId, currentTenantId()]);
 
   return result.rowCount > 0;
 };
