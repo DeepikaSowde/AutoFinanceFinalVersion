@@ -10,6 +10,7 @@
 // still be cleared, and no new collection is ever left Pending.
 
 import { query, withTransaction } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 import { buildLoan, getCustomerRow } from "./customerRepository.js";
 import {
   applyAllocation,
@@ -117,13 +118,16 @@ const SELECT_COLLECTIONS = `
 `;
 
 export const getCollections = async () => {
-  const result = await query(`${SELECT_COLLECTIONS} ORDER BY collections.pk DESC`);
+  const result = await query(`${SELECT_COLLECTIONS} WHERE collections.tenant_id = $1 ORDER BY collections.pk DESC`, [currentTenantId()]);
 
   return result.rows.map(mapCollection);
 };
 
 export const getCollectionById = async (collectionId) => {
-  const result = await query(`${SELECT_COLLECTIONS} WHERE collections.id = $1`, [collectionId]);
+  const result = await query(`${SELECT_COLLECTIONS} WHERE collections.id = $1 AND collections.tenant_id = $2`, [
+    collectionId,
+    currentTenantId(),
+  ]);
 
   return result.rows[0] ? mapCollection(result.rows[0]) : null;
 };
@@ -138,7 +142,7 @@ export const createCollection = async (payload = {}, submittedBy) => {
       return null;
     }
 
-    const existing = await query("SELECT id FROM collections WHERE client_ref = $1", [clientRef]);
+    const existing = await query("SELECT id FROM collections WHERE client_ref = $1 AND tenant_id = $2", [clientRef, currentTenantId()]);
 
     return existing.rows[0] ? getCollectionById(existing.rows[0].id) : null;
   };
@@ -152,7 +156,7 @@ export const createCollection = async (payload = {}, submittedBy) => {
   const [customerRow, loanResult] = await Promise.all([
     payload.customerId ? getCustomerRow(payload.customerId) : Promise.resolve(null),
     payload.loanId
-      ? query("SELECT * FROM loans WHERE id = $1", [payload.loanId])
+      ? query("SELECT * FROM loans WHERE id = $1 AND tenant_id = $2", [payload.loanId, currentTenantId()])
       : Promise.resolve({ rows: [] }),
   ]);
 
@@ -176,8 +180,8 @@ export const createCollection = async (payload = {}, submittedBy) => {
         `INSERT INTO collections
           (id, customer_pk, loan_pk, status, amount, due_amount, penalty_amount, total_payable,
            payment_type, pay_mode, receipt_number, due_date, installment_number,
-           staff_name, location, remarks, overdue_days, grace_days, collected_date, client_ref)
-         VALUES ('', $1, $2, 'Pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+           staff_name, location, remarks, overdue_days, grace_days, collected_date, client_ref, tenant_id)
+         VALUES ('', $1, $2, 'Pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
          RETURNING pk`,
         [
           customerRow?.pk ?? loanRow.customer_pk,
@@ -198,6 +202,7 @@ export const createCollection = async (payload = {}, submittedBy) => {
           Number(payload.graceDays) || 0,
           payload.collectedDate || new Date().toISOString(),
           clientRef,
+          currentTenantId(),
         ]
       );
 
@@ -388,8 +393,8 @@ const postCollection = async (client, collectionRow, postedBy, { allowExcess }) 
 export const approveCollection = async (collectionId, approvedBy) => {
   const outcome = await withTransaction(async (client) => {
     const collectionResult = await client.query(
-      "SELECT * FROM collections WHERE id = $1 FOR UPDATE",
-      [collectionId]
+      "SELECT * FROM collections WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+      [collectionId, currentTenantId()]
     );
 
     const collectionRow = collectionResult.rows[0];
@@ -420,8 +425,8 @@ export const approveCollection = async (collectionId, approvedBy) => {
 export const rejectCollection = async (collectionId, { remarks = "", rejectedBy } = {}) => {
   await withTransaction(async (client) => {
     const result = await client.query(
-      "SELECT * FROM collections WHERE id = $1 FOR UPDATE",
-      [collectionId]
+      "SELECT * FROM collections WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+      [collectionId, currentTenantId()]
     );
 
     const row = result.rows[0];
@@ -454,8 +459,8 @@ export const rejectCollection = async (collectionId, { remarks = "", rejectedBy 
 export const reverseCollection = async (collectionId, { reason = "", reversedBy } = {}) => {
   await withTransaction(async (client) => {
     const result = await client.query(
-      "SELECT * FROM collections WHERE id = $1 FOR UPDATE",
-      [collectionId]
+      "SELECT * FROM collections WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+      [collectionId, currentTenantId()]
     );
 
     const row = result.rows[0];
@@ -535,8 +540,8 @@ export const reverseCollection = async (collectionId, { reason = "", reversedBy 
 
 export const getCollectionsForLoan = async (loanId) => {
   const result = await query(
-    `${SELECT_COLLECTIONS} WHERE loans.id = $1 ORDER BY collections.pk DESC`,
-    [loanId]
+    `${SELECT_COLLECTIONS} WHERE loans.id = $1 AND collections.tenant_id = $2 ORDER BY collections.pk DESC`,
+    [loanId, currentTenantId()]
   );
 
   return result.rows.map(mapCollection);

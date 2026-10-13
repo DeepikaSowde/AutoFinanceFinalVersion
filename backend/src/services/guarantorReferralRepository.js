@@ -5,6 +5,7 @@
 // contents out, and a single record read includes them.
 
 import { query, withTransaction } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 
 const pad = (number, length = 5) => String(number).padStart(length, "0");
 
@@ -55,13 +56,13 @@ const mapRecord = (row, { includeFiles }) => {
 };
 
 export const getGuarantorReferrals = async () => {
-  const result = await query("SELECT * FROM guarantor_referrals ORDER BY pk DESC");
+  const result = await query("SELECT * FROM guarantor_referrals WHERE tenant_id = $1 ORDER BY pk DESC", [currentTenantId()]);
 
   return result.rows.map((row) => mapRecord(row, { includeFiles: false }));
 };
 
 export const getGuarantorReferralById = async (id) => {
-  const result = await query("SELECT * FROM guarantor_referrals WHERE id = $1", [id]);
+  const result = await query("SELECT * FROM guarantor_referrals WHERE id = $1 AND tenant_id = $2", [id, currentTenantId()]);
 
   return result.rows[0] ? mapRecord(result.rows[0], { includeFiles: true }) : null;
 };
@@ -87,8 +88,8 @@ export const createGuarantorReferral = async (input = {}, user) => {
     const result = await client.query(
       `INSERT INTO guarantor_referrals
         (id, full_name, phone, address, area, landmark, pincode, aadhaar_number,
-         aadhaar_file, additional_docs, created_by)
-       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         aadhaar_file, additional_docs, created_by, tenant_id)
+       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING pk`,
       [
         fullName,
@@ -101,6 +102,7 @@ export const createGuarantorReferral = async (input = {}, user) => {
         JSON.stringify(cleanFile(input.aadhaarFile)),
         JSON.stringify(additionalDocs),
         user?.name || "",
+        currentTenantId(),
       ]
     );
 

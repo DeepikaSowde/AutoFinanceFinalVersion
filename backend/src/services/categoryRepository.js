@@ -5,6 +5,7 @@
 // category can be created before anything uses it.
 
 import { query } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 
 const pad = (number, length = 4) => String(number).padStart(length, "0");
 
@@ -32,14 +33,14 @@ export const getCategories = async (type) => {
     assertType(type);
 
     const result = await query(
-      "SELECT * FROM categories WHERE type = $1 ORDER BY name ASC",
-      [type]
+      "SELECT * FROM categories WHERE type = $1 AND tenant_id = $2 ORDER BY name ASC",
+      [type, currentTenantId()]
     );
 
     return result.rows.map(mapCategory);
   }
 
-  const result = await query("SELECT * FROM categories ORDER BY type ASC, name ASC");
+  const result = await query("SELECT * FROM categories WHERE tenant_id = $1 ORDER BY type ASC, name ASC", [currentTenantId()]);
 
   return result.rows.map(mapCategory);
 };
@@ -58,11 +59,11 @@ export const addCategory = async (type, name) => {
   }
 
   const result = await query(
-    `INSERT INTO categories (id, type, name)
-     VALUES ('', $1, $2)
-     ON CONFLICT (type, name) DO UPDATE SET name = categories.name
+    `INSERT INTO categories (id, type, name, tenant_id)
+     VALUES ('', $1, $2, $3)
+     ON CONFLICT (tenant_id, type, name) DO UPDATE SET name = categories.name
      RETURNING pk, id, type, name, created_at`,
-    [type, cleanName]
+    [type, cleanName, currentTenantId()]
   );
 
   const row = result.rows[0];
@@ -79,7 +80,7 @@ export const addCategory = async (type, name) => {
 };
 
 export const deleteCategory = async (categoryId) => {
-  const result = await query("DELETE FROM categories WHERE id = $1", [categoryId]);
+  const result = await query("DELETE FROM categories WHERE id = $1 AND tenant_id = $2", [categoryId, currentTenantId()]);
 
   return result.rowCount > 0;
 };

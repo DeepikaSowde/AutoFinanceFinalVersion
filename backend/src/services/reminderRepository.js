@@ -5,6 +5,7 @@
 // travels in the details jsonb column (same approach as expenses).
 
 import { query, withTransaction } from "../db/connection.js";
+import { currentTenantId } from "../db/tenantContext.js";
 
 const pad = (number, length = 4) => String(number).padStart(length, "0");
 
@@ -46,13 +47,13 @@ const toValues = (reminder) => [
 ];
 
 export const getReminders = async () => {
-  const result = await query("SELECT * FROM reminders ORDER BY created_at DESC, pk DESC");
+  const result = await query("SELECT * FROM reminders WHERE tenant_id = $1 ORDER BY created_at DESC, pk DESC", [currentTenantId()]);
 
   return result.rows.map(mapReminder);
 };
 
 export const getReminderById = async (reminderId) => {
-  const result = await query("SELECT * FROM reminders WHERE id = $1", [reminderId]);
+  const result = await query("SELECT * FROM reminders WHERE id = $1 AND tenant_id = $2", [reminderId, currentTenantId()]);
 
   return result.rows[0] ? mapReminder(result.rows[0]) : null;
 };
@@ -63,10 +64,10 @@ export const addReminder = async (reminder = {}) => {
 
     const result = await client.query(
       `INSERT INTO reminders
-        (id, loan_id, loan_number, customer_id, status, next_reminder_date, details, created_at)
-       VALUES ('', $1, $2, $3, $4, $5, $6, $7)
+        (id, loan_id, loan_number, customer_id, status, next_reminder_date, details, created_at, tenant_id)
+       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING pk`,
-      [...toValues(reminder), Number.isNaN(createdAt.getTime()) ? new Date() : createdAt]
+      [...toValues(reminder), Number.isNaN(createdAt.getTime()) ? new Date() : createdAt, currentTenantId()]
     );
 
     const pk = result.rows[0].pk;
@@ -91,8 +92,8 @@ export const updateReminder = async (reminderId, updates = {}) => {
     `UPDATE reminders SET
       loan_id = $2, loan_number = $3, customer_id = $4, status = $5,
       next_reminder_date = $6, details = $7, updated_at = now()
-     WHERE id = $1`,
-    [reminderId, ...toValues({ ...existing, ...updates })]
+     WHERE id = $1 AND tenant_id = $8`,
+    [reminderId, ...toValues({ ...existing, ...updates }), currentTenantId()]
   );
 
   return getReminderById(reminderId);

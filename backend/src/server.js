@@ -13,10 +13,10 @@ const port = process.env.PORT || 4000;
 const start = async () => {
   // Tables and seed users must exist before the first request lands.
   await initialiseSchema();
-  await seedUsers();
-  // Run-once changes (backend/migrations), after the base schema and the
-  // seed users so back-fills include them.
+  // Run-once changes (backend/migrations), after the base schema.
   await runMigrations();
+  // Demo users on an empty database, in the first tenant.
+  await seedUsers();
   // Creates the first super admin when SUPERADMIN_EMAIL/PASSWORD are set.
   await seedSuperAdmin();
 
