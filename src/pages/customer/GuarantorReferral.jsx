@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Plus,
   X,
@@ -18,6 +19,7 @@ import {
   Users,
   ShieldCheck,
   Coins,
+  Undo2,
 } from "lucide-react";
 
 import {
@@ -90,6 +92,8 @@ const SummaryCard = ({ icon: Icon, title, value }) => {
 };
 
 const GuarantorReferral = () => {
+  const navigate = useNavigate();
+
   // Page state
   const [records, setRecords] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -511,13 +515,24 @@ const GuarantorReferral = () => {
           PAGE HEADER
       ========================================================= */}
       <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
-            Guarantor / Referral
-          </h1>
-          <p className="mt-2 text-xs sm:text-sm text-slate-500 font-medium">
-            Manage and view all guarantor and referral records in one shared directory.
-          </p>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate("/customers")}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-2xs transition-all duration-150 hover:border-slate-300 hover:bg-slate-50 hover:text-[#06483f] focus:border-[#006052] focus:outline-none focus:ring-2 focus:ring-[#006052]/20 active:scale-95 active:bg-slate-100 cursor-pointer"
+            aria-label="Back to Customers"
+            title="Back to Customers"
+          >
+            <Undo2 className="h-4 w-4" strokeWidth={2.2} />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
+              Guarantor / Referral
+            </h1>
+            <p className="mt-1.5 text-xs sm:text-sm text-slate-500 font-medium">
+              Manage and view all guarantor and referral records in one shared directory.
+            </p>
+          </div>
         </div>
 
         {/* Top-Right Rectangular Green + Add Button */}

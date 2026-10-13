@@ -17,7 +17,8 @@ import {
   Calendar,
   Building2,
   Check,
-  ChevronDown
+  ChevronDown,
+  Undo2,
 } from "lucide-react";
 
 import {
@@ -328,23 +329,24 @@ const ReferralCommission = () => {
           PAGE HEADER
       ========================================================= */}
       <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <button
-              type="button"
-              onClick={() => navigate("/customers")}
-              className="group inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-emerald-800 transition-colors focus:outline-none cursor-pointer"
-            >
-              <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
-              <span>Back to Customers</span>
-            </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate("/customers")}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-2xs transition-all duration-150 hover:border-slate-300 hover:bg-slate-50 hover:text-[#06483f] focus:border-[#006052] focus:outline-none focus:ring-2 focus:ring-[#006052]/20 active:scale-95 active:bg-slate-100 cursor-pointer"
+            aria-label="Back to Customers"
+            title="Back to Customers"
+          >
+            <Undo2 className="h-4 w-4" strokeWidth={2.2} />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
+              Referral Commission
+            </h1>
+            <p className="mt-1.5 text-xs sm:text-sm text-slate-500 font-medium">
+              Manage referral payouts, commission rates, and payout history for referrers.
+            </p>
           </div>
-          <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
-            Referral Commission
-          </h1>
-          <p className="mt-2 text-xs sm:text-sm text-slate-500 font-medium">
-            Manage referral payouts, commission rates, and payout history for referrers.
-          </p>
         </div>
 
         {/* Header Right Actions */}
