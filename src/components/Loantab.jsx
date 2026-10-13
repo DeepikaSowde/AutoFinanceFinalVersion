@@ -936,19 +936,6 @@ const LoanTab = ({
             />
 
           </div>
-
-          {/* INFO */}
-
-          <div className="mt-4 border-t border-emerald-100 pt-3">
-
-            <p className="text-[10px] leading-4 text-slate-500">
-              {t(
-                'loan.repaymentInfo'
-              )}
-            </p>
-
-          </div>
-
         </div>
 
         {/* TEMPORARILY DISABLED: Repayment Calculator
