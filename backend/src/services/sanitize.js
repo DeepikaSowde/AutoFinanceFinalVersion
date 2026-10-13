@@ -6,8 +6,10 @@
 // the exception — a single small compressed image each, kept in full for
 // the Customer Details photo viewer.
 
+// title names an "additional document" (e.g. "Ration card").
 const stripUpload = (upload = {}) => ({
   type: upload.type || "",
+  title: upload.title || "",
   fileName: upload.fileName || "",
   fileType: upload.fileType || "",
   fileSize: upload.fileSize || 0,

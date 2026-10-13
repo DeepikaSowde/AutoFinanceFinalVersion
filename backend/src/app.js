@@ -10,6 +10,7 @@ import { loansRouter } from "./routes/loans.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
 import { collectionsRouter } from "./routes/collections.js";
 import { draftsRouter } from "./routes/drafts.js";
+import { guarantorReferralsRouter } from "./routes/guarantorReferrals.js";
 import {
   categoriesRouter,
   expensesRouter,
@@ -24,7 +25,7 @@ export const createApp = () => {
   const app = express();
 
   app.use(cors());
-  app.use(express.json({ limit: "5mb" }));
+  app.use(express.json({ limit: "15mb" }));
 
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
@@ -38,6 +39,7 @@ export const createApp = () => {
   app.use("/api/vehicles", requireAuth, vehiclesRouter);
   app.use("/api/collections", requireAuth, collectionsRouter);
   app.use("/api/drafts", requireAuth, draftsRouter);
+  app.use("/api/guarantor-referrals", requireAuth, guarantorReferralsRouter);
   app.use("/api/investors", requireAuth, investorsRouter);
   app.use("/api/expenses", requireAuth, expensesRouter);
   app.use("/api/incomes", requireAuth, incomesRouter);

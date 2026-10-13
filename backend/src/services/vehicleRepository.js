@@ -290,7 +290,8 @@ export const completeVehicleSale = async (vehicleId, details = {}, performedBy) 
 
   return transition({
     vehicleId,
-    allowedFrom: [VEHICLE_STATUS.PENDING_SALE],
+    // The Vehicles screen sells straight from Seized; Pending Sale is optional.
+    allowedFrom: [VEHICLE_STATUS.PENDING_SALE, VEHICLE_STATUS.SEIZED],
     toStatus: VEHICLE_STATUS.SOLD,
     eventType: "SALE",
     details: { ...details, salePrice, saleExpenses, netSaleProceeds, deficiency, surplus },
@@ -323,8 +324,41 @@ export const completeVehicleSale = async (vehicleId, details = {}, performedBy) 
         [loanRow.pk, "Vehicle sold"]
       );
     },
-    errorMessage: "Only a vehicle pending sale can be marked as sold.",
+    errorMessage: "Only a seized vehicle (or one pending sale) can be marked as sold.",
   });
+};
+
+/*
+ * Corrects the seizure details (date, reason, where it is kept, ...) while
+ * the vehicle is still held. The status does not change; the edit is kept
+ * in the vehicle's history.
+ */
+export const updateSeizureDetails = async (vehicleId, details = {}, performedBy) => {
+  const vehicleRow = await requireVehicle(vehicleId);
+
+  if (![VEHICLE_STATUS.SEIZED, VEHICLE_STATUS.PENDING_SALE].includes(vehicleRow.status)) {
+    throw new TransitionError("Seizure details can only be changed while the vehicle is seized.");
+  }
+
+  const seizure = { ...(vehicleRow.seizure ?? {}), ...details, updatedAt: nowIso() };
+
+  await withTransaction(async (client) => {
+    await client.query("UPDATE vehicles SET seizure = $2, updated_at = now() WHERE pk = $1", [
+      vehicleRow.pk,
+      JSON.stringify(seizure),
+    ]);
+
+    await recordEvent(client, {
+      vehiclePk: vehicleRow.pk,
+      type: "SEIZURE_UPDATED",
+      fromStatus: vehicleRow.status,
+      toStatus: vehicleRow.status,
+      details,
+      performedBy,
+    });
+  });
+
+  return getVehicleById(vehicleId);
 };
 
 export const getVehicleStatusCounts = async () => {

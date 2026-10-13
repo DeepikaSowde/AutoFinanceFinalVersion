@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar'
 import Loans from './pages/Loans'
 import NewLoan from './pages/NewLoan'
 import Customer from './pages/customer/Customer'
+import GuarantorReferral from './pages/customer/GuarantorReferral'
 import Investors from './pages/Investors/Investors'
 import Ledger from './pages/Ledger/Ledger'
 import Collection from './pages/Collection/Collection'
@@ -55,6 +56,8 @@ function AppShell() {
           <Route path="/dashboard" element={gate('/dashboard', <Dashboard />)} />
           <Route path="/newloan" element={gate('/newloan', <NewLoan />)} />
           <Route path="/customers" element={gate('/customers', <Customer />)} />
+          <Route path="/guarantor-referral" element={gate('/guarantor-referral', <GuarantorReferral />)} />
+          <Route path="/customers/guarantor-referral" element={gate('/guarantor-referral', <GuarantorReferral />)} />
           <Route path="/investors" element={gate('/investors', <Investors />)} />
           <Route path="/ledger" element={gate('/ledger', <Ledger />)} />
           <Route path="/collection" element={gate('/collection', <Collection />)} />

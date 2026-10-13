@@ -15,8 +15,22 @@ import { apiGet, apiPost } from './api'
 const fileMeta = (file, type) =>
   file ? { type, fileName: file.name || '', fileType: file.type || '', fileSize: file.size || 0 } : null
 
-const uploadsFrom = (section, kinds) =>
-  kinds.map(([field, type]) => fileMeta(section[field], type)).filter(Boolean)
+// Fixed KYC files plus any "additional documents" (each with a title).
+const uploadsFrom = (section, kinds) => [
+  ...kinds.map(([field, type]) => fileMeta(section[field], type)).filter(Boolean),
+  ...(Array.isArray(section.additionalDocs) ? section.additionalDocs : [])
+    .filter((doc) => doc?.file)
+    .map((doc) => ({ ...fileMeta(doc.file, 'additional'), title: doc.title || 'Document' })),
+]
+
+const additionalDocsFrom = (uploads = []) =>
+  uploads
+    .filter((upload) => upload.type === 'additional')
+    .map((upload, index) => ({
+      id: `doc_${index + 1}`,
+      title: upload.title || 'Document',
+      file: { name: upload.fileName, type: upload.fileType, size: upload.fileSize, data: '' },
+    }))
 
 const fileFrom = (uploads = [], type) => {
   const found = uploads.find((upload) => upload.type === type)
@@ -110,9 +124,11 @@ const toRc = (vehicle) => ({
 const toGuarantor = (guarantor) => ({
   hasGuarantor: guarantor.required === 'Yes',
   personal: {
-    name: guarantor.name || '',
+    // The register record this guarantor was picked from, if any.
+    guarantorId: guarantor.guarantorId || '',
+    name: guarantor.name || guarantor.fullName || '',
     countryCode: guarantor.countryCode || '+91',
-    mobileNumber: guarantor.mobile || '',
+    mobileNumber: guarantor.mobile || guarantor.phone || '',
     relationship: guarantor.relationship || '',
     profession: guarantor.profession || '',
     residenceType: guarantor.residenceType || '',
@@ -125,7 +141,7 @@ const toGuarantor = (guarantor) => ({
     verificationStatus: guarantor.verificationStatus || '',
     remarks: guarantor.remarks || '',
   },
-  kyc: toKyc(guarantor),
+  kyc: toKyc({ ...guarantor, aadhaarNo: guarantor.aadhaarNo || guarantor.aadhaarNumber }),
   documents: { requiredMinimum: 2, selectedTypes: [], uploads: uploadsFrom(guarantor, KYC_FILES) },
   photo: guarantor.photo ? { fileName: guarantor.photo.name || '', fileData: '' } : { fileName: '', fileData: '' },
 })
@@ -187,7 +203,62 @@ const fromKyc = (kyc = {}, uploads = []) => ({
   dlFile: fileFrom(uploads, 'drivingLicence'),
   voterNo: kyc.voterIdNumber || '',
   voterFile: fileFrom(uploads, 'voterId'),
+  additionalDocs: additionalDocsFrom(uploads),
 })
+
+// The Vehicles screens use Active / Seized / Released / Sold; a vehicle the
+// server has moved to Pending Sale is still held, so it shows as Seized.
+const VEHICLE_STATUS = { ACTIVE: 'Active', SEIZED: 'Seized', PENDING_SALE: 'Seized', RELEASED: 'Released', SOLD: 'Sold' }
+const EVENT_STATUS = { ...VEHICLE_STATUS }
+
+const seizureDetailsFrom = (seizure) =>
+  seizure
+    ? {
+        seizureDate: (seizure.seizureDate || '').slice(0, 10),
+        reason: seizure.reason || '',
+        storageLocation: seizure.storageLocation || seizure.location || '',
+        condition: seizure.condition || '',
+        notes: seizure.notes || seizure.remarks || '',
+        recordedAt: seizure.updatedAt || seizure.seizureDate || '',
+      }
+    : null
+
+const releaseDetailsFrom = (release) =>
+  release
+    ? {
+        releaseDate: (release.releaseDate || '').slice(0, 10),
+        reason: release.reason || '',
+        clearedAmount: release.clearedAmount ?? null,
+        notes: release.notes || release.remarks || '',
+        recordedAt: release.updatedAt || release.releaseDate || '',
+      }
+    : null
+
+const saleDetailsFrom = (sale) =>
+  sale?.saleStatus === 'SOLD'
+    ? {
+        saleDate: (sale.soldAt || '').slice(0, 10),
+        salePrice: sale.salePrice,
+        buyerName: sale.buyerName || '',
+        buyerPhone: sale.buyerPhone || sale.buyerMobile || '',
+        proceedsReceived: sale.netSaleProceeds ?? sale.salePrice,
+        notes: sale.notes || sale.remarks || '',
+        recordedAt: sale.updatedAt || sale.soldAt || '',
+      }
+    : null
+
+// The vehicle's history, newest first, in the shape the Vehicles screens show.
+const statusHistoryFrom = (events = []) =>
+  events
+    .filter((event) => event.fromStatus !== event.toStatus || event.type === 'SEIZURE_UPDATED')
+    .map((event) => ({
+      ...event,
+      fromStatus: EVENT_STATUS[event.fromStatus] || event.fromStatus,
+      toStatus: EVENT_STATUS[event.toStatus] || event.toStatus,
+      date: event.createdAt,
+      by: event.performedBy,
+    }))
+    .reverse()
 
 const docAsFile = (meta) => (meta?.fileName ? { name: meta.fileName, type: meta.fileType, size: meta.fileSize, data: '' } : null)
 
@@ -261,8 +332,15 @@ const toEntry = (record, loan) => {
       pincode: personal.pincode || '',
       ...fromKyc(record.customer.kyc, record.customer.documents?.uploads),
     },
+    vehicleStatus: VEHICLE_STATUS[vehicle.status] || 'Active',
+    statusHistory: statusHistoryFrom(vehicle.events),
     vehicle: {
       vehicleId: vehicle.id || '',
+      status: VEHICLE_STATUS[vehicle.status] || 'Active',
+      seizureDetails: seizureDetailsFrom(vehicle.seizure),
+      releaseDetails: releaseDetailsFrom(vehicle.release),
+      saleDetails: saleDetailsFrom(vehicle.sale),
+      statusHistory: statusHistoryFrom(vehicle.events),
       type: vehicle.vehicleType || '',
       brand: vehicle.brand || '',
       model: vehicle.model || '',
@@ -291,9 +369,13 @@ const toEntry = (record, loan) => {
     },
     guarantor: {
       required: guarantor.hasGuarantor ? 'Yes' : 'No',
+      guarantorId: gPersonal.guarantorId || '',
       name: gPersonal.name || '',
+      fullName: gPersonal.name || '',
       countryCode: gPersonal.countryCode || '+91',
       mobile: gPersonal.mobileNumber || '',
+      phone: gPersonal.mobileNumber || '',
+      aadhaarNumber: guarantor.kyc?.aadhaarNumber || '',
       relationship: gPersonal.relationship || '',
       profession: gPersonal.profession || '',
       residenceType: gPersonal.residenceType || '',

@@ -1,28 +1,35 @@
-import { apiGet, apiPost } from './api'
+import { apiGet, apiPost, apiPut } from './api'
 
-// Vehicle lifecycle: ACTIVE -> SEIZED -> RELEASED, or SEIZED -> PENDING_SALE
-// -> SOLD. The server checks every move and records it in the vehicle's
-// history; completing a sale also forecloses the loan.
-
-export const VEHICLE_STATUS_LABELS = {
-  ACTIVE: 'Active',
-  SEIZED: 'Seized',
-  PENDING_SALE: 'Pending sale',
-  RELEASED: 'Released',
-  SOLD: 'Sold',
-}
+// Vehicle lifecycle: Active -> Seized -> Released, or Seized -> Sold. The
+// server checks every move and records it in the vehicle's history; selling
+// also forecloses the loan.
 
 export const loadVehicles = () => apiGet('/vehicles')
 
 export const loadVehicleEvents = (vehicleId) => apiGet(`/vehicles/${vehicleId}/events`)
 
-const ACTION_PATHS = {
-  seize: 'seize',
-  release: 'release',
-  pendingSale: 'pending-sale',
-  completeSale: 'complete-sale',
-  cancelSale: 'cancel-sale',
-}
+export const seizeVehicle = (vehicleId, { seizureDate, reason, storageLocation, condition, notes }) =>
+  apiPost(`/vehicles/${vehicleId}/seize`, { seizureDate, reason, storageLocation, condition, notes })
 
-export const runVehicleAction = (vehicleId, action, details) =>
-  apiPost(`/vehicles/${vehicleId}/${ACTION_PATHS[action]}`, details)
+// Corrects the seizure details while the vehicle is still held.
+export const updateSeizure = (vehicleId, { seizureDate, reason, storageLocation, condition, notes }) =>
+  apiPut(`/vehicles/${vehicleId}/seizure`, { seizureDate, reason, storageLocation, condition, notes })
+
+export const releaseVehicle = (vehicleId, { releaseDate, reason, clearedAmount, notes }) =>
+  apiPost(`/vehicles/${vehicleId}/release`, { releaseDate, reason, clearedAmount, notes })
+
+// "Proceeds received" is what is left of the price after sale costs; the
+// server records price and costs and works out the shortfall or surplus
+// against what the loan owes.
+export const sellVehicle = (vehicleId, { saleDate, salePrice, buyerName, buyerPhone, proceedsReceived, notes }) => {
+  const price = Number(salePrice) || 0
+  const proceeds = proceedsReceived === '' || proceedsReceived == null ? price : Number(proceedsReceived) || 0
+  return apiPost(`/vehicles/${vehicleId}/complete-sale`, {
+    salePrice: price,
+    saleExpenses: Math.max(0, price - proceeds),
+    buyerName,
+    buyerPhone,
+    soldAt: saleDate,
+    notes,
+  })
+}

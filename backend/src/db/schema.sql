@@ -539,3 +539,34 @@ CREATE TABLE IF NOT EXISTS loan_drafts (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+/* =========================================================
+   GUARANTOR / REFERRAL REGISTER
+
+   People who stand guarantor for, or refer, customers. A loan's
+   guarantor can be picked from here. Their KYC documents are kept in
+   full (the register shows them), as data URLs in jsonb; lists leave
+   the file contents out.
+========================================================= */
+
+CREATE TABLE IF NOT EXISTS guarantor_referrals (
+  pk              INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id              TEXT UNIQUE NOT NULL,
+  full_name       TEXT NOT NULL,
+  phone           TEXT NOT NULL,
+  address         TEXT,
+  area            TEXT,
+  landmark        TEXT,
+  pincode         TEXT,
+  aadhaar_number  TEXT,
+  aadhaar_file    JSONB,
+  additional_docs JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_by      TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Seizure details can be corrected while a vehicle is held; the edit is
+-- kept in its history.
+ALTER TABLE vehicle_events DROP CONSTRAINT IF EXISTS vehicle_events_event_type_check;
+ALTER TABLE vehicle_events ADD CONSTRAINT vehicle_events_event_type_check
+  CHECK (event_type IN ('SEIZURE', 'SEIZURE_UPDATED', 'RELEASE', 'PENDING_SALE', 'SALE', 'SALE_CANCELLED'));

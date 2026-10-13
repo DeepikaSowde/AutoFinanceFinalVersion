@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   ChevronDown,
@@ -9,6 +10,7 @@ import {
   WalletCards,
   RotateCcw,
   Eye,
+  UserCheck,
 } from "lucide-react";
 
 import { loadCustomerEntries } from "../../services/customerApi";
@@ -95,6 +97,7 @@ const SummaryCard = ({ icon: Icon, title, value }) => {
 };
 
 const Customer = () => {
+  const navigate = useNavigate();
   const [customerData, setCustomerData] = useState([]);
   const [allPayments, setAllPayments] = useState([]);
 
@@ -223,7 +226,7 @@ const Customer = () => {
           PAGE HEADER
       ========================== */}
 
-      <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
 
         <div>
           <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
@@ -234,6 +237,15 @@ const Customer = () => {
             Manage and view all customers and their active loan information.
           </p>
         </div>
+
+        <button
+          type="button"
+          onClick={() => navigate("/guarantor-referral")}
+          className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-[#006052] px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer sm:self-auto shrink-0"
+        >
+          <UserCheck className="h-4 w-4" strokeWidth={2} />
+          <span>Guarantor / Referral</span>
+        </button>
 
       </div>
 

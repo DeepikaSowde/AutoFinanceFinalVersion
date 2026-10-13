@@ -13,6 +13,7 @@ import {
   moveVehicleToPendingSale,
   releaseVehicle,
   seizeVehicle,
+  updateSeizureDetails,
 } from "../services/vehicleRepository.js";
 import { requirePermission } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
@@ -66,6 +67,12 @@ vehiclesRouter.post(
   "/:vehicleId/seize",
   requirePermission("vehicles.edit"),
   action((req) => seizeVehicle(req.params.vehicleId, req.body || {}, req.user.username))
+);
+
+vehiclesRouter.put(
+  "/:vehicleId/seizure",
+  requirePermission("vehicles.edit"),
+  action((req) => updateSeizureDetails(req.params.vehicleId, req.body || {}, req.user.username))
 );
 
 vehiclesRouter.post(

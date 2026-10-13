@@ -58,6 +58,17 @@ export const mapVehicle = (row) => {
   };
 };
 
+// Status changes (seized, released, sold, ...) in the order they happened.
+const mapVehicleEvent = (row) => ({
+  ...(row.details ?? {}),
+  id: row.id,
+  type: row.event_type,
+  fromStatus: row.from_status,
+  toStatus: row.to_status,
+  performedBy: row.performed_by || "",
+  createdAt: iso(row.created_at),
+});
+
 const mapRc = (row) => {
   if (!row) return {};
 
@@ -227,12 +238,19 @@ export const buildCustomerRecord = async (customerRow) => {
     ]),
   ]);
 
-  const rcRow = await getRcRow(vehicleRow?.pk);
+  const [rcRow, eventRows] = await Promise.all([
+    getRcRow(vehicleRow?.pk),
+    vehicleRow
+      ? query("SELECT * FROM vehicle_events WHERE vehicle_pk = $1 ORDER BY pk ASC", [vehicleRow.pk]).then(
+          (r) => r.rows
+        )
+      : Promise.resolve([]),
+  ]);
   const loans = await Promise.all(loanResult.rows.map(buildLoan));
 
   return {
     customer: mapCustomer(customerRow),
-    vehicle: mapVehicle(vehicleRow),
+    vehicle: vehicleRow ? { ...mapVehicle(vehicleRow), events: eventRows.map(mapVehicleEvent) } : {},
     rc: mapRc(rcRow),
     guarantor: mapGuarantor(guarantorRow),
     loan: loans[0] || {},

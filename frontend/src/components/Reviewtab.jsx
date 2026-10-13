@@ -61,9 +61,7 @@ const KycStatus = ({ customer }) => {
 
   const allUploaded =
     !!customer.aadhaarFile &&
-    !!customer.panFile &&
-    !!customer.dlFile &&
-    !!customer.voterFile
+    !!customer.dlFile
 
   return (
     <div className="flex items-center gap-1.5">
