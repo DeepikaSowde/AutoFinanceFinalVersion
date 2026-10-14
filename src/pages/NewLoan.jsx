@@ -321,6 +321,13 @@ const NewLoan = () => {
 
       let newEntry = {
         ...form,
+        guarantor: {
+          ...form.guarantor,
+          required:
+            (form.guarantor?.fullName || form.guarantor?.name || form.guarantor?.phone || form.guarantor?.mobile)
+              ? 'Yes'
+              : 'No',
+        },
         vehicle: {
           ...form.vehicle,
           defaultImage: vehicleModelImage,
@@ -336,17 +343,17 @@ const NewLoan = () => {
       }
       
       newEntry = await compressObjectImages(newEntry);
+      const custName = (form.customer?.name || "Customer").trim();
+      const assocDate = new Date().toISOString();
       
       // 4. Record relationships in shared Guarantor / Referral collection
       try {
         const relOpt = form.loan?.relationshipOption || "none";
-        const custName = (form.customer?.name || "Customer").trim();
-        const assocDate = new Date().toISOString();
+        const gName = (form.guarantor?.fullName || form.guarantor?.name || "").trim();
+        const gPhone = (form.guarantor?.phone || form.guarantor?.mobile || "").trim();
 
         // 1. Guarantor relationship (when Both or Guarantor only is selected)
-        if (relOpt === "both" || relOpt === "guarantor") {
-          const gName = (form.guarantor?.fullName || form.guarantor?.name || "").trim();
-          const gPhone = (form.guarantor?.phone || form.guarantor?.mobile || "").trim();
+        if (relOpt === "both" || relOpt === "guarantor" || gName || gPhone) {
           if (gName || gPhone) {
             const gRecord = recordPersonRelationship({
               person: form.guarantor,
@@ -435,6 +442,7 @@ const NewLoan = () => {
       // 6. Save to local storage
       try {
         localStorage.setItem("motoLendCustomersList_data", JSON.stringify(customersList))
+        window.dispatchEvent(new Event("storage"))
       } catch (storageError) {
         if (storageError.name === 'QuotaExceededError' || storageError.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
           alert("Storage quota exceeded! Cannot save this loan application. Please reduce the size of uploaded documents or move to a larger storage solution.");
