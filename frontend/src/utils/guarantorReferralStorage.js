@@ -11,7 +11,7 @@
  * loadGuarantorReferralRecord(id) to get one with its documents.
  */
 
-import { DATA_CHANGED_EVENT, apiGet, apiPost } from "../services/api";
+import { DATA_CHANGED_EVENT, apiGet, apiPost, apiPut } from "../services/api";
 
 export const UPDATE_EVENT_NAME = "motoLendGuarantorReferralsUpdated";
 
@@ -202,6 +202,39 @@ export const addReferralCommission = async ({ personId, customerId, customerName
   return saved;
 };
 
+/**
+ * Changes a referral commission's percentage. The server recalculates the
+ * amount (loan amount x % / 100 unless `commissionAmount` is given), keeps the
+ * payment history, and if it was already paid updates its existing expense —
+ * never a duplicate. `loanId` finds the commission when no id is passed.
+ */
+export const updateReferralCommissionRate = async ({ commissionId, loanId, percentage, commissionAmount, notes }) => {
+  let id = commissionId;
+  if (!id && loanId && loanId !== "—") {
+    for (const r of records) {
+      const match = (r.commissions || []).find((c) => c.loanId === loanId);
+      if (match) { id = match.id; break; }
+    }
+  }
+  if (!id) throw new Error("Commission not found for this loan.");
+
+  const updated = await apiPut(`/referrals/${id}/rate`, {
+    percentage: Number(percentage) || 0,
+    ...(Number(commissionAmount) > 0 ? { commissionAmount: Number(commissionAmount) } : {}),
+    ...(notes !== undefined ? { notes } : {}),
+  });
+  await refreshGuarantorReferralRecords().catch(() => {});
+  return toCommissionView(updated);
+};
+
+/**
+ * Document charges are recorded as income by the server when a loan is saved
+ * (one entry per loan, updated on edit — see incomeRepository on the backend),
+ * so there is nothing to sync from the browser. Kept so callers need no change.
+ */
+export const syncDocumentChargeIncome = () => null;
+export const reconcileLoanDocumentCharges = () => {};
+
 /** A commission from the API, in the shape the register pages show. */
 export const toCommissionView = (c) => ({
   id: c.id,
@@ -263,4 +296,176 @@ export const generateNextGuarantorId = (existingRecords = []) => {
     });
   }
   return `GR-${String(maxNum + 1).padStart(5, "0")}`;
+};
+
+/**
+ * Everything the person-details popup shows for one register person, built
+ * from the record the server returned (its relationships, commissions and
+ * documents) — same output as the Simplify version:
+ * - guarantorList / referralList / bothList: one row per customer-loan pair
+ *   (a pair where they are both guarantor and referrer also appears in Both);
+ * - referral rows carry the commission %, amount and Paid/Pending, or
+ *   "Not Configured" when none was set (never a false "₹0 Pending");
+ * - kpis: distinct linked customers, and counts as guarantor / referral;
+ * - documents: the person's shared documents, de-duplicated.
+ */
+export const getPersonDetailsSummary = (record) => {
+  if (!record) {
+    return {
+      guarantorList: [],
+      referralList: [],
+      bothList: [],
+      kpis: { linkedCustomers: 0, asGuarantor: 0, asReferral: 0 },
+      documents: [],
+    };
+  }
+
+  const relationships = getRecordRelationships(record);
+  const commissions = getRecordCommissions(record);
+
+  // Group by customer-loan pair.
+  const loanPairs = new Map();
+  const pairFor = (custId, loanId, fallbackKey, seed) => {
+    const key = loanId && loanId !== "—" ? `${custId}___${loanId}` : `${custId}___${fallbackKey}`;
+    if (!loanPairs.has(key)) {
+      loanPairs.set(key, {
+        customerId: custId,
+        customerName: seed.customerName || "Customer",
+        loanId,
+        associatedDate: seed.associatedDate || null,
+        isGuarantor: false,
+        isReferral: false,
+        relReferral: null,
+      });
+    }
+    const pair = loanPairs.get(key);
+    if (!pair.associatedDate && seed.associatedDate) pair.associatedDate = seed.associatedDate;
+    return pair;
+  };
+
+  relationships.forEach((rel, i) => {
+    const pair = pairFor(rel.customerId, rel.loanId, rel.id || `rel-${i}`, rel);
+    if (rel.type === "Guarantor" || rel.type === "Both") pair.isGuarantor = true;
+    if (rel.type === "Referral" || rel.type === "Both") {
+      pair.isReferral = true;
+      pair.relReferral = rel;
+    }
+  });
+
+  // A commission for a loan with no recorded relationship still counts as a referral.
+  commissions.forEach((c) => {
+    const pair = pairFor(c.customerId, c.loanId, `comm-${c.id}`, {
+      customerName: c.customerName,
+      associatedDate: c.paidDate || c.createdAt,
+    });
+    pair.isReferral = true;
+  });
+
+  const resolveCommission = (pair) => {
+    const comm = commissions.find(
+      (c) =>
+        (pair.loanId && pair.loanId !== "—" && c.loanId === pair.loanId) ||
+        (pair.customerId && pair.customerId !== "—" && c.customerId === pair.customerId)
+    );
+    const rel = pair.relReferral;
+
+    const num = (v) => (v === undefined || v === null || v === "" || isNaN(Number(v)) ? null : Number(v));
+    let percentage = comm ? num(comm.percentage) : null;
+    let amount = comm ? num(comm.commissionAmount ?? comm.amount) : null;
+    let status = comm && (comm.status === "Paid" || comm.status === "Pending") ? comm.status : null;
+
+    if (rel) {
+      if (percentage === null) percentage = num(rel.commissionPercentage);
+      if (amount === null) amount = num(rel.commissionAmount);
+      if (!status && (rel.commissionStatus === "Paid" || rel.commissionStatus === "Pending")) status = rel.commissionStatus;
+    }
+
+    if ((amount === null || amount <= 0) && percentage !== null && percentage > 0) {
+      const principal = Number(comm?.loanAmount || 0);
+      if (principal > 0) amount = Math.round((principal * percentage) / 100);
+    }
+
+    const isConfigured = (percentage !== null && percentage > 0) || (amount !== null && amount > 0) || status === "Paid";
+    if (!isConfigured) {
+      return { isConfigured: false, percentage: null, percentageDisplay: "Not Configured", amount: null, amountDisplay: "—", status: "Not Configured" };
+    }
+    return {
+      isConfigured: true,
+      percentage,
+      percentageDisplay: percentage !== null && percentage > 0 ? `${percentage}%` : "—",
+      amount,
+      amountDisplay: amount !== null && amount > 0 ? `₹${amount.toLocaleString("en-IN")}` : "—",
+      status: status === "Paid" ? "Paid" : "Pending",
+    };
+  };
+
+  const guarantorList = [];
+  const referralList = [];
+  const bothList = [];
+
+  loanPairs.forEach((pair, key) => {
+    const base = { customerId: pair.customerId, customerName: pair.customerName, loanId: pair.loanId, associatedDate: pair.associatedDate };
+    if (pair.isGuarantor) guarantorList.push({ id: `g-${key}`, ...base, type: "Guarantor" });
+    if (pair.isReferral) {
+      const comm = resolveCommission(pair);
+      referralList.push({
+        id: `r-${key}`,
+        ...base,
+        type: "Referral",
+        commissionPercentage: comm.percentage,
+        commissionPercentageDisplay: comm.percentageDisplay,
+        commissionAmount: comm.amount,
+        commissionAmountDisplay: comm.amountDisplay,
+        commissionStatus: comm.status,
+        isCommissionConfigured: comm.isConfigured,
+      });
+    }
+    if (pair.isGuarantor && pair.isReferral) bothList.push({ id: `b-${key}`, ...base, type: "Both" });
+  });
+
+  const byDateDesc = (a, b) => new Date(b.associatedDate || 0) - new Date(a.associatedDate || 0);
+  guarantorList.sort(byDateDesc);
+  referralList.sort(byDateDesc);
+  bothList.sort(byDateDesc);
+
+  const distinct = new Set();
+  loanPairs.forEach((pair) => {
+    if (pair.isGuarantor || pair.isReferral) {
+      const idf = pair.customerId && pair.customerId !== "—" ? pair.customerId : pair.customerName;
+      if (idf) distinct.add(idf);
+    }
+  });
+
+  // Documents live on the register record (loaded with its files).
+  const documents = [];
+  const seen = new Set();
+  const addDoc = (id, title, file) => {
+    if (!file) return;
+    const dataKey = file.data || file.name || id;
+    if (seen.has(dataKey)) return;
+    seen.add(dataKey);
+    documents.push({
+      id,
+      title,
+      name: file.name || `${title}.pdf`,
+      size: file.size || "—",
+      type: file.type || "application/pdf",
+      data: file.data || null,
+    });
+  };
+  if (record.aadhaarFile) addDoc("aadhaar", "Aadhaar Card", record.aadhaarFile);
+  if (record.panFile) addDoc("pan", "PAN Card", record.panFile);
+  if (record.dlFile) addDoc("dl", "Driving License", record.dlFile);
+  if (record.voterFile) addDoc("voter", "Voter ID", record.voterFile);
+  (Array.isArray(record.additionalDocs) ? record.additionalDocs : []).forEach((doc, idx) => {
+    if (doc) addDoc(doc.id || `doc-${idx}`, doc.title || `Document #${idx + 1}`, doc.file || doc);
+  });
+
+  return {
+    guarantorList,
+    referralList,
+    bothList,
+    kpis: { linkedCustomers: distinct.size, asGuarantor: guarantorList.length, asReferral: referralList.length },
+    documents,
+  };
 };

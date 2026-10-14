@@ -25,7 +25,7 @@ const Vehicle = () => {
   // Selected vehicle for details view
   const [selectedVehicle, setSelectedVehicle] = useState(null);
 
-  // Tab filter: 'all' | 'seized' | 'released' | 'sold'
+  // Tab filter: 'all' | 'seized' | 'sold'
   const [activeTab, setActiveTab] = useState('all');
 
   // Search input query
@@ -69,12 +69,12 @@ const Vehicle = () => {
         const vehicle = record.vehicle || {};
         const customer = record.customer || {};
 
-        // Read actual current status
+        // Read actual current status (released vehicles are restored to Active)
         const rawStatus = (record.vehicleStatus || vehicle.status || 'Active').trim();
         let normalizedStatus = 'Active';
         const lower = rawStatus.toLowerCase();
         if (lower === 'seized') normalizedStatus = 'Seized';
-        else if (lower === 'released') normalizedStatus = 'Released';
+        else if (lower === 'released') normalizedStatus = 'Active';
         else if (lower === 'sold') normalizedStatus = 'Sold';
         else normalizedStatus = 'Active';
 
@@ -95,13 +95,11 @@ const Vehicle = () => {
   const summaryCounts = useMemo(() => {
     const totalCount = allVehicles.length;
     const seizedCount = allVehicles.filter((v) => v.vehicleStatus === 'Seized').length;
-    const releasedCount = allVehicles.filter((v) => v.vehicleStatus === 'Released').length;
     const soldCount = allVehicles.filter((v) => v.vehicleStatus === 'Sold').length;
 
     return {
       totalCount,
       seizedCount,
-      releasedCount,
       soldCount,
     };
   }, [allVehicles]);
@@ -115,10 +113,8 @@ const Vehicle = () => {
       // 1. Status Tab filter
       // - 'all': show all vehicles
       // - 'seized': only seized
-      // - 'released': only released
       // - 'sold': only sold
       if (activeTab === 'seized' && item.vehicleStatus !== 'Seized') return false;
-      if (activeTab === 'released' && item.vehicleStatus !== 'Released') return false;
       if (activeTab === 'sold' && item.vehicleStatus !== 'Sold') return false;
 
       // 2. Vehicle Type filter
@@ -223,7 +219,6 @@ const Vehicle = () => {
         <VehicleSummaryCards
           totalCount={summaryCounts.totalCount}
           seizedCount={summaryCounts.seizedCount}
-          releasedCount={summaryCounts.releasedCount}
           soldCount={summaryCounts.soldCount}
         />
 

@@ -15,8 +15,8 @@ export const seizeVehicle = (vehicleId, { seizureDate, reason, storageLocation, 
 export const updateSeizure = (vehicleId, { seizureDate, reason, storageLocation, condition, notes }) =>
   apiPut(`/vehicles/${vehicleId}/seizure`, { seizureDate, reason, storageLocation, condition, notes })
 
-export const releaseVehicle = (vehicleId, { releaseDate, reason, clearedAmount, notes }) =>
-  apiPost(`/vehicles/${vehicleId}/release`, { releaseDate, reason, clearedAmount, notes })
+export const releaseVehicle = (vehicleId, { releaseDate, releasedTo, reason, clearedAmount, notes }) =>
+  apiPost(`/vehicles/${vehicleId}/release`, { releaseDate, releasedTo, reason, clearedAmount, notes })
 
 // "Proceeds received" is what is left of the price after sale costs; the
 // server records price and costs and works out the shortfall or surplus

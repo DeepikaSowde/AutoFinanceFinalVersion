@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, ChevronRight, ChevronLeft, X, Wallet, ArrowDownCircle, ArrowUpCircle, Database, FileText, Banknote, Landmark, PiggyBank, Briefcase } from 'lucide-react';
 import IncomeOverviewChart from './IncomeOverviewChart';
 
@@ -11,13 +11,14 @@ const SummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "text-sla
         <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${iconColor}`} strokeWidth={2} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[12px] sm:text-[14px] font-semibold text-slate-500 leading-snug break-words">{title}</p>
+        <p className="text-[12px] sm:text-[14px] font-semibold text-slate-500 leading-snug truncate" title={title}>{title}</p>
         <p 
-          className={`mt-0.5 sm:mt-1 text-base sm:text-lg lg:text-xl font-bold tracking-tight whitespace-nowrap leading-tight ${valueColor}`}
+          className={`mt-0.5 sm:mt-1 text-base sm:text-lg lg:text-xl font-bold tracking-tight truncate leading-tight ${valueColor}`}
+          title={value}
         >
           {value}
         </p>
-        {subtext && <p className="text-[11px] sm:text-[12px] font-medium text-slate-400 mt-0.5 leading-snug break-words">{subtext}</p>}
+        {subtext && <p className="text-[11px] sm:text-[12px] font-medium text-slate-400 mt-0.5 leading-snug truncate" title={subtext}>{subtext}</p>}
       </div>
     </div>
   </div>
@@ -25,6 +26,7 @@ const SummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "text-sla
 
 import { isDateInRange } from '../../utils/dateUtils';
 import DateRangeFilter from '../../components/DateRangeFilter';
+import { UPDATE_EVENT_NAME } from '../../utils/guarantorReferralStorage';
 
 const IncomeView = ({ data }) => {
   const [search, setSearch] = useState('');
@@ -37,6 +39,17 @@ const IncomeView = ({ data }) => {
   const [selectedInvestorId, setSelectedInvestorId] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [viewTransaction, setViewTransaction] = useState(null);
+  const [, setRefreshCount] = useState(0);
+
+  useEffect(() => {
+    const handleStorage = () => setRefreshCount((c) => c + 1);
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(UPDATE_EVENT_NAME, handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(UPDATE_EVENT_NAME, handleStorage);
+    };
+  }, []);
 
   // Loaded from the API by the Ledger page.
   const { incomeData: rawIncomeData, payments, customers, investors } = data;
@@ -150,10 +163,6 @@ const IncomeView = ({ data }) => {
   });
 
   // KPI Calculations
-  const collectionCredit = filteredIncome
-    .filter(i => i.source === 'collection')
-    .reduce((sum, i) => sum + i.displayAmount, 0);
-
   const principalRecovered = filteredIncome
     .filter(i => i.source === 'collection' && i.principal !== null)
     .reduce((sum, i) => sum + (i.principal || 0), 0);
@@ -168,6 +177,10 @@ const IncomeView = ({ data }) => {
 
   const chitInvestmentTotal = filteredIncome
     .filter(i => i.type === 'Chit Investment')
+    .reduce((sum, i) => sum + i.displayAmount, 0);
+
+  const docChargeTotal = filteredIncome
+    .filter(i => i.type === 'Document Charge')
     .reduce((sum, i) => sum + i.displayAmount, 0);
 
   const totalInflow = filteredIncome.reduce((sum, i) => sum + i.displayAmount, 0);
@@ -235,20 +248,10 @@ const IncomeView = ({ data }) => {
 
 
   return (
-    <div className="flex flex-col mt-6 space-y-6">
+    <div className="flex flex-col mt-6 space-y-6 w-full min-w-0 max-w-full">
 
       {/* KPI GRID */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 sm:gap-4 shrink-0 pb-2">
-        <SummaryCard
-          icon={Wallet}
-          title="Collection Credit"
-          value={formatCurrency(collectionCredit)}
-          subtext="Customer Collections"
-          valueColor="text-emerald-700"
-          iconColor="text-emerald-600"
-          iconBg="bg-emerald-100"
-          extraClass="bg-white border-slate-200 shadow-sm"
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 shrink-0 pb-2 w-full min-w-0">
         <SummaryCard
           icon={Database}
           title="Principal Recovered"
@@ -288,6 +291,17 @@ const IncomeView = ({ data }) => {
             extraClass="bg-white border-slate-200 shadow-sm"
           />
         )}
+        {docChargeTotal > 0 && (
+          <SummaryCard
+            icon={FileText}
+            title="Document Charges"
+            value={formatCurrency(docChargeTotal)}
+            subtext="Collected upfront"
+            iconColor="text-amber-600"
+            iconBg="bg-amber-100"
+            extraClass="bg-white border-slate-200 shadow-sm"
+          />
+        )}
         <SummaryCard
           icon={ArrowUpCircle}
           title="Total Inflow"
@@ -301,8 +315,8 @@ const IncomeView = ({ data }) => {
       </div>
 
       {/* FILTERS */}
-      <div className="mt-4 flex flex-col md:flex-row gap-3 shrink-0 flex-wrap items-start md:items-center justify-between">
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+      <div className="mt-4 flex flex-col md:flex-row gap-3 shrink-0 flex-wrap items-stretch md:items-center justify-between w-full min-w-0">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 w-full md:w-auto min-w-0">
           {/* Date Filter (Monthly, Today, All Time, Custom, etc.) */}
           <DateRangeFilter
             dateFilter={dateFilter}
@@ -317,7 +331,7 @@ const IncomeView = ({ data }) => {
           <select
             value={typeFilter}
             onChange={e => { setTypeFilter(e.target.value); setCurrentPage(1); }}
-            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm"
+            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm max-w-full"
           >
             <option value="All">All Types</option>
             <option value="Investment">Investor Capital</option>
@@ -339,7 +353,7 @@ const IncomeView = ({ data }) => {
               setSelectedInvestorId('All');
               setCurrentPage(1);
             }}
-            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm"
+            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm max-w-full"
           >
             <option value="All">All Parties</option>
             <option value="Customer">Customer Collections</option>
@@ -351,7 +365,7 @@ const IncomeView = ({ data }) => {
             <select
               value={selectedCustomerId}
               onChange={e => { setSelectedCustomerId(e.target.value); setCurrentPage(1); }}
-              className="h-9 rounded-lg border border-blue-300 bg-blue-50/50 px-3 text-[13px] font-semibold text-blue-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm max-w-[200px]"
+              className="h-9 rounded-lg border border-blue-300 bg-blue-50/50 px-3 text-[13px] font-semibold text-blue-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm max-w-full sm:max-w-[200px]"
             >
               <option value="All">All Customers</option>
               {customers.map(c => (
@@ -367,7 +381,7 @@ const IncomeView = ({ data }) => {
             <select
               value={selectedInvestorId}
               onChange={e => { setSelectedInvestorId(e.target.value); setCurrentPage(1); }}
-              className="h-9 rounded-lg border border-purple-300 bg-purple-50/50 px-3 text-[13px] font-semibold text-purple-900 outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 shadow-sm max-w-[200px]"
+              className="h-9 rounded-lg border border-purple-300 bg-purple-50/50 px-3 text-[13px] font-semibold text-purple-900 outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 shadow-sm max-w-full sm:max-w-[200px]"
             >
               <option value="All">All Investors</option>
               {investors.map(inv => (
@@ -379,7 +393,7 @@ const IncomeView = ({ data }) => {
           )}
         </div>
 
-        <div className="relative w-full md:w-[260px]">
+        <div className="relative w-full md:w-[260px] min-w-0">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -392,17 +406,17 @@ const IncomeView = ({ data }) => {
       </div>
 
       {/* TABLE SECTION */}
-      <div className="flex flex-col lg:flex-row gap-6">
-        <div className="lg:w-[60%] flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse table-fixed">
+      <div className="flex flex-col lg:flex-row gap-6 w-full min-w-0 items-start">
+        <div className="w-full lg:w-[60%] min-w-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="overflow-x-auto w-full min-w-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <table className="w-full min-w-[560px] sm:min-w-[600px] text-left border-collapse">
               <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 shadow-[0_1px_0_0_#e2e8f0]">
                 <tr>
-                  <th className="px-2 sm:px-5 py-4 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[25%] sm:w-[20%]">Date</th>
-                  <th className="px-2 sm:px-5 py-4 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[40%] sm:w-[35%]">Description</th>
-                  <th className="px-2 sm:px-5 py-4 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[25%] sm:w-[20%]">Amount</th>
-                  <th className="hidden sm:table-cell px-2 sm:px-5 py-4 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 sm:w-[15%]">Type</th>
-                  <th className="px-1 sm:px-5 py-4 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[10%] sm:w-[10%]"></th>
+                  <th className="px-3.5 sm:px-5 py-3.5 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap w-[110px]">Date</th>
+                  <th className="px-3 sm:px-5 py-3.5 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 min-w-[180px]">Description</th>
+                  <th className="px-3 sm:px-5 py-3.5 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap w-[110px]">Amount</th>
+                  <th className="px-3 sm:px-5 py-3.5 text-left text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap w-[125px]">Type</th>
+                  <th className="px-2 sm:px-4 py-3.5 text-center text-[11px] sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 w-[45px]"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -417,19 +431,28 @@ const IncomeView = ({ data }) => {
                   const Icon = getTypeIcon(inc.type);
                   return (
                     <tr key={inc.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => setViewTransaction(inc)}>
-                      <td className="px-2 sm:px-5 py-3.5 whitespace-nowrap">
-                        <p className="font-semibold text-[12px] sm:text-[14px] text-slate-800">
+                      <td className="px-3.5 sm:px-5 py-3.5 whitespace-nowrap">
+                        <p className="font-semibold text-[13px] sm:text-[14px] text-slate-800">
                           {new Date(inc.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
                         </p>
-                        <p className="text-[11px] sm:text-[13px] text-slate-500 mt-0.5 sm:hidden">{inc.type}</p>
                       </td>
-                      <td className="px-2 sm:px-5 py-3.5">
-                        <div className="flex items-start gap-2 sm:gap-3">
-                          <div className={`mt-0.5 hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${getTypeIconBg(inc.type)}`}>
+                      <td className="px-3 sm:px-5 py-3.5">
+                        <div className="flex items-start gap-2.5 sm:gap-3">
+                          <div className={`mt-0.5 flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full ${getTypeIconBg(inc.type)}`}>
                             <Icon className={`h-4 w-4 ${getTypeIconColor(inc.type)}`} />
                           </div>
                           <div className="min-w-0">
-                            <p className="font-semibold text-[12px] sm:text-[14px] text-slate-800 truncate">
+                            <p className="font-semibold text-[13px] sm:text-[14px] text-slate-800 truncate" title={
+                              inc.type === 'Collection'
+                                ? `${inc.customerName} – EMI Collection`
+                                : inc.type === 'Investment'
+                                ? `${inc.investorName} – ${inc.subType || 'Capital Deposit'}`
+                                : inc.type === 'Chit Investment'
+                                ? `Chit Investment – ${inc.remarks || 'Investment Deposit'}`
+                                : inc.type === 'Document Charge'
+                                ? `Document Charge – ${inc.customerName || 'Customer'}`
+                                : inc.remarks || inc.type
+                            }>
                               {inc.type === 'Collection'
                                 ? `${inc.customerName} – EMI Collection`
                                 : inc.type === 'Investment'
@@ -440,7 +463,13 @@ const IncomeView = ({ data }) => {
                                 ? `Document Charge – ${inc.customerName || 'Customer'}`
                                 : inc.remarks || inc.type}
                             </p>
-                            <p className="text-[11px] sm:text-[13px] text-slate-500 mt-0.5 truncate">
+                            <p className="text-[11px] sm:text-[12px] text-slate-500 mt-0.5 truncate" title={
+                              inc.type === 'Collection'
+                                ? `${inc.customerId} · Loan ID: ${inc.loanId}`
+                                : inc.type === 'Investment'
+                                ? `Investor ID: ${inc.investorId} · Capital`
+                                : inc.remarks || 'Income recorded'
+                            }>
                               {inc.type === 'Collection'
                                 ? `${inc.customerId} · Loan ID: ${inc.loanId}`
                                 : inc.type === 'Investment'
@@ -450,16 +479,16 @@ const IncomeView = ({ data }) => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-2 sm:px-5 py-3.5 whitespace-nowrap">
-                        <span className="font-bold text-[12px] sm:text-[14px] text-emerald-600">{formatCurrency(inc.displayAmount)}</span>
+                      <td className="px-3 sm:px-5 py-3.5 whitespace-nowrap">
+                        <span className="font-bold text-[13px] sm:text-[14px] text-emerald-600">{formatCurrency(inc.displayAmount)}</span>
                       </td>
-                      <td className="hidden sm:table-cell px-2 sm:px-5 py-3.5 whitespace-nowrap">
+                      <td className="px-3 sm:px-5 py-3.5 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider whitespace-nowrap border ${getTypeBadgeStyle(inc.type)}`}>
                           {inc.type}
                         </span>
                       </td>
-                      <td className="px-1 sm:px-5 py-3.5 text-right">
-                        <button className="p-1 sm:p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors opacity-0 group-hover:opacity-100">
+                      <td className="px-2 sm:px-4 py-3.5 text-center whitespace-nowrap">
+                        <button className="p-1 sm:p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors opacity-100 sm:opacity-80 sm:hover:opacity-100">
                           <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
                         </button>
                       </td>
@@ -472,8 +501,8 @@ const IncomeView = ({ data }) => {
 
           {/* Pagination Controls */}
           {filteredIncome.length > 0 && (
-            <div className="flex items-center justify-between border-t border-slate-100 bg-white px-6 py-4">
-              <p className="text-[13px] font-medium text-slate-500">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100 bg-white px-4 sm:px-6 py-3.5">
+              <p className="text-[12px] sm:text-[13px] font-medium text-slate-500 text-center sm:text-left">
                 Showing <span className="font-bold text-slate-700">{(currentPage - 1) * PAGE_SIZE + 1}</span> to <span className="font-bold text-slate-700">{Math.min(currentPage * PAGE_SIZE, filteredIncome.length)}</span> of <span className="font-bold text-slate-700">{filteredIncome.length}</span> results
               </p>
               <div className="flex items-center gap-2">
@@ -502,36 +531,36 @@ const IncomeView = ({ data }) => {
         </div>
 
         {/* INCOME OVERVIEW CHART */}
-        <div className="lg:w-[40%] flex flex-col">
+        <div className="w-full lg:w-[40%] min-w-0 flex flex-col">
           <IncomeOverviewChart data={incomeBreakdownData} total={totalInflow} />
         </div>
       </div>
 
       {/* View Modal */}
       {viewTransaction && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-[460px] rounded-2xl bg-white shadow-2xl flex flex-col relative overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/80">
-              <div className="flex items-center gap-2.5">
-                <div className={`p-2 rounded-lg ${getTypeIconBg(viewTransaction.type)}`}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-3 sm:p-4">
+          <div className="w-full max-w-[460px] max-h-[90vh] rounded-2xl bg-white shadow-2xl flex flex-col relative overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`p-2 rounded-lg shrink-0 ${getTypeIconBg(viewTransaction.type)}`}>
                   {(() => {
                     const Icon = getTypeIcon(viewTransaction.type);
                     return <Icon className={`h-4 w-4 ${getTypeIconColor(viewTransaction.type)}`} />;
                   })()}
                 </div>
-                <div>
-                  <h3 className="font-bold text-base text-slate-900">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm sm:text-base text-slate-900 truncate">
                     {viewTransaction.type === 'Collection' ? 'Collection Breakdown' : (viewTransaction.type === 'Investment' ? 'Investment Details' : 'Income Details')}
                   </h3>
-                  <p className="text-[11px] text-slate-400">Transaction ID: {viewTransaction.id}</p>
+                  <p className="text-[11px] text-slate-400 truncate">Transaction ID: {viewTransaction.id}</p>
                 </div>
               </div>
-              <button onClick={() => setViewTransaction(null)} className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+              <button onClick={() => setViewTransaction(null)} className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto max-h-[75vh]">
+            <div className="p-4 sm:p-6 overflow-y-auto max-h-[75vh]">
               {viewTransaction.type === 'Collection' ? (
                 <div className="space-y-4">
                   {/* Summary Breakdown Card */}

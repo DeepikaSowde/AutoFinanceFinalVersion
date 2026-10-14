@@ -13,6 +13,12 @@ const toIncome = (income) => ({
   date: income.incomeDate,
   mode: income.paymentMode,
   remarks: income.remarks,
+  // Set on server-recorded document-charge income (INC-DOC-<loan id>).
+  description: income.description || '',
+  loanId: income.loanId || '',
+  customerId: income.customerId || '',
+  customerName: income.customerName || income.receivedFrom || '',
+  isDocumentCharge: Boolean(income.isDocumentCharge),
 })
 
 const toExpense = (expense) => ({

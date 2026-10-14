@@ -269,7 +269,10 @@ const Ledger = () => {
       type: "Income",
       source: 'income',
       description: inc.type,
-      remarks: inc.remarks
+      remarks: inc.remarks,
+      customerName: inc.customerName,
+      customerId: inc.customerId,
+      loanId: inc.loanId,
     });
   });
 
@@ -296,7 +299,10 @@ const Ledger = () => {
         type: "Expense",
         source: 'expense',
         description: exp.category,
-        remarks: exp.remarks
+        remarks: exp.remarks,
+        referralName: exp.referrerName || exp.referralName,
+        customerName: exp.customerName,
+        loanId: exp.loanId,
       });
     }
   });
@@ -345,15 +351,19 @@ const Ledger = () => {
     } else if (tx.source === 'income') {
       amountIn = Number(tx.amount || 0);
       runningBalance += amountIn;
-      typeDesc = "Income";
-      subDesc = `${tx.description}${tx.remarks ? ` - ${tx.remarks}` : ''}`;
-      name = "Manual Income";
+      typeDesc = tx.description === "Document Charge" ? "Document Charge" : (tx.description || "Income");
+      subDesc = tx.loanId
+        ? `Loan ID: ${tx.loanId}${tx.remarks ? ` · ${tx.remarks}` : ''}`
+        : `${tx.description}${tx.remarks ? ` - ${tx.remarks}` : ''}`;
+      name = tx.customerName || (tx.description === "Document Charge" ? "Document Charge" : "Manual Income");
     } else if (tx.source === 'expense') {
       amountOut = Number(tx.amount || 0);
       runningBalance -= amountOut;
-      typeDesc = "Expense";
-      subDesc = `${tx.description}${tx.remarks ? ` - ${tx.remarks}` : ''}`;
-      name = "Business Expense";
+      typeDesc = tx.description || "Expense";
+      subDesc = tx.loanId && tx.loanId !== "—"
+        ? `Loan ID: ${tx.loanId}${tx.remarks ? ` · ${tx.remarks}` : ''}`
+        : `${tx.description}${tx.remarks ? ` - ${tx.remarks}` : ''}`;
+      name = tx.referralName || tx.customerName || "Business Expense";
     } else {
       amountIn = Number(tx.amount || 0);
       runningBalance += amountIn;

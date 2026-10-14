@@ -99,7 +99,7 @@ export default function Loans() {
   const [currentPage, setCurrentPage] = useState(1);
   const [viewingLoan, setViewingLoan] = useState(null);
 
-  const PAGE_SIZE = 6;
+  const PAGE_SIZE = 5;
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -137,9 +137,15 @@ export default function Loans() {
 
       const customerId =
         record.customerId ||
-        (customer.mobile ? `CUS-${customer.mobile.slice(-5)}` : `CUS-${index}`);
+        record.customer?.customerId ||
+        (customer.mobile && customer.mobile.trim().length >= 5 && !/^0+$/.test(customer.mobile.trim().slice(-5))
+          ? `CUS-${customer.mobile.trim().slice(-5)}`
+          : `CUS-${String(index + 1).padStart(3, "0")}`);
 
-      const loanId = record.loanId || `LN-${String(index + 1).padStart(3, "0")}`;
+      const loanId =
+        record.loanId ||
+        record.loan?.loanId ||
+        `LN-${String(index + 1).padStart(3, "0")}`;
 
       const customerName = customer.name || "Unknown Customer";
       const customerMobile = customer.mobile || "";
@@ -245,26 +251,50 @@ export default function Loans() {
     });
   }, [loans, search, statusFilter, frequencyFilter]);
 
-  // Pagination
+  // Pagination (5 loans per page)
   const totalPages = Math.max(1, Math.ceil(filteredLoans.length / PAGE_SIZE));
+
+  // If filtered list changes, ensure current page does not stay on an invalid/empty page
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  const validCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
   const paginatedLoans = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
+    const start = (validCurrentPage - 1) * PAGE_SIZE;
     return filteredLoans.slice(start, start + PAGE_SIZE);
-  }, [filteredLoans, currentPage]);
+  }, [filteredLoans, validCurrentPage]);
+
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (validCurrentPage <= 4) {
+      return [1, 2, 3, 4, 5, "...", totalPages];
+    }
+    if (validCurrentPage >= totalPages - 3) {
+      return [1, "...", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, "...", validCurrentPage - 1, validCurrentPage, validCurrentPage + 1, "...", totalPages];
+  }, [totalPages, validCurrentPage]);
 
   const handlePageChange = (page) => {
-    if (page >= 1 && page <= totalPages) {
+    if (typeof page === "number" && page >= 1 && page <= totalPages) {
       setCurrentPage(page);
     }
   };
 
-  // If a loan details view is requested
+  // If a loan / customer view is requested
   if (viewingLoan) {
     return (
-      <LoanDetailsView
-        loanId={viewingLoan.loanId}
+      <CustomerView
         customerId={viewingLoan.customerId}
+        initialLoanId={viewingLoan.loanId}
         onBack={() => setViewingLoan(null)}
+        backLabel="Back to Loans"
       />
     );
   }
@@ -559,59 +589,78 @@ export default function Loans() {
               TABLE FOOTER & PAGINATION
           ========================================================= */}
           {filteredLoans.length > 0 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-5 py-3 border-t border-slate-200 bg-slate-50/50">
-              <p className="text-xs text-slate-500 font-medium">
-                Showing{" "}
-                <span className="font-semibold text-slate-700">
-                  {Math.min(
-                    (currentPage - 1) * PAGE_SIZE + 1,
-                    filteredLoans.length
-                  )}
-                </span>{" "}
-                –{" "}
-                <span className="font-semibold text-slate-700">
-                  {Math.min(currentPage * PAGE_SIZE, filteredLoans.length)}
-                </span>{" "}
-                of{" "}
-                <span className="font-semibold text-slate-700">
-                  {filteredLoans.length}
-                </span>{" "}
-                loans
-              </p>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-5 py-3.5 border-t border-slate-200 bg-slate-50/50">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-medium">
+                <span>
+                  Showing{" "}
+                  <span className="font-semibold text-slate-700">
+                    {Math.min(
+                      (validCurrentPage - 1) * PAGE_SIZE + 1,
+                      filteredLoans.length
+                    )}
+                  </span>{" "}
+                  –{" "}
+                  <span className="font-semibold text-slate-700">
+                    {Math.min(validCurrentPage * PAGE_SIZE, filteredLoans.length)}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-semibold text-slate-700">
+                    {filteredLoans.length}
+                  </span>{" "}
+                  loans
+                </span>
+                <span className="text-slate-300">•</span>
+                <span className="font-semibold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[11px]">
+                  Page {validCurrentPage} of {totalPages}
+                </span>
+              </div>
 
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="h-7 w-7 rounded-md border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  onClick={() => handlePageChange(validCurrentPage - 1)}
+                  disabled={validCurrentPage <= 1}
+                  className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                   aria-label="Previous page"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>Previous</span>
                 </button>
 
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    type="button"
-                    onClick={() => handlePageChange(page)}
-                    className={`h-7 w-7 rounded-md text-xs font-bold transition-colors ${
-                      currentPage === page
-                        ? "bg-[#006052] text-white shadow-2xs"
-                        : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ))}
+                <div className="flex items-center gap-1">
+                  {pageNumbers.map((page, idx) =>
+                    page === "..." ? (
+                      <span
+                        key={`ellipsis-${idx}`}
+                        className="px-1 text-xs text-slate-400 font-medium"
+                      >
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={page}
+                        type="button"
+                        onClick={() => handlePageChange(page)}
+                        className={`h-8 min-w-[32px] px-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                          validCurrentPage === page
+                            ? "bg-[#006052] text-white shadow-2xs"
+                            : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300"
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    )
+                  )}
+                </div>
 
                 <button
                   type="button"
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="h-7 w-7 rounded-md border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  onClick={() => handlePageChange(validCurrentPage + 1)}
+                  disabled={validCurrentPage >= totalPages}
+                  className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                   aria-label="Next page"
                 >
+                  <span>Next</span>
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>

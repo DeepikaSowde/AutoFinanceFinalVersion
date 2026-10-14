@@ -14,7 +14,12 @@ import {
   MapPin,
   FileText,
   ChevronLeft,
+  ArrowRight,
+  ShieldAlert,
+  KeyRound,
+  DollarSign,
 } from 'lucide-react';
+import { getChronologicalVehicleHistory } from './VehicleStatusHistoryModal';
 
 /**
  * Format date for history timeline
@@ -394,76 +399,145 @@ const ActiveVehicleModal = ({ isOpen, onClose, vehicleRecord, onSeizureSuccess }
           )}
 
           {/* =========================================================
-              VIEW 3: STATUS HISTORY VIEW
+              VIEW 3: STATUS HISTORY VIEW (Chronological Timeline)
           ========================================================= */}
-          {currentView === 'history' && (
-            <div className="space-y-4">
-              {statusHistory.length === 0 ? (
-                <div className="py-12 px-4 text-center rounded-xl bg-slate-50/80 border border-slate-100">
-                  <div className="h-10 w-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2.5">
-                    <History className="h-5 w-5" />
-                  </div>
-                  <h4 className="text-sm font-bold text-slate-700">No status changes recorded</h4>
-                  <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-                    This vehicle has maintained its initial Active status since onboarding.
-                  </p>
-                </div>
-              ) : (
-                <div className="relative pl-6 border-l-2 border-slate-200 space-y-6">
-                  {statusHistory.map((item, idx) => (
-                    <div key={idx} className="relative">
-                      {/* Timeline Bullet */}
-                      <div className="absolute -left-[31px] top-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#006052] shadow-xs" />
+          {currentView === 'history' && (() => {
+            const timelineEvents = getChronologicalVehicleHistory(vehicleRecord);
 
-                      <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 space-y-1.5 text-xs">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-slate-900">
-                            {item.fromStatus} → {item.toStatus}
-                          </span>
-                          <span className="text-[11px] text-slate-500 font-medium">
-                            {formatDateTime(item.date)}
-                          </span>
+            return (
+              <div className="space-y-5">
+                {/* 1. SEPARATE CURRENT STATUS CARD */}
+                <div className="rounded-xl border border-emerald-200 bg-[#F0FDF4] p-4 shadow-2xs flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <CheckCircle2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-600">Current Vehicle Status:</span>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-[#006052] text-white shadow-2xs">
+                          Active
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-700 font-medium mt-0.5">
+                        Vehicle is currently operational and in active service.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-slate-500 hidden sm:block">
+                    {timelineEvents.length} {timelineEvents.length === 1 ? 'event' : 'events'}
+                  </span>
+                </div>
+
+                {/* 2. TIMELINE LIST */}
+                <div className="relative pl-6 sm:pl-7 border-l-2 border-slate-200 space-y-5">
+                  {timelineEvents.map((item, idx) => {
+                    const isLatest = idx === timelineEvents.length - 1;
+
+                    let NodeIcon = CheckCircle2;
+                    let nodeBg = 'bg-[#2563EB]';
+
+                    if (item.eventType === 'seizure' || item.toStatus === 'Seized') {
+                      NodeIcon = ShieldAlert;
+                      nodeBg = 'bg-[#EA580C]';
+                    } else if (item.eventType === 'release' || item.statusBadge?.includes('Released')) {
+                      NodeIcon = KeyRound;
+                      nodeBg = 'bg-[#006052]';
+                    } else if (item.eventType === 'sale' || item.toStatus === 'Sold') {
+                      NodeIcon = DollarSign;
+                      nodeBg = 'bg-slate-700';
+                    }
+
+                    return (
+                      <div key={item.id || idx} className="relative">
+                        {/* Timeline Bullet */}
+                        <div
+                          className={`absolute -left-[31px] sm:-left-[35px] top-1.5 h-6 w-6 rounded-full border-2 border-white shadow-xs flex items-center justify-center text-white ${nodeBg}`}
+                        >
+                          <NodeIcon className="h-3 w-3" />
                         </div>
 
-                        {item.reason && (
-                          <p className="text-slate-600">
-                            <span className="font-semibold text-slate-700">Reason:</span> {item.reason}
-                          </p>
-                        )}
-                        {item.storageLocation && (
-                          <p className="text-slate-600">
-                            <span className="font-semibold text-slate-700">Storage:</span>{' '}
-                            {item.storageLocation}
-                          </p>
-                        )}
-                        {item.condition && (
-                          <p className="text-slate-600">
-                            <span className="font-semibold text-slate-700">Condition:</span>{' '}
-                            {item.condition}
-                          </p>
-                        )}
-                        {item.notes && (
-                          <p className="text-slate-500 italic mt-1 pt-1 border-t border-slate-200/60">
-                            &quot;{item.notes}&quot;
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-1.5 text-xs">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-slate-900">
+                                {item.title || (item.fromStatus ? `${item.fromStatus} → ${item.toStatus}` : item.toStatus)}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.badgeColor || 'bg-slate-600 text-white'
+                                }`}
+                              >
+                                {item.statusBadge || item.toStatus}
+                              </span>
+                              {isLatest && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-100 text-[#006052]">
+                                  Latest
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-slate-500 font-medium">
+                              {formatDateTime(item.date)}
+                            </span>
+                          </div>
 
-              <div className="pt-2 border-t border-slate-100 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setCurrentView('details')}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors cursor-pointer"
-                >
-                  Back to Details
-                </button>
+                          {item.fromStatus && (
+                            <div className="flex items-center gap-1.5 text-slate-600">
+                              <span className="font-semibold text-slate-700">Transition:</span>
+                              <span className="font-bold text-slate-800">{item.fromStatus}</span>
+                              <ArrowRight className="h-3 w-3 text-slate-400" />
+                              <span className="font-bold text-[#006052]">{item.toStatus}</span>
+                            </div>
+                          )}
+
+                          {item.releasedTo && (
+                            <p className="text-slate-800 font-semibold">
+                              <span className="text-slate-500 font-medium">Released To:</span> {item.releasedTo}
+                            </p>
+                          )}
+                          {item.clearedAmount && (
+                            <p className="text-slate-600">
+                              <span className="font-semibold text-slate-700">Settled Amount:</span> ₹{Number(item.clearedAmount).toLocaleString('en-IN')}
+                            </p>
+                          )}
+                          {item.reason && (
+                            <p className="text-slate-600">
+                              <span className="font-semibold text-slate-700">Reason / Event:</span> {item.reason}
+                            </p>
+                          )}
+                          {item.storageLocation && (
+                            <p className="text-slate-600">
+                              <span className="font-semibold text-slate-700">Storage Location:</span> {item.storageLocation}
+                            </p>
+                          )}
+                          {item.condition && (
+                            <p className="text-slate-600">
+                              <span className="font-semibold text-slate-700">Condition:</span> {item.condition}
+                            </p>
+                          )}
+                          {item.notes && item.notes !== item.reason && (
+                            <p className="text-slate-500 italic pt-1 border-t border-slate-200/50">
+                              &quot;{item.notes}&quot;
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentView('details')}
+                    className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Back to Details
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* =========================================================

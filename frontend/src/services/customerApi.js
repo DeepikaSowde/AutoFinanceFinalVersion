@@ -251,6 +251,8 @@ const releaseDetailsFrom = (release) =>
     ? {
         releaseDate: (release.releaseDate || '').slice(0, 10),
         reason: release.reason || '',
+        releasedTo: release.releasedTo || '',
+        recipient: release.releasedTo || '',
         clearedAmount: release.clearedAmount ?? null,
         notes: release.notes || release.remarks || '',
         recordedAt: release.updatedAt || release.releaseDate || '',

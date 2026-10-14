@@ -1,17 +1,15 @@
 import React from 'react';
-import { Bike, ShieldAlert, CheckCircle, Archive } from 'lucide-react';
+import { Bike, ShieldAlert, Archive } from 'lucide-react';
 
 /**
  * Summary KPI Cards matching screenshot:
  * 1. Total Vehicles (green icon container, light background)
  * 2. Seized Vehicles (orange-red icon container, light-orange background)
- * 3. Released Vehicles (emerald icon container, light-emerald background)
- * 4. Sold Vehicles (grey icon container, light-grey background)
+ * 3. Sold Vehicles (grey icon container, light-grey background)
  */
 const VehicleSummaryCards = ({
   totalCount = 0,
   seizedCount = 0,
-  releasedCount = 0,
   soldCount = 0,
 }) => {
   const cards = [
@@ -30,13 +28,6 @@ const VehicleSummaryCards = ({
       cardBg: 'bg-[#FFF7ED] border-orange-100/80',
     },
     {
-      title: 'Released Vehicles',
-      value: releasedCount,
-      icon: CheckCircle,
-      iconBg: 'bg-[#10B981] text-white',
-      cardBg: 'bg-[#F0FDF4] border-emerald-100/80',
-    },
-    {
       title: 'Sold Vehicles',
       value: soldCount,
       icon: Archive,
@@ -46,7 +37,7 @@ const VehicleSummaryCards = ({
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 w-full">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4 w-full">
       {cards.map((card) => {
         const IconComponent = card.icon;
         return (

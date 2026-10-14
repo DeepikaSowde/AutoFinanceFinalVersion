@@ -16,6 +16,14 @@ const toPayment = (collection) => ({
   advance: collection.amountTowardAdvance || 0,
   mode: collection.payMode,
   remarks: collection.remarks,
+  // Which installments this payment went to (from the server's allocation),
+  // for the Installment No. column. Deliberately not "allocations": the
+  // schedule views must not re-apply a payment the server already applied.
+  installmentNumbers: [...new Set(
+    (collection.allocation?.items || [])
+      .filter((item) => Number(item.amount) > 0 && Number(item.installmentNumber) > 0)
+      .map((item) => Number(item.installmentNumber))
+  )].sort((a, b) => a - b),
 })
 
 // Posted payments only; reversed or rejected collections moved no money.
