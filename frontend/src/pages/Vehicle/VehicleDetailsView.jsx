@@ -29,7 +29,9 @@ import { DATA_CHANGED_EVENT } from '../../services/api';
 import { loadCustomerEntries } from '../../services/customerApi';
 import { loadPayments } from '../../services/collectionApi';
 import { releaseVehicle, sellVehicle, updateSeizure } from '../../services/vehicleApi';
+import { calculateLoanOutstanding } from '../../utils/loanCalculations';
 import VehicleStatusHistoryModal, { getChronologicalVehicleHistory } from '../../components/vehicle/VehicleStatusHistoryModal';
+import { useVehicleImage } from '../../utils/vehicleImageHelper';
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(Number(val))) return '₹0';
@@ -75,7 +77,9 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
   // Current live vehicle data
   const [record, setRecord] = useState(vehicleRecord);
   const [allPayments, setAllPayments] = useState([]);
-  const [imgError, setImgError] = useState(false);
+
+  // Vehicle image selection (customer uploaded photo priority -> vehicle-type default image -> fallback)
+  const { imageSrc, handleImageError } = useVehicleImage(record);
 
   // Modal states for Seized Vehicle Actions
   const [activeModal, setActiveModal] = useState(null); // 'release' | 'sold' | 'editSeizure' | 'history' | null
@@ -90,6 +94,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
   // Sale Form State
   const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0]);
   const [salePrice, setSalePrice] = useState('');
+  const [vehicleExpenses, setVehicleExpenses] = useState('');
   const [buyerName, setBuyerName] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
   const [proceedsReceived, setProceedsReceived] = useState('');
@@ -164,9 +169,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
   const customerName = customer.name || 'Not linked';
   const customerMobile = customer.mobile || 'Not available';
 
-  const photoSrc =
-    !imgError && (vehicle.photo?.data || vehicle.photo || vehicle.photoFile || record?.photo || null);
-
   const isBike = !vehicle.type || vehicle.type === 'Two Wheeler';
   const FallbackIcon = isBike ? Bike : Car;
 
@@ -186,6 +188,11 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
   // Calculate Overdue Details strictly from linked customer and loan schedule
   const overdueInfo = useMemo(() => {
     return calculateVehicleLoanOverdue(record, allPayments);
+  }, [record, allPayments]);
+
+  // Calculate Loan Outstanding Amount strictly from loan calculations
+  const loanOutstandingInfo = useMemo(() => {
+    return calculateLoanOutstanding(record, allPayments);
   }, [record, allPayments]);
 
   // Handle open Edit Seizure
@@ -211,12 +218,20 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
 
   // Handle open Sold modal
   const handleOpenSold = () => {
-    setSaleDate(new Date().toISOString().split('T')[0]);
-    setSalePrice('');
-    setBuyerName('');
-    setBuyerPhone('');
-    setProceedsReceived('');
-    setSaleNotes('');
+    const existingSale = record.vehicle?.saleDetails || record.saleDetails || {};
+    setSaleDate(existingSale.saleDate || new Date().toISOString().split('T')[0]);
+    setSalePrice(existingSale.salePrice ? String(existingSale.salePrice) : '');
+    setVehicleExpenses(
+      existingSale.vehicleExpenses !== undefined && existingSale.vehicleExpenses !== null
+        ? String(existingSale.vehicleExpenses)
+        : (existingSale.saleExpenses !== undefined && existingSale.saleExpenses !== null
+          ? String(existingSale.saleExpenses)
+          : '')
+    );
+    setBuyerName(existingSale.buyerName || '');
+    setBuyerPhone(existingSale.buyerPhone || '');
+    setProceedsReceived(existingSale.proceedsReceived ? String(existingSale.proceedsReceived) : '');
+    setSaleNotes(existingSale.notes || '');
     setFormErrors({});
     setActiveModal('sold');
   };
@@ -287,7 +302,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
     const errors = {};
     if (!saleDate) errors.saleDate = 'Sale date is required';
     if (!salePrice || isNaN(Number(salePrice)) || Number(salePrice) <= 0) {
-      errors.salePrice = 'Valid sale price is required';
+      errors.salePrice = 'Valid sale amount is required';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -296,14 +311,16 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
     }
 
     try {
-      // Selling forecloses the loan; the server works out the shortfall or
-      // surplus against what is still owed.
+      // Selling forecloses the loan; the server records the sale price and the
+      // vehicle expenses (sale costs) and works out the shortfall or surplus
+      // against what is still owed. The Income / Expense views show the sale
+      // and its expenses from that record.
       await sellVehicle((vehicle.vehicleId || record.vehicleId), {
         saleDate,
         salePrice,
+        saleExpenses: vehicleExpenses ? Number(vehicleExpenses) : 0,
         buyerName: buyerName.trim(),
         buyerPhone: buyerPhone.trim(),
-        proceedsReceived,
         notes: saleNotes.trim(),
       });
       setActiveModal(null);
@@ -378,11 +395,11 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
       <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-5 sm:p-6 flex flex-col md:flex-row gap-6 items-start">
         {/* Photo Container */}
         <div className="w-full md:w-52 h-44 md:h-36 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
-          {photoSrc ? (
+          {imageSrc ? (
             <img
-              src={photoSrc}
+              src={imageSrc}
               alt={makeModel}
-              onError={() => setImgError(true)}
+              onError={handleImageError}
               className="w-full h-full object-cover object-center"
             />
           ) : (
@@ -923,7 +940,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    Sale Price (₹) <span className="text-red-500">*</span>
+                    Sale Amount (₹) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -970,18 +987,76 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Proceeds Received (₹)
+                  Vehicle Expenses (₹)
                 </label>
                 <input
                   type="number"
                   min="0"
                   step="any"
-                  value={proceedsReceived}
-                  onChange={(e) => setProceedsReceived(e.target.value)}
-                  placeholder="Default equals sale price"
+                  value={vehicleExpenses}
+                  onChange={(e) => setVehicleExpenses(e.target.value)}
+                  placeholder="0.00"
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#006052]/20 focus:border-[#006052]"
                 />
               </div>
+
+              {/* Profit / Loss Estimate Section */}
+              {(() => {
+                const saleAmountNum = Number(salePrice) || 0;
+                const vehicleExpensesNum = Number(vehicleExpenses) || 0;
+                const netSaleAmount = Math.max(0, saleAmountNum - vehicleExpensesNum);
+                const outstandingLoanAmount = Math.round(Number(loanOutstandingInfo?.outstandingAmount || 0));
+                const profitLossDiff = netSaleAmount - outstandingLoanAmount;
+
+                return (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700">Profit / Loss Estimate</span>
+                      <span className="text-[10px] text-slate-400 font-medium">UI Estimate</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200/60">
+                      <div>
+                        <span className="text-slate-500 block text-[11px]">Net Sale Amount</span>
+                        <span className="font-bold text-slate-800">
+                          ₹{netSaleAmount.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block text-[11px]">Outstanding Loan Amount</span>
+                        <span className="font-bold text-slate-800">
+                          ₹{outstandingLoanAmount.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`p-2.5 rounded-lg border flex items-center justify-between text-xs font-bold ${
+                        saleAmountNum === 0
+                          ? 'bg-slate-100 border-slate-200 text-slate-600'
+                          : profitLossDiff > 0
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : profitLossDiff < 0
+                          ? 'bg-red-50 border-red-200 text-red-800'
+                          : 'bg-blue-50 border-blue-200 text-blue-800'
+                      }`}
+                    >
+                      <span className="font-semibold text-slate-600">Estimate:</span>
+                      <span className="text-[13px] font-extrabold tracking-tight">
+                        {saleAmountNum === 0 ? (
+                          `Estimated Loss: ₹${outstandingLoanAmount.toLocaleString('en-IN')}`
+                        ) : profitLossDiff > 0 ? (
+                          `Estimated Profit: ₹${Math.round(profitLossDiff).toLocaleString('en-IN')}`
+                        ) : profitLossDiff < 0 ? (
+                          `Estimated Loss: ₹${Math.round(Math.abs(profitLossDiff)).toLocaleString('en-IN')}`
+                        ) : (
+                          'Break-even'
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">

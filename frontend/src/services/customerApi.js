@@ -267,6 +267,9 @@ const saleDetailsFrom = (sale) =>
         buyerName: sale.buyerName || '',
         buyerPhone: sale.buyerPhone || sale.buyerMobile || '',
         proceedsReceived: sale.netSaleProceeds ?? sale.salePrice,
+        saleExpenses: Number(sale.saleExpenses) || 0,
+        vehicleExpenses: Number(sale.saleExpenses) || 0,
+        netSaleAmount: sale.netSaleProceeds ?? sale.salePrice,
         notes: sale.notes || sale.remarks || '',
         recordedAt: sale.updatedAt || sale.soldAt || '',
       }

@@ -21,12 +21,15 @@ export const releaseVehicle = (vehicleId, { releaseDate, releasedTo, reason, cle
 // "Proceeds received" is what is left of the price after sale costs; the
 // server records price and costs and works out the shortfall or surplus
 // against what the loan owes.
-export const sellVehicle = (vehicleId, { saleDate, salePrice, buyerName, buyerPhone, proceedsReceived, notes }) => {
+export const sellVehicle = (vehicleId, { saleDate, salePrice, saleExpenses, buyerName, buyerPhone, proceedsReceived, notes }) => {
   const price = Number(salePrice) || 0
   const proceeds = proceedsReceived === '' || proceedsReceived == null ? price : Number(proceedsReceived) || 0
+  // The Vehicle module sends its "Vehicle Expenses" as saleExpenses; older
+  // callers send proceeds received instead.
+  const costs = saleExpenses != null && saleExpenses !== '' ? Math.max(0, Number(saleExpenses) || 0) : Math.max(0, price - proceeds)
   return apiPost(`/vehicles/${vehicleId}/complete-sale`, {
     salePrice: price,
-    saleExpenses: Math.max(0, price - proceeds),
+    saleExpenses: costs,
     buyerName,
     buyerPhone,
     soldAt: saleDate,

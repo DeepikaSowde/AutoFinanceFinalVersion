@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { addExpense, addIncome, loadLedgerData } from "../../services/ledgerApi";
 import { debitInvestor, reinvest } from "../../services/investorApi";
 import IncomeView from "./IncomeView";
@@ -41,6 +41,43 @@ const Ledger = () => {
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const { investors, customers, payments, incomeData, expenseData, vehicleSales } = data;
+
+  // For the Income / Expense tabs only: each sold vehicle as its gross sale
+  // income and its expenses, from the server's sale record. The Ledger view and
+  // totals below keep the single net-proceeds line, so nothing is counted twice.
+  const tabData = useMemo(() => {
+    const saleBase = (sale) => ({
+      date: String(sale.date || '').slice(0, 10),
+      mode: 'Cash',
+      regNo: sale.regNo,
+      vehicleRegNo: sale.regNo,
+      loanId: sale.loanId || '—',
+      customerName: sale.customerName || '—',
+    });
+    const saleIncomes = vehicleSales.map((sale) => ({
+      ...saleBase(sale),
+      id: `INC-${sale.id}`,
+      type: 'Vehicle Sale',
+      amount: sale.salePrice,
+      remarks: `Vehicle Sale – ${sale.regNo || ''}`,
+      isVehicleSale: true,
+    }));
+    const saleExpenses = vehicleSales
+      .filter((sale) => sale.saleExpenses > 0)
+      .map((sale) => ({
+        ...saleBase(sale),
+        id: `EXP-${sale.id}`,
+        category: 'Vehicle Expense',
+        amount: sale.saleExpenses,
+        remarks: `Vehicle Expenses – ${sale.regNo || ''}`,
+        isVehicleExpense: true,
+      }));
+    return {
+      ...data,
+      incomeData: [...incomeData, ...saleIncomes],
+      expenseData: [...expenseData, ...saleExpenses],
+    };
+  }, [data, incomeData, expenseData, vehicleSales]);
 
   // State to trigger modals
   const [showTypeSelection, setShowTypeSelection] = useState(false);
@@ -525,8 +562,8 @@ const Ledger = () => {
         </div>
       )}
       {loading && !loadError && <p className="mx-4 mt-4 text-sm text-slate-500 sm:mx-6 lg:mx-8">Loading ledger…</p>}
-      {filter === 'Income' && <IncomeView data={data} />}
-      {filter === 'Expense' && <ExpenseView data={data} onAddExpense={() => setShowAddExpense(true)} />}
+      {filter === 'Income' && <IncomeView data={tabData} />}
+      {filter === 'Expense' && <ExpenseView data={tabData} onAddExpense={() => setShowAddExpense(true)} />}
 
       {filter === 'Ledger' && (
         <>
@@ -865,6 +902,7 @@ const Ledger = () => {
                   }}
                   className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all"
                 >
+                  <option value="Vehicle Expense">Vehicle Expense</option>
                   <option value="Rent">Rent</option>
                   <option value="Salary">Salary</option>
                   <option value="Electricity">Electricity</option>

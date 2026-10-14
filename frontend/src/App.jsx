@@ -54,6 +54,7 @@ function AppShell() {
         <Routes>
           <Route path="/" element={home ? <Navigate to={home} replace /> : <NoAccess />} />
           <Route path="/loans" element={gate('/loans', <Loans />)} />
+          <Route path="/loans/:loanId" element={gate('/loans', <Loans />)} />
           <Route path="/dashboard" element={gate('/dashboard', <Dashboard />)} />
           <Route path="/newloan" element={gate('/newloan', <NewLoan />)} />
           <Route path="/customers" element={gate('/customers', <Customer />)} />
