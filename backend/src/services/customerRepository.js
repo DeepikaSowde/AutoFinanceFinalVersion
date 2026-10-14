@@ -9,6 +9,7 @@ import { currentTenantId } from "../db/tenantContext.js";
 import { calculateLoan } from "./loanCalculator.js";
 import { generateRepaymentSchedule } from "./repaymentSchedule.js";
 import { fundLoanInTransaction } from "./investorRepository.js";
+import { syncDocumentChargeIncome, deleteDocumentChargeIncomes } from "./incomeRepository.js";
 import { describeInstallment, summariseOutstanding } from "./repaymentEngine.js";
 
 const pad = (number, length = 5) => String(number).padStart(length, "0");
@@ -488,6 +489,7 @@ export const insertLoan = async (client, customerPk, vehiclePk, loan = {}, optio
   await client.query("UPDATE loans SET id = $1, loan_number = $1 WHERE pk = $2", [loanId, loanPk]);
 
   await insertInstallments(client, loanPk, loan);
+  await syncDocumentChargeIncome(client, loanPk);
 
   return loanPk;
 };
@@ -629,17 +631,36 @@ export const updateCustomer = async (customerId, payload = {}) => {
           currentTenantId(),
         ]
       );
+
+      // A changed document charge updates (or removes) its income entry.
+      const loanPk = await client.query("SELECT pk FROM loans WHERE id = $1 AND tenant_id = $2", [
+        existing.loan.id,
+        currentTenantId(),
+      ]);
+      if (loanPk.rows[0]) await syncDocumentChargeIncome(client, loanPk.rows[0].pk);
     }
   });
 
   return getCustomerById(customerId);
 };
 
-export const deleteCustomer = async (customerId) => {
-  const result = await query("DELETE FROM customers WHERE id = $1 AND tenant_id = $2", [customerId, currentTenantId()]);
+export const deleteCustomer = async (customerId) =>
+  withTransaction(async (client) => {
+    // Their loans go with them (cascade), so their document-charge income too.
+    const loans = await client.query(
+      `SELECT l.id FROM loans l JOIN customers c ON c.pk = l.customer_pk
+       WHERE c.id = $1 AND c.tenant_id = $2`,
+      [customerId, currentTenantId()]
+    );
+    await deleteDocumentChargeIncomes(client, loans.rows.map((r) => r.id));
 
-  return result.rowCount > 0;
-};
+    const result = await client.query("DELETE FROM customers WHERE id = $1 AND tenant_id = $2", [
+      customerId,
+      currentTenantId(),
+    ]);
+
+    return result.rowCount > 0;
+  });
 
 /*
  * Additional loan against an existing customer (the re-loan path).

@@ -35,6 +35,7 @@ import {
   deleteReferral,
   getReferrals,
   markReferralPaid,
+  updateReferralRate,
 } from "../services/referralRepository.js";
 import {
   addReminder,
@@ -382,6 +383,22 @@ referralsRouter.post(
   requirePermission("expense.approve"),
   asyncHandler(async (req, res) => {
     const referral = await markReferralPaid(req.params.referralId, req.body || {});
+
+    if (!referral) {
+      return res.status(404).json({ error: "Referral commission not found." });
+    }
+
+    res.json(referral);
+  })
+);
+
+// Change a commission's percentage (amount recalculated; a paid one's
+// expense is updated in place).
+referralsRouter.put(
+  "/:referralId/rate",
+  requirePermission("expense.edit"),
+  asyncHandler(async (req, res) => {
+    const referral = await updateReferralRate(req.params.referralId, req.body || {});
 
     if (!referral) {
       return res.status(404).json({ error: "Referral commission not found." });

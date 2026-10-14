@@ -219,6 +219,55 @@ export const markReferralPaid = async (referralId, payment = {}) => {
   return found ? getReferralById(referralId) : null;
 };
 
+/*
+ * Changes a commission's percentage. The amount is recalculated as loan amount
+ * x % / 100 (rounded to the rupee, as the Referral page does) unless an
+ * explicit amount is given. Payment status/date/mode are kept. If it was
+ * already paid, its existing expense is updated to the new amount — never a
+ * second expense.
+ */
+export const updateReferralRate = async (referralId, { percentage, commissionAmount, notes } = {}) => {
+  const found = await withTransaction(async (client) => {
+    const locked = await client.query(
+      `SELECT rc.pk, rc.status, rc.expense_id, rc.loan_amount, l.loan_amount AS loan_principal
+       FROM referral_commissions rc LEFT JOIN loans l ON l.pk = rc.loan_pk
+       WHERE rc.id = $1 AND rc.tenant_id = $2 FOR UPDATE OF rc`,
+      [referralId, currentTenantId()]
+    );
+    const row = locked.rows[0];
+
+    if (!row) return false;
+
+    const pct = Number(percentage);
+    if (!(pct >= 0 && pct <= 100)) throw httpError("Commission percentage must be between 0 and 100.");
+
+    const loanAmount = Number(row.loan_amount) || Number(row.loan_principal) || 0;
+    const explicit = Number(commissionAmount);
+    const amount = explicit > 0 ? roundMoney(explicit) : Math.round((loanAmount * pct) / 100);
+
+    if (!(amount > 0)) throw httpError("Commission amount must be greater than zero.");
+
+    await client.query(
+      `UPDATE referral_commissions
+       SET percentage = $2, amount = $3, loan_amount = COALESCE(loan_amount, NULLIF($4, 0)),
+           remarks = COALESCE($5, remarks), updated_at = now()
+       WHERE pk = $1`,
+      [row.pk, pct, amount, loanAmount, notes === undefined ? null : notes]
+    );
+
+    if (row.status === "Paid" && row.expense_id) {
+      await client.query(
+        "UPDATE expenses SET amount = $2, updated_at = now() WHERE id = $1 AND tenant_id = $3",
+        [row.expense_id, amount, currentTenantId()]
+      );
+    }
+
+    return true;
+  });
+
+  return found ? getReferralById(referralId) : null;
+};
+
 export const deleteReferral = async (referralId) => {
   const result = await query("DELETE FROM referral_commissions WHERE id = $1 AND tenant_id = $2", [referralId, currentTenantId()]);
 

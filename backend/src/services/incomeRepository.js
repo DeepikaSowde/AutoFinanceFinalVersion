@@ -73,6 +73,70 @@ const toValues = (income) => [
   income.createdBy || income.recordedBy || "",
 ];
 
+/*
+ * Document charge collected on a loan, recorded as income (it is neither
+ * principal nor interest). One row per loan with a fixed id, INC-DOC-<loan id>,
+ * written on the caller's transaction so saving the same loan again updates it
+ * instead of adding another, and a charge set back to 0 removes it.
+ */
+export const syncDocumentChargeIncome = async (client, loanPk) => {
+  const found = await client.query(
+    `SELECT l.id, l.charges, l.collection, l.created_at, c.id AS customer_id, c.personal
+     FROM loans l JOIN customers c ON c.pk = l.customer_pk
+     WHERE l.pk = $1 AND l.tenant_id = $2`,
+    [loanPk, currentTenantId()]
+  );
+  const loan = found.rows[0];
+
+  if (!loan) return;
+
+  const incomeId = `INC-DOC-${loan.id}`;
+  const amount = roundMoney(loan.charges?.documentCharge);
+
+  if (!(amount > 0)) {
+    await client.query("DELETE FROM incomes WHERE id = $1 AND tenant_id = $2", [incomeId, currentTenantId()]);
+    return;
+  }
+
+  const customerName = loan.personal?.name || "Customer";
+  const date = new Date(loan.created_at).toISOString().slice(0, 10);
+
+  await client.query(
+    `INSERT INTO incomes
+      (id, amount, status, category, income_date, payment_mode, received_from, reference,
+       description, remarks, details, created_by, tenant_id)
+     VALUES ($1, $2, 'Received', 'Document Charge', $3, $4, $5, $6, 'Document charge', $7, $8, 'system', $9)
+     ON CONFLICT (id) DO UPDATE SET
+       amount = EXCLUDED.amount, received_from = EXCLUDED.received_from,
+       remarks = EXCLUDED.remarks, details = EXCLUDED.details, updated_at = now()`,
+    [
+      incomeId,
+      amount,
+      date,
+      loan.collection?.paymentMode || "Cash",
+      customerName,
+      loan.id,
+      `Document charge collected for loan ${loan.id} (${customerName})`,
+      JSON.stringify({
+        loanId: loan.id,
+        customerId: loan.customer_id,
+        customerName,
+        isDocumentCharge: true,
+      }),
+      currentTenantId(),
+    ]
+  );
+};
+
+// Removes the document-charge income of loans that are being deleted.
+export const deleteDocumentChargeIncomes = (client, loanIds = []) =>
+  loanIds.length
+    ? client.query("DELETE FROM incomes WHERE id = ANY($1::text[]) AND tenant_id = $2", [
+        loanIds.map((id) => `INC-DOC-${id}`),
+        currentTenantId(),
+      ])
+    : null;
+
 export const getIncomes = async () => {
   const result = await query("SELECT * FROM incomes WHERE tenant_id = $1 ORDER BY pk DESC", [currentTenantId()]);
 
