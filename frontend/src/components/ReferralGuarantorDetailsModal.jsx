@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   X,
   Users,
@@ -11,7 +11,11 @@ import {
   ChevronRight,
   UserCheck,
 } from "lucide-react";
-import { getPersonDetailsSummary } from "../utils/guarantorReferralStorage";
+import {
+  getGuarantorReferralRecords,
+  getPersonDetailsSummary,
+  UPDATE_EVENT_NAME,
+} from "../utils/guarantorReferralStorage";
 
 // Helper: Format date as DD MMM YYYY
 const formatDate = (dateString) => {
@@ -46,6 +50,7 @@ export const ReferralGuarantorDetailsModal = ({ person, onClose }) => {
     referral: 1,
     both: 1,
   });
+  const [dataVersion, setDataVersion] = useState(0);
 
   // Prevent background scrolling while modal is open
   useEffect(() => {
@@ -65,10 +70,30 @@ export const ReferralGuarantorDetailsModal = ({ person, onClose }) => {
     };
   }, [onClose]);
 
+  useEffect(() => {
+    const refreshPerson = () => {
+      setDataVersion((version) => version + 1);
+    };
+
+    window.addEventListener(UPDATE_EVENT_NAME, refreshPerson);
+    window.addEventListener("storage", refreshPerson);
+    return () => {
+      window.removeEventListener(UPDATE_EVENT_NAME, refreshPerson);
+      window.removeEventListener("storage", refreshPerson);
+    };
+  }, [person]);
+
   // Compute all data strictly from actual application records
   const summary = useMemo(() => {
-    return getPersonDetailsSummary(person);
-  }, [person]);
+    try {
+      const records = dataVersion >= 0 ? getGuarantorReferralRecords() : [];
+      const currentPerson = records.find((record) => record.id === person?.id) || person;
+      return getPersonDetailsSummary(currentPerson);
+    } catch (error) {
+      console.error("Failed to load guarantor/referral details:", error);
+      return getPersonDetailsSummary(person);
+    }
+  }, [person, dataVersion]);
 
   const { guarantorList, referralList, bothList, kpis, documents } = summary;
 
@@ -410,6 +435,9 @@ export const ReferralGuarantorDetailsModal = ({ person, onClose }) => {
                     {/* Table Header */}
                     <thead className="bg-[#0F1E36] text-white sticky top-0 z-10">
                       <tr>
+                        <th className="px-3.5 py-2.5 font-semibold text-[11px] uppercase tracking-wider whitespace-nowrap">
+                          Date
+                        </th>
                         <th className="px-3.5 py-2.5 font-semibold text-[11px] uppercase tracking-wider">
                           Customer
                         </th>
@@ -442,7 +470,12 @@ export const ReferralGuarantorDetailsModal = ({ person, onClose }) => {
                           key={item.id}
                           className="hover:bg-slate-50/70 transition-colors"
                         >
-                          {/* Column 1: Customer (Name & Customer ID) */}
+                          {/* Column 1: Association Date */}
+                          <td className="px-3.5 py-2.5 text-slate-700 whitespace-nowrap">
+                            {formatDate(item.associatedDate)}
+                          </td>
+
+                          {/* Column 2: Customer (Name & Customer ID) */}
                           <td className="px-3.5 py-2.5">
                             <div className="font-semibold text-slate-900 leading-snug">
                               {item.customerName || "Customer"}
@@ -452,12 +485,12 @@ export const ReferralGuarantorDetailsModal = ({ person, onClose }) => {
                             </div>
                           </td>
 
-                          {/* Column 2: Loan ID */}
+                          {/* Column 3: Loan ID */}
                           <td className="px-3.5 py-2.5 font-mono text-slate-700 font-medium whitespace-nowrap">
                             {item.loanId || "—"}
                           </td>
 
-                          {/* Column 3: Type */}
+                          {/* Column 4: Type */}
                           <td className="px-3.5 py-2.5 text-center whitespace-nowrap">
                             <span
                               className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold border ${

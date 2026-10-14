@@ -392,6 +392,18 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
     return selectedLoanPayments.length > 0 ? fromPayments : fromSchedule;
   }, [selectedLoanPayments, effectiveCustomerLoanSchedule]);
 
+  const selectedGuarantor = selectedLoanData?.guarantor || {};
+  const hasGuarantorDetails = Boolean(
+    selectedGuarantor.required === 'Yes' ||
+    selectedGuarantor.guarantorId ||
+    selectedGuarantor.id ||
+    selectedGuarantor.fullName ||
+    selectedGuarantor.name ||
+    selectedGuarantor.phone ||
+    selectedGuarantor.mobile ||
+    selectedGuarantor.address
+  );
+
   return (
     <div className="bg-slate-50">
       {loadError && (
@@ -1011,16 +1023,21 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
           {/* GUARANTOR TAB */}
           {activeTab === 'guarantor' && (
              <>
-               {selectedLoanData.guarantor?.required === 'Yes' ? (
+               {hasGuarantorDetails ? (
                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden max-w-2xl">
                    <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900">Guarantor Details</div>
                    <div className="p-5">
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-6 gap-x-4">
-                        <FieldValue label="Name" value={selectedLoanData.guarantor.name} />
-                        <FieldValue label="Mobile Number" value={selectedLoanData.guarantor.mobile ? `${selectedLoanData.guarantor.countryCode || ''} ${selectedLoanData.guarantor.mobile}` : null} />
-                        <FieldValue label="Relationship" value={selectedLoanData.guarantor.relationship} />
+                        <FieldValue label="Name" value={selectedGuarantor.fullName || selectedGuarantor.name} />
+                        <FieldValue
+                          label="Mobile Number"
+                          value={(selectedGuarantor.phone || selectedGuarantor.mobile)
+                            ? `${selectedGuarantor.countryCode || ''} ${selectedGuarantor.phone || selectedGuarantor.mobile}`
+                            : null}
+                        />
+                        <FieldValue label="Relationship" value={selectedGuarantor.relationship} />
                         <div className="col-span-2 sm:col-span-3">
-                          <FieldValue label="Address" value={selectedLoanData.guarantor.address} />
+                          <FieldValue label="Address" value={selectedGuarantor.address} />
                         </div>
                       </div>
                    </div>
@@ -1030,7 +1047,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     <div className="bg-emerald-50 h-16 w-16 rounded-full flex items-center justify-center mb-4 border border-emerald-100 shadow-sm">
                       <UserCheck className="h-8 w-8 text-emerald-600" />
                     </div>
-                    <h3 className="text-lg font-bold text-slate-900">No Guarantor Added</h3>
+                    <h3 className="text-lg font-bold text-slate-900">No guarantor details available.</h3>
                     <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">No guarantor information has been added to this loan yet.</p>
                  </div>
                )}

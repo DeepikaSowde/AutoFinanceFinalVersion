@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { DATA_CHANGED_EVENT } from '../services/api';
 import { loadLedgerData } from '../services/ledgerApi';
-import { calculateTotalPortfolioOutstanding } from '../utils/loanCalculations.js';
+import { calculateLoanOutstanding, calculateTotalPortfolioOutstanding } from '../utils/loanCalculations.js';
+import { calculateVehicleLoanOverdue } from '../utils/vehicleOverdueCalculation.js';
 
 export const useDashboardData = () => {
   const [data, setData] = useState({
@@ -16,7 +17,8 @@ export const useDashboardData = () => {
     capitalData: null,
     chitData: null,
     outstandingOverview: null,
-    repaymentVsInterest: []
+    repaymentVsInterest: [],
+    operational: null
   });
   const [loading, setLoading] = useState(true);
 
@@ -27,6 +29,81 @@ export const useDashboardData = () => {
       try {
         const { customers, payments, investors, incomeData, expenseData, vehicleSales } = await loadLedgerData();
         if (!active) return;
+
+        const today = new Date();
+        const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+        const formatMonth = (date) => date.toLocaleString('default', { month: 'short' });
+        const formatDate = (value) => {
+          if (!value) return '—';
+          const date = new Date(value);
+          return Number.isNaN(date.getTime())
+            ? '—'
+            : date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        };
+        const customerKey = (record) =>
+          String(record.customerId || record.customer?.customerId || record.customer?.mobile || '').trim().toLowerCase();
+        const loanCalculations = customers.map((record) => ({
+          record,
+          calculation: calculateLoanOutstanding(record, payments),
+          overdue: calculateVehicleLoanOverdue(record, payments),
+        }));
+        const expectedByMonth = {};
+        const collectedByMonth = {};
+        loanCalculations.forEach(({ calculation }) => {
+          calculation.effectiveSchedule.forEach((installment) => {
+            const dueDate = new Date(installment.dueDate);
+            if (Number.isNaN(dueDate.getTime()) || dueDate.getTime() > dayStart) return;
+            const month = `${formatMonth(dueDate)}-${String(dueDate.getFullYear()).slice(-2)}`;
+            expectedByMonth[month] = (expectedByMonth[month] || 0) + Number(installment.emi || 0);
+            collectedByMonth[month] = (collectedByMonth[month] || 0) + Number(installment.amountPaid || 0);
+          });
+        });
+        const collectionTrend = Object.keys(expectedByMonth).map((name) => ({
+          name,
+          expected: expectedByMonth[name],
+          collected: collectedByMonth[name] || 0,
+        }));
+        const expectedCollections = collectionTrend.reduce((sum, item) => sum + item.expected, 0);
+        const collectedCollections = collectionTrend.reduce((sum, item) => sum + item.collected, 0);
+        const paymentModeTotals = payments.reduce((totals, payment) => {
+          if (Number(payment.amount || 0) <= 0) return totals;
+          const rawMode = payment.paymentMode || payment.mode || payment.transferMode || 'Cash';
+          const mode = String(rawMode).toLowerCase();
+          const key = mode.includes('upi') ? 'upi' : mode.includes('bank') || mode.includes('transfer') ? 'bankTransfer' : 'cash';
+          totals[key] += Number(payment.amount || 0);
+          return totals;
+        }, { cash: 0, upi: 0, bankTransfer: 0 });
+        const loanStatuses = loanCalculations.map(({ record, calculation, overdue }) => {
+          const rawStatus = String(record.status || record.loan?.status || '').toLowerCase();
+          const vehicleStatus = String(record.vehicleStatus || record.vehicle?.status || '').toLowerCase();
+          const status = rawStatus === 'foreclosed'
+            ? 'Closed'
+            : rawStatus === 'closed' || calculation.outstandingAmount <= 0.01
+            ? 'Closed'
+            : overdue.hasOverdue
+            ? 'Overdue'
+            : 'Active';
+          return { record, calculation, overdue, status, vehicleStatus };
+        });
+        const seenCustomers = new Set();
+        let reloanCount = 0;
+        loanStatuses.forEach(({ record }) => {
+          const key = customerKey(record);
+          if (key && seenCustomers.has(key)) reloanCount += 1;
+          if (key) seenCustomers.add(key);
+        });
+        const overdueLoans = loanStatuses
+          .filter(({ overdue }) => overdue.hasOverdue)
+          .map(({ record, overdue }) => ({
+            id: record.loanId || record.customerId || record.customer?.mobile,
+            customerName: record.customer?.name || 'Unknown Customer',
+            mobile: record.customer?.mobile || '—',
+            overdueCount: overdue.overdueCount,
+            overdueAmount: overdue.overdueAmount,
+            nextDueDate: overdue.overdueInstallments[0]?.dueDate,
+          }))
+          .sort((a, b) => b.overdueAmount - a.overdueAmount);
+        const totalMoneyMovement = paymentModeTotals.cash + paymentModeTotals.upi + paymentModeTotals.bankTransfer;
 
         let totalDisbursed = 0;
         let totalRepaid = 0;
@@ -148,7 +225,7 @@ export const useDashboardData = () => {
         });
 
         const incomeBreakdown = Object.entries(incomeBreakdownMap)
-            .filter(([_, value]) => value > 0)
+            .filter(([, value]) => value > 0)
             .map(([name, value]) => ({ name, value }));
 
         // Expense Breakdown
@@ -161,7 +238,7 @@ export const useDashboardData = () => {
         });
 
         const expenseBreakdown = Object.entries(expenseBreakdownMap)
-            .filter(([_, value]) => value > 0)
+            .filter(([, value]) => value > 0)
             .map(([name, value]) => ({ name, value }));
 
         // Capital Position
@@ -191,7 +268,37 @@ export const useDashboardData = () => {
                 credit: totalCredit,
                 balance: closingBalance
             },
-            repaymentVsInterest: [] // No pure interest data
+            repaymentVsInterest: [], // No pure interest data
+            operational: {
+              keyMetrics: {
+                totalLoans: customers.length,
+                activeCustomers: new Set(customers.map(customerKey).filter(Boolean)).size,
+                totalOutstanding,
+                overdueAmount: overdueLoans.reduce((sum, loan) => sum + loan.overdueAmount, 0),
+              },
+              loanActivity: {
+                newLoans: Math.max(customers.length - reloanCount, 0),
+                reLoans: reloanCount,
+              },
+              collection: {
+                trend: collectionTrend,
+                expected: expectedCollections,
+                collected: collectedCollections,
+                achievement: expectedCollections > 0 ? (collectedCollections / expectedCollections) * 100 : 0,
+              },
+              moneyMovement: { ...paymentModeTotals, total: totalMoneyMovement },
+              portfolio: {
+                active: loanStatuses.filter(({ status }) => status === 'Active').length,
+                overdue: loanStatuses.filter(({ status }) => status === 'Overdue').length,
+                closed: loanStatuses.filter(({ status }) => status === 'Closed').length,
+                seized: loanStatuses.filter(({ vehicleStatus }) => vehicleStatus === 'seized').length,
+              },
+              overdueLoans: overdueLoans.map((loan) => ({ ...loan, nextDueDate: formatDate(loan.nextDueDate) })),
+              // The loans and payments these figures came from (API), for the
+              // Operational Dashboard's own breakdowns.
+              records: customers,
+              payments,
+            }
         });
 
       } catch (error) {

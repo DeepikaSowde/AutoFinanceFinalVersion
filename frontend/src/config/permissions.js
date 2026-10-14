@@ -30,9 +30,11 @@ export const DEFAULT_STAFF_PERMISSIONS = { collections: { view: true, add: true 
 // The permission that opens each page, chosen so every API call the page
 // makes is allowed (e.g. the Ledger also reads investors, which ledger.view
 // covers). Admins open everything; /users is admin-only.
+// Order matters: a user opens on the first page here they can see, so
+// Dashboard comes first (anyone without dashboard access falls to Loans).
 export const PAGE_ACCESS = {
-  '/loans': ['loans.view', 'loans.add'],
   '/dashboard': ['dashboard.view'],
+  '/loans': ['loans.view', 'loans.add'],
   '/newloan': ['loans.add'],
   '/collection': ['collections.view'],
   '/customers': ['customers.view'],

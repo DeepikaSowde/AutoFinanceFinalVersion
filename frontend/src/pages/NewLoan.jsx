@@ -20,7 +20,7 @@ import {
 } from '../utils/customerOnboardingStorage'
 import { deleteDraft, getDraft, listDrafts, saveDraft } from '../services/draftApi'
 
-import { getFundingSummary, principalOf, submitLoanApplication } from '../services/customerApi'
+import { getFundingSummary, hasGuarantorIn, principalOf, submitLoanApplication } from '../services/customerApi'
 import { CheckCircle2, FileText, Trash2, X } from 'lucide-react'
 import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
 
@@ -351,8 +351,10 @@ const NewLoan = () => {
       // A guarantor / referrer is saved to the register after the loan, so
       // check their details first rather than fail half way.
       const relOpt = form.loan?.relationshipOption || 'none'
+      // Entered guarantor details count even if the option was left unset.
+      const withGuarantor = hasGuarantorIn(form)
       const people = [
-        (relOpt === 'both' || relOpt === 'guarantor') && ['Guarantor', form.guarantor],
+        withGuarantor && ['Guarantor', form.guarantor],
         (relOpt === 'both' || relOpt === 'referral') && ['Referral', form.referral],
       ].filter(Boolean)
       for (const [label, person] of people) {
@@ -378,7 +380,7 @@ const NewLoan = () => {
       // Record the guarantor / referrer against the new loan in the shared
       // register (with the referral commission, and its expense if paid now).
       const links = []
-      if (relOpt === 'both' || relOpt === 'guarantor') links.push({ person: form.guarantor, type: 'Guarantor' })
+      if (withGuarantor) links.push({ person: form.guarantor, type: 'Guarantor' })
       if (relOpt === 'both' || relOpt === 'referral') {
         links.push({
           person: form.referral,
