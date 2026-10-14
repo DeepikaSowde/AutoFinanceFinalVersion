@@ -30,7 +30,7 @@ function App() {
             <LanguageSwitcher />
           </header>
           <Routes>
-            <Route path="/" element={<Navigate to="/loans" replace />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/loans" element={<Loans />} />
             <Route path="/loans/:loanId" element={<Loans />} />

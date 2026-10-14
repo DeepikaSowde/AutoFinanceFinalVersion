@@ -8,9 +8,12 @@ import ExpenseBreakdownChart from '../components/dashboard/ExpenseBreakdownChart
 import RepaymentInterestChart from '../components/dashboard/RepaymentInterestChart';
 import OutstandingOverviewCard from '../components/dashboard/OutstandingOverviewCard';
 import CapitalPositionCard from '../components/dashboard/CapitalPositionCard';
+import OperationalDashboard from '../components/dashboard/OperationalDashboard';
+import { useState } from 'react';
 
 const Dashboard = () => {
   const { data, loading } = useDashboardData();
+  const [activeTab, setActiveTab] = useState('financial');
 
   if (loading) {
     return (
@@ -23,25 +26,54 @@ const Dashboard = () => {
   return (
     <div className="h-full w-full flex flex-col p-4 sm:p-6 bg-slate-50 overflow-y-auto">
       <div className="w-full">
-        <DashboardHeader />
-        
-        <KpiGrid data={data} />
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
-          <MonthlyDebitCreditChart data={data?.monthlyData} />
-          <IncomeBreakdownChart data={data?.incomeBreakdown} total={data?.totalCredit} />
+        <div className="mb-6 flex w-full overflow-x-auto border-b border-slate-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab('financial')}
+            className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+              activeTab === 'financial'
+                ? 'border-emerald-700 text-emerald-800'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+            aria-current={activeTab === 'financial' ? 'page' : undefined}
+          >
+            Financial Dashboard
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('operational')}
+            className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+              activeTab === 'operational'
+                ? 'border-emerald-700 text-emerald-800'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+            aria-current={activeTab === 'operational' ? 'page' : undefined}
+          >
+            Operational Dashboard
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
-          <OutstandingOverviewCard data={data?.outstandingOverview} />
-          <ExpenseBreakdownChart data={data?.expenseBreakdown} total={data?.totalDebit} />
-          <ChitOverviewCard data={data?.chitData} />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6 sm:mb-8">
-          <CapitalPositionCard data={data?.capitalData} />
-          <RepaymentInterestChart data={data?.monthlyData} />
-        </div>
+        {activeTab === 'operational' ? (
+          <OperationalDashboard data={data} />
+        ) : (
+          <>
+            <DashboardHeader />
+            <KpiGrid data={data} />
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
+              <MonthlyDebitCreditChart data={data?.monthlyData} />
+              <IncomeBreakdownChart data={data?.incomeBreakdown} total={data?.totalCredit} />
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
+              <OutstandingOverviewCard data={data?.outstandingOverview} />
+              <ExpenseBreakdownChart data={data?.expenseBreakdown} total={data?.totalDebit} />
+              <ChitOverviewCard data={data?.chitData} />
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6 sm:mb-8">
+              <CapitalPositionCard data={data?.capitalData} />
+              <RepaymentInterestChart data={data?.monthlyData} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
