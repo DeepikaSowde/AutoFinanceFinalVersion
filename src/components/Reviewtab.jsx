@@ -9,6 +9,7 @@ import {
   formatINR,
   formatDate,
 } from './Formcontrols'
+import { getVehicleDisplayImage } from '../utils/vehicleImageHelper'
 
 
 const dash = (value) =>
@@ -103,6 +104,8 @@ const ReviewTab = ({
     referral = {},
     loan,
   } = form
+
+  const vehicleDisplayImage = getVehicleDisplayImage(vehicle);
 
   const vehicleAmount =
     loan.vehicleAmount !== "" && loan.vehicleAmount != null
@@ -218,7 +221,18 @@ const ReviewTab = ({
         {/* VEHICLE */}
 
         <Card title={t('review.vehicle')}>
-          <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
+          <div className="flex flex-col sm:flex-row gap-4 items-start">
+            {vehicleDisplayImage && (
+              <div className="shrink-0 w-24 h-24 rounded-lg bg-slate-50 border border-slate-200 overflow-hidden flex items-center justify-center shadow-2xs self-center sm:self-start">
+                <img
+                  src={vehicleDisplayImage}
+                  alt={vehicle.model || 'Vehicle'}
+                  className="w-full h-full object-cover"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2 flex-1 w-full">
 
             <Row
               label={t('review.vehicleType')}
@@ -285,6 +299,7 @@ const ReviewTab = ({
               />
             )}
 
+            </div>
           </div>
         </Card>
 

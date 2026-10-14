@@ -911,6 +911,7 @@ const Ledger = () => {
                   }}
                   className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all"
                 >
+                  <option value="Vehicle Expense">Vehicle Expense</option>
                   <option value="Rent">Rent</option>
                   <option value="Salary">Salary</option>
                   <option value="Electricity">Electricity</option>

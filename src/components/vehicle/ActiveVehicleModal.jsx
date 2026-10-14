@@ -19,6 +19,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { getChronologicalVehicleHistory } from './VehicleStatusHistoryModal';
+import { useVehicleImage } from '../../utils/vehicleImageHelper';
 
 /**
  * Format date for history timeline
@@ -51,8 +52,8 @@ const ActiveVehicleModal = ({ isOpen, onClose, vehicleRecord, onSeizureSuccess }
   // Modal Views: 'details' (main) | 'seize' (seizure form) | 'history' (status history)
   const [currentView, setCurrentView] = useState('details');
 
-  // Image load error fallback
-  const [imgError, setImgError] = useState(false);
+  // Vehicle image selection (customer uploaded photo priority -> vehicle-type default image -> fallback)
+  const { imageSrc, handleImageError } = useVehicleImage(vehicleRecord);
 
   // Seizure Form state
   const [seizureDate, setSeizureDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -66,7 +67,6 @@ const ActiveVehicleModal = ({ isOpen, onClose, vehicleRecord, onSeizureSuccess }
   useEffect(() => {
     if (isOpen) {
       setCurrentView('details');
-      setImgError(false);
       setSeizureDate(new Date().toISOString().split('T')[0]);
       setSeizureReason('');
       setStorageLocation('');
@@ -110,9 +110,6 @@ const ActiveVehicleModal = ({ isOpen, onClose, vehicleRecord, onSeizureSuccess }
   const makeModel = [vehicle.brand, vehicle.model].filter(Boolean).join(' ') || 'Unknown Model';
   const customerName = customer.name || 'Customer not linked';
   const customerMobile = customer.mobile || 'Mobile not available';
-
-  const photoSrc =
-    !imgError && (vehicle.photo?.data || vehicle.photo || vehicle.photoFile || vehicleRecord.photo || null);
 
   const isBike = !vehicle.type || vehicle.type === 'Two Wheeler';
   const FallbackIcon = isBike ? Bike : Car;
@@ -254,11 +251,11 @@ const ActiveVehicleModal = ({ isOpen, onClose, vehicleRecord, onSeizureSuccess }
               <div className="bg-slate-50/80 rounded-xl border border-slate-200/80 p-4 sm:p-4.5 flex flex-col sm:flex-row gap-4 sm:gap-5 items-center sm:items-start">
                 {/* Photo / Placeholder */}
                 <div className="w-full sm:w-36 h-32 sm:h-28 rounded-lg bg-white border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
-                  {photoSrc ? (
+                  {imageSrc ? (
                     <img
-                      src={photoSrc}
+                      src={imageSrc}
                       alt={makeModel}
-                      onError={() => setImgError(true)}
+                      onError={handleImageError}
                       className="w-full h-full object-cover object-center"
                     />
                   ) : (

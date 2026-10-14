@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { User, Phone, Bike, Car } from 'lucide-react';
+import { useVehicleImage } from '../../utils/vehicleImageHelper';
 
 /**
  * Status Badge configuration:
@@ -17,8 +18,6 @@ const STATUS_STYLES = {
 };
 
 const VehicleCard = ({ vehicleRecord, onViewDetails }) => {
-  const [imgError, setImgError] = useState(false);
-
   const vehicle = vehicleRecord.vehicle || {};
   const customer = vehicleRecord.customer || {};
 
@@ -31,9 +30,8 @@ const VehicleCard = ({ vehicleRecord, onViewDetails }) => {
   const status = vehicleRecord.vehicleStatus || vehicle.status || 'Active';
   const badgeStyle = STATUS_STYLES[status] || STATUS_STYLES.Active;
 
-  // Extract photo image URL/data
-  const photoSrc =
-    !imgError && (vehicle.photo?.data || vehicle.photo || vehicle.photoFile || vehicleRecord.photo || null);
+  // Resolves customer uploaded photo if available, otherwise vehicle-type default image
+  const { imageSrc, handleImageError } = useVehicleImage(vehicleRecord);
 
   const isBike = !vehicle.type || vehicle.type === 'Two Wheeler';
   const FallbackIcon = isBike ? Bike : Car;
@@ -42,11 +40,11 @@ const VehicleCard = ({ vehicleRecord, onViewDetails }) => {
     <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all duration-200 flex flex-col overflow-hidden min-w-0">
       {/* Top Image Container with Status Badge */}
       <div className="relative w-full h-44 bg-gradient-to-b from-slate-50 to-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-100">
-        {photoSrc ? (
+        {imageSrc ? (
           <img
-            src={photoSrc}
+            src={imageSrc}
             alt={makeModel}
-            onError={() => setImgError(true)}
+            onError={handleImageError}
             className="w-full h-full object-cover object-center transition-transform duration-300 hover:scale-105"
           />
         ) : (

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import { useTranslation } from "react-i18next";
 
 /* ---------- helpers ---------- */
@@ -218,12 +218,18 @@ export const UploadButton = ({ label, file, onFile, accept = 'image/*,.pdf', dis
 }
 
 /** Dashed photo upload box (vehicle / guarantor photo) */
-export const PhotoUpload = ({ title, hint, file, onFile }) => {
+export const PhotoUpload = ({ title, hint, file, onFile, defaultPreviewUrl, alt = '' }) => {
   const ref = useRef(null)
+  const [imgError, setImgError] = useState(false)
 
-  // Supports both:
+  useEffect(() => {
+    setImgError(false)
+  }, [file, defaultPreviewUrl])
+
+  // Supports:
   // 1. Newly selected File object
   // 2. Base64 object restored from localStorage
+  // 3. Direct string (data URI or URL)
   const getPreviewUrl = () => {
     if (!file) return null
 
@@ -237,10 +243,16 @@ export const PhotoUpload = ({ title, hint, file, onFile }) => {
       return URL.createObjectURL(file)
     }
 
+    // Direct string
+    if (typeof file === 'string' && file.trim()) {
+      return file.trim()
+    }
+
     return null
   }
 
   const previewUrl = getPreviewUrl()
+  const displaySrc = !imgError ? (previewUrl || defaultPreviewUrl) : null
 
   return (
     <div>
@@ -257,14 +269,20 @@ export const PhotoUpload = ({ title, hint, file, onFile }) => {
       <button
         type="button"
         onClick={() => ref.current?.click()}
-        className="flex min-h-[140px] w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed border-emerald-400 bg-white p-4 text-center hover:bg-emerald-50"
+        className="flex min-h-[140px] w-full flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-emerald-400 bg-white p-4 text-center hover:bg-emerald-50 transition-colors cursor-pointer group"
       >
-        {previewUrl ? (
-          <img
-            src={previewUrl}
-            alt=""
-            className="max-h-32 rounded object-contain"
-          />
+        {displaySrc ? (
+          <div className="flex flex-col items-center gap-2">
+            <img
+              src={displaySrc}
+              alt={alt || title || "Vehicle Preview"}
+              onError={() => setImgError(true)}
+              className="max-h-32 rounded object-contain shadow-2xs group-hover:scale-105 transition-transform"
+            />
+            <span className="text-[11px] text-slate-500 font-medium">
+              {previewUrl ? 'Uploaded photo (click to change)' : 'Auto-selected model image (click to upload custom photo)'}
+            </span>
+          </div>
         ) : (
           <>
             <CameraIcon className="h-7 w-7 text-slate-700" />

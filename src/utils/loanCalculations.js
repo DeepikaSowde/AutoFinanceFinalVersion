@@ -59,8 +59,13 @@ export const calculateLoanOutstanding = (loanRecord, allPayments = []) => {
   const calculatedPrincipal = Math.max(vehicleAmount - downPayment, 0);
   const principal = Number(loanRecord.loanAmount || calculatedPrincipal || 0);
 
-  // If marked explicitly Closed, or principal is 0, outstanding is ₹0
-  if (loanRecord.status === 'Closed' || principal <= 0) {
+  const rawStatus = String(loanRecord.status || loan.status || '').trim();
+  const isForeclosed =
+    rawStatus.toLowerCase() === 'foreclosed' ||
+    Boolean(loanRecord.isForeclosed || loanRecord.foreclosure);
+
+  // If marked explicitly Closed or Foreclosed, or principal is 0, outstanding is ₹0
+  if (loanRecord.status === 'Closed' || isForeclosed || principal <= 0) {
     return {
       principal,
       totalInterest: 0,
@@ -72,7 +77,7 @@ export const calculateLoanOutstanding = (loanRecord, allPayments = []) => {
       remainingInterest: 0,
       outstandingAmount: 0,
       advanceBalance: Number(loanRecord.advanceBalance || 0),
-      status: 'Closed',
+      status: isForeclosed ? 'Foreclosed' : 'Closed',
       effectiveSchedule: loanRecord.repaymentSchedule || [],
     };
   }

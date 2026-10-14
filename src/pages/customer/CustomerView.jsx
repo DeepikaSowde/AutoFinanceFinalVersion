@@ -8,6 +8,7 @@ import RepaymentScheduleTable, { generateSchedule, computeEffectiveSchedule } fr
 import { calculateRepayment } from '../../components/Loantab';
 import { calculateLoanOutstanding } from '../../utils/loanCalculations';
 import { getPaymentInstallmentLabel } from '../../utils/paymentInstallmentUtils';
+import { getVehicleDisplayImage } from '../../utils/vehicleImageHelper';
 
 export { getPaymentInstallmentLabel };
 
@@ -42,6 +43,11 @@ const StatusBadge = ({ status }) => {
 
 const PhotoPlaceholder = ({ src, icon: Icon, alt, className = "h-16 w-16 rounded-full" }) => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
 
   return (
     <>
@@ -49,8 +55,8 @@ const PhotoPlaceholder = ({ src, icon: Icon, alt, className = "h-16 w-16 rounded
         onClick={() => setIsPreviewOpen(true)}
         className={`relative flex items-center justify-center bg-slate-100 border border-slate-200 text-slate-400 shrink-0 cursor-pointer overflow-hidden hover:ring-2 hover:ring-emerald-500 hover:ring-offset-2 transition-all ${className}`}
       >
-        {src ? (
-          <img src={src} alt={alt} className="h-full w-full object-cover" />
+        {src && !hasError ? (
+          <img src={src} alt={alt} onError={() => setHasError(true)} className="h-full w-full object-cover" />
         ) : (
           <Icon className="h-1/2 w-1/2 opacity-50" />
         )}
@@ -833,7 +839,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                 <div className="p-4 sm:p-5 flex flex-col md:flex-row gap-6 items-start">
                    <div className="shrink-0 w-full md:w-auto flex justify-center md:justify-start">
                      <PhotoPlaceholder 
-                       src={selectedLoanData.vehicle?.photoFile || null} 
+                       src={getVehicleDisplayImage(selectedLoanData)} 
                        icon={Car} 
                        alt={`${selectedLoanData.vehicle?.brand || 'Vehicle'} ${selectedLoanData.vehicle?.model || ''}`} 
                        className="h-32 w-32 rounded-xl border-4 border-slate-50 shadow-sm"

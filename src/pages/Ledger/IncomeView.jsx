@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronRight, ChevronLeft, X, Wallet, ArrowDownCircle, ArrowUpCircle, Database, FileText, Banknote, Landmark, PiggyBank, Briefcase } from 'lucide-react';
+import { Search, ChevronRight, ChevronLeft, X, Wallet, ArrowDownCircle, ArrowUpCircle, Database, FileText, Banknote, Landmark, PiggyBank, Briefcase, Car } from 'lucide-react';
 import IncomeOverviewChart from './IncomeOverviewChart';
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
@@ -185,6 +185,10 @@ const IncomeView = () => {
     .filter(i => i.type === 'Document Charge')
     .reduce((sum, i) => sum + i.displayAmount, 0);
 
+  const vehicleSaleTotal = filteredIncome
+    .filter(i => i.type === 'Vehicle Sale' || i.isVehicleSale)
+    .reduce((sum, i) => sum + i.displayAmount, 0);
+
   const totalInflow = filteredIncome.reduce((sum, i) => sum + i.displayAmount, 0);
 
   // Income Breakdown Chart Data: shows distinct sources without combining capital with interest
@@ -207,6 +211,7 @@ const IncomeView = () => {
 
   const getTypeBadgeStyle = (type) => {
     switch (type) {
+      case 'Vehicle Sale': return 'bg-emerald-50 text-emerald-800 border-emerald-200';
       case 'Collection': return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'Investment': return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'Chit Investment': return 'bg-teal-50 text-teal-700 border-teal-200';
@@ -219,6 +224,7 @@ const IncomeView = () => {
 
   const getTypeIcon = (type) => {
     switch (type) {
+      case 'Vehicle Sale': return Car;
       case 'Collection': return Wallet;
       case 'Investment': return Landmark;
       case 'Chit Investment': return PiggyBank;
@@ -304,6 +310,17 @@ const IncomeView = () => {
             extraClass="bg-white border-slate-200 shadow-sm"
           />
         )}
+        {vehicleSaleTotal > 0 && (
+          <SummaryCard
+            icon={Car}
+            title="Vehicle Sales"
+            value={formatCurrency(vehicleSaleTotal)}
+            subtext="Vehicle Liquidation"
+            iconColor="text-emerald-700"
+            iconBg="bg-emerald-100"
+            extraClass="bg-white border-slate-200 shadow-sm"
+          />
+        )}
         <SummaryCard
           icon={ArrowUpCircle}
           title="Total Inflow"
@@ -336,6 +353,7 @@ const IncomeView = () => {
             className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm max-w-full"
           >
             <option value="All">All Types</option>
+            <option value="Vehicle Sale">Vehicle Sale</option>
             <option value="Investment">Investor Capital</option>
             <option value="Collection">EMI Collection</option>
             <option value="Chit Investment">Chit Investment</option>
@@ -653,6 +671,53 @@ const IncomeView = () => {
                   <div className="flex justify-between items-center py-1">
                     <span className="font-medium text-slate-500">Remarks</span>
                     <span className="font-bold text-slate-900">{viewTransaction.remarks || 'Investment Deposit'}</span>
+                  </div>
+                </div>
+              ) : viewTransaction.type === 'Vehicle Sale' || viewTransaction.isVehicleSale ? (
+                <div className="space-y-3.5 text-[13px]">
+                  <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/40 p-4 space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">Vehicle Sale Inflow</p>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[13px] font-semibold text-slate-700">Sale Amount</span>
+                      <span className="text-[16px] font-black text-emerald-700">{formatCurrency(viewTransaction.amount)}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">Recorded as business sale income from liquidated vehicle.</p>
+                  </div>
+                  {(viewTransaction.regNo || viewTransaction.vehicleRegNo) && (
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                      <span className="font-medium text-slate-500">Vehicle Reg No</span>
+                      <span className="font-bold text-slate-900">{viewTransaction.regNo || viewTransaction.vehicleRegNo}</span>
+                    </div>
+                  )}
+                  {viewTransaction.customerName && viewTransaction.customerName !== '—' && (
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                      <span className="font-medium text-slate-500">Customer Name</span>
+                      <span className="font-bold text-slate-900">{viewTransaction.customerName}</span>
+                    </div>
+                  )}
+                  {viewTransaction.loanId && viewTransaction.loanId !== '—' && (
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                      <span className="font-medium text-slate-500">Loan ID</span>
+                      <span className="font-mono font-bold text-[#006052]">{viewTransaction.loanId}</span>
+                    </div>
+                  )}
+                  {viewTransaction.buyerName && (
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                      <span className="font-medium text-slate-500">Buyer</span>
+                      <span className="font-bold text-slate-900">{viewTransaction.buyerName} {viewTransaction.buyerPhone ? `(${viewTransaction.buyerPhone})` : ''}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                    <span className="font-medium text-slate-500">Sale Date</span>
+                    <span className="font-bold text-slate-900">{new Date(viewTransaction.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                    <span className="font-medium text-slate-500">Payment Mode</span>
+                    <span className="font-bold text-slate-900">{viewTransaction.mode || 'Cash'}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="font-medium text-slate-500">Description</span>
+                    <span className="font-bold text-slate-900">{viewTransaction.remarks || `Vehicle Sale – ${viewTransaction.regNo || ''}`}</span>
                   </div>
                 </div>
               ) : (

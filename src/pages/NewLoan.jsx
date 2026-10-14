@@ -20,6 +20,7 @@ import {
 import { calculateRepayment } from '../components/Loantab'
 import { CheckCircle2, X } from 'lucide-react'
 import { recordPersonRelationship, syncDocumentChargeIncome } from '../utils/guarantorReferralStorage'
+import { getVehicleModelImage, getVehicleDisplayImage } from '../utils/vehicleImageHelper'
 
 const STEPS = [
   { key: 'customer', labelKey: 'app.steps.customer', titleKey: 'app.titles.customer', subtitleKey: 'app.subtitles.customer' },
@@ -315,8 +316,16 @@ const NewLoan = () => {
       const emiAmount = repayment.emiAmount || 0
       
       // 3. Construct submitted data and compress images
+      const vehicleModelImage = getVehicleModelImage(form.vehicle?.type, form.vehicle?.model);
+      const vehicleDisplayImg = getVehicleDisplayImage(form.vehicle);
+
       let newEntry = {
         ...form,
+        vehicle: {
+          ...form.vehicle,
+          defaultImage: vehicleModelImage,
+          displayImage: vehicleDisplayImg,
+        },
         customerId: customerId,
         loanId: loanId,
         loanAmount: principal,

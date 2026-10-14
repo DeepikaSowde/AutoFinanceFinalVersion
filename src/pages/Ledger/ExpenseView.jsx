@@ -242,6 +242,7 @@ const ExpenseView = ({ onAddExpense }) => {
             className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 shadow-sm outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] transition-all"
           >
             <option value="All">All Categories</option>
+            <option value="Vehicle Expense">Vehicle Expense</option>
             <option value="Referral Commission">Referral Commission</option>
             <option value="Investor Withdrawal">Investor Withdrawal</option>
             <option value="Rent">Rent</option>
@@ -314,6 +315,8 @@ const ExpenseView = ({ onAddExpense }) => {
                             ? 'bg-purple-100 text-purple-800 border-purple-200'
                             : exp.category === 'Referral Commission'
                             ? 'bg-blue-100 text-[#0F1E36] border-blue-200'
+                            : exp.category === 'Vehicle Expense'
+                            ? 'bg-amber-100 text-amber-900 border-amber-200'
                             : 'bg-emerald-100 text-emerald-800 border-emerald-200/50'
                         }`}>
                           {exp.category}
@@ -325,6 +328,10 @@ const ExpenseView = ({ onAddExpense }) => {
                         ) : exp.referrerName ? (
                           <span className="text-[11px] font-semibold text-[#006052] mt-0.5 truncate max-w-[200px]">
                             Ref: {exp.referrerName} {exp.loanId && exp.loanId !== '—' ? `(${exp.loanId})` : ''}
+                          </span>
+                        ) : (exp.regNo || exp.vehicleRegNo) ? (
+                          <span className="text-[11px] font-semibold text-amber-800 mt-0.5 truncate max-w-[200px]">
+                            Veh: {exp.regNo || exp.vehicleRegNo} {exp.customerName && exp.customerName !== '—' ? `(${exp.customerName})` : ''}
                           </span>
                         ) : exp.remarks ? (
                           <span className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[180px]">
@@ -490,6 +497,35 @@ const ExpenseView = ({ onAddExpense }) => {
                       <div className="flex items-center justify-between">
                         <span className="text-[12px] font-medium text-slate-500">Loan ID</span>
                         <span className="text-[13px] font-mono font-bold text-[#006052]">{viewTransaction.loanId}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {(viewTransaction.category === 'Vehicle Expense' || viewTransaction.isVehicleExpense) && (
+                <div className="rounded-xl bg-amber-50/80 p-4 border border-amber-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-950">Vehicle Expense Details</span>
+                    <span className="text-[11px] font-semibold text-amber-900 bg-amber-100 px-2.5 py-0.5 rounded-full">Sale Liquidation</span>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-amber-200/60 space-y-1.5 text-xs">
+                    {(viewTransaction.regNo || viewTransaction.vehicleRegNo) && (
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-slate-500">Vehicle Reg No</span>
+                        <span className="font-bold text-slate-900">{viewTransaction.regNo || viewTransaction.vehicleRegNo}</span>
+                      </div>
+                    )}
+                    {viewTransaction.customerName && viewTransaction.customerName !== '—' && (
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-slate-500">Linked Customer</span>
+                        <span className="font-semibold text-slate-700">{viewTransaction.customerName}</span>
+                      </div>
+                    )}
+                    {viewTransaction.loanId && viewTransaction.loanId !== '—' && (
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-slate-500">Loan ID</span>
+                        <span className="font-mono font-bold text-[#006052]">{viewTransaction.loanId}</span>
                       </div>
                     )}
                   </div>

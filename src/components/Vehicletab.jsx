@@ -30,6 +30,7 @@ import {
   NOC_STATUSES,
   INSURANCE_COMPANIES,
 } from "../../Options";
+import { getVehicleModelImage } from "../utils/vehicleImageHelper";
 
 const YES_NO = ["Yes", "No"];
 
@@ -297,6 +298,8 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
                 title={t("vehicle.photo.upload")}
                 hint={t("vehicle.photo.hint")}
                 file={data.photo}
+                defaultPreviewUrl={getVehicleModelImage(data.type, data.model)}
+                alt={`${data.brand || ''} ${data.model || ''}`.trim() || 'Vehicle'}
                 onFile={(file) =>
                   handleFileChange("photo", file)
                 }

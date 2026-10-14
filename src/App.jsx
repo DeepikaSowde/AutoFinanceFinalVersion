@@ -33,6 +33,7 @@ function App() {
             <Route path="/" element={<Navigate to="/loans" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/loans" element={<Loans />} />
+            <Route path="/loans/:loanId" element={<Loans />} />
             <Route path="/newloan" element={<NewLoan />} />
             <Route path="/customers" element={<Customer />} />
             <Route path="/guarantor-referral" element={<GuarantorReferral />} />
