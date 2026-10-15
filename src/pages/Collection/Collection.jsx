@@ -342,7 +342,8 @@ const Collection = () => {
         totalInterestEarned += intAlloc;
         totalPrincipalRecovered += prinAlloc;
 
-        const newAmountPaid = (s.amountPaid || 0) + alloc;
+        const priorAmountPaid = s.amountPaid || 0;
+        const newAmountPaid = priorAmountPaid + alloc;
         const newPrincipalPaid = (s.principalPaid || 0) + prinAlloc;
         const newInterestPaid = (s.interestPaid || 0) + intAlloc;
         const newBalance = Math.max(0, s.emi - newAmountPaid);
@@ -357,6 +358,9 @@ const Collection = () => {
         appliedAllocations.push({
           installmentNumber: s.installmentNumber,
           dueDate: s.dueDate,
+          scheduledEmi: s.emi,
+          previousAmountPaid: priorAmountPaid,
+          previousRemainingDue: due,
           allocated: alloc,
           interestPaid: intAlloc,
           principalPaid: prinAlloc,
@@ -469,6 +473,7 @@ const Collection = () => {
         customerName: selectedCustomer.customer?.name || "Customer",
         customerId: selectedCustomer.customerId,
         loanId: selectedCustomer.loanId,
+        paymentFrequency: selectedCustomer.paymentFrequency || selectedCustomer.loan?.paymentFrequency || "Monthly",
         totalPrincipalOutstanding,
         totalInterestOutstanding,
         totalLoanOutstanding,
@@ -1294,46 +1299,76 @@ const Collection = () => {
                 </div>
 
                 <div className="overflow-x-auto rounded-xl border border-slate-200 max-h-48 overflow-y-auto">
-                  <table className="w-full text-xs text-left min-w-[520px]">
-                    <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold z-10">
-                      <tr>
-                        <th className="px-3 py-2">Installment</th>
-                        <th className="px-3 py-2">Due Date</th>
-                        <th className="px-3 py-2 text-right">Amount Allocated</th>
-                        <th className="px-3 py-2 text-right">Interest / Principal Paid</th>
-                        <th className="px-3 py-2 text-right">Remaining Balance</th>
-                        <th className="px-3 py-2 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {confirmedTransaction.allocations?.map((al) => (
-                        <tr key={al.installmentNumber}>
-                          <td className="px-3 py-2 font-bold text-slate-800">#{al.installmentNumber}</td>
-                          <td className="px-3 py-2 text-slate-600">{formatDate(al.dueDate)}</td>
-                          <td className="px-3 py-2 text-right font-black text-emerald-800">
-                            {formatCurrency(al.allocated)}
-                          </td>
-                          <td className="px-3 py-2 text-right text-slate-500">
-                            {formatCurrency(al.interestPaid)} / {formatCurrency(al.principalPaid)}
-                          </td>
-                          <td className="px-3 py-2 text-right font-bold text-slate-800">
-                            {formatCurrency(al.balanceAfter)}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <span
-                              className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                al.statusAfter === "Paid"
-                                  ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20"
-                                  : "bg-amber-50 text-amber-700 ring-1 ring-amber-600/20"
-                              }`}
-                            >
-                              {al.statusAfter}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {(() => {
+                    const freq = String(confirmedTransaction.paymentFrequency || "").trim().toLowerCase();
+                    const frequencyColLabel = freq === "daily" 
+                      ? "Daily Installment" 
+                      : freq === "weekly" 
+                        ? "Weekly Installment" 
+                        : "EMI Amount";
+
+                    const isSubsequentPayment = confirmedTransaction.allocations?.some(
+                      (al) => (al.previousAmountPaid || 0) > 0.01
+                    );
+
+                    const amountColHeader = isSubsequentPayment ? "Remaining Due" : frequencyColLabel;
+
+                    return (
+                      <table className="w-full text-xs text-left min-w-[520px]">
+                        <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold z-10">
+                          <tr>
+                            <th className="px-3 py-2">Installment</th>
+                            <th className="px-3 py-2">Due Date</th>
+                            <th className="px-3 py-2 text-right">
+                              {amountColHeader}
+                            </th>
+                            <th className="px-3 py-2 text-right">Amount Received</th>
+                            <th className="px-3 py-2 text-right">Interest / Principal Paid</th>
+                            <th className="px-3 py-2 text-right">Remaining Balance</th>
+                            <th className="px-3 py-2 text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {confirmedTransaction.allocations?.map((al) => {
+                            const isSubsequentInstallment = (al.previousAmountPaid || 0) > 0.01;
+                            const displayedAmount = isSubsequentInstallment
+                              ? (al.previousRemainingDue !== undefined ? al.previousRemainingDue : al.allocated + (al.balanceAfter || 0))
+                              : (al.scheduledEmi !== undefined ? al.scheduledEmi : (al.allocated + (al.balanceAfter || 0)));
+
+                            return (
+                              <tr key={al.installmentNumber}>
+                                <td className="px-3 py-2 font-bold text-slate-800">#{al.installmentNumber}</td>
+                                <td className="px-3 py-2 text-slate-600">{formatDate(al.dueDate)}</td>
+                                <td className="px-3 py-2 text-right font-semibold text-slate-700">
+                                  {formatCurrency(displayedAmount)}
+                                </td>
+                                <td className="px-3 py-2 text-right font-black text-emerald-800">
+                                  {formatCurrency(al.allocated)}
+                                </td>
+                                <td className="px-3 py-2 text-right text-slate-500 whitespace-nowrap">
+                                  {formatCurrency(al.interestPaid)} / {formatCurrency(al.principalPaid)}
+                                </td>
+                                <td className="px-3 py-2 text-right font-bold text-slate-800">
+                                  {formatCurrency(al.balanceAfter)}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <span
+                                    className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                      al.statusAfter === "Paid"
+                                        ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20"
+                                        : "bg-amber-50 text-amber-700 ring-1 ring-amber-600/20"
+                                    }`}
+                                  >
+                                    {al.statusAfter}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
                 </div>
 
                 {confirmedTransaction.advanceCreated > 0 && (
