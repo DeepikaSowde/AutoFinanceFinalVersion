@@ -10,6 +10,7 @@ import GuarantorReferral from './pages/customer/GuarantorReferral'
 import ReferralCommission from './pages/customer/ReferralCommission'
 import Investors from './pages/Investors/Investors'
 import Ledger from './pages/Ledger/Ledger'
+import ChitInvestment from './pages/ChitInvestment'
 import Collection from './pages/Collection/Collection'
 import Vehicle from './pages/Vehicle/Vehicle'
 
@@ -64,6 +65,8 @@ function AppShell() {
           <Route path="/customers/referral-commission" element={gate('/referral-commission', <ReferralCommission />)} />
           <Route path="/investors" element={gate('/investors', <Investors />)} />
           <Route path="/ledger" element={gate('/ledger', <Ledger />)} />
+
+          <Route path="/chit-investment" element={gate('/chit-investment', <ChitInvestment />)} />
           <Route path="/collection" element={gate('/collection', <Collection />)} />
           <Route path="/vehicle" element={gate('/vehicle', <Vehicle />)} />
           <Route path="/users" element={gate('/users', <UserManagement />)} />

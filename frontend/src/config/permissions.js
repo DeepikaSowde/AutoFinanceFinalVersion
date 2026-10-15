@@ -37,6 +37,8 @@ export const PAGE_ACCESS = {
   '/loans': ['loans.view', 'loans.add'],
   '/newloan': ['loans.add'],
   '/collection': ['collections.view'],
+  // Chit Investment (reached from the Dashboard's Chit Overview card).
+  '/chit-investment': ['expense.view', 'income.view'],
   '/customers': ['customers.view'],
   '/guarantor-referral': ['customers.view', 'loans.add'],
   '/referral-commission': ['customers.view', 'expense.view'],

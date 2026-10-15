@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DATA_CHANGED_EVENT } from '../services/api';
+import { DATA_CHANGED_EVENT, apiGet } from '../services/api';
 import { loadLedgerData } from '../services/ledgerApi';
 import { calculateLoanOutstanding, calculateTotalPortfolioOutstanding } from '../utils/loanCalculations.js';
 import { calculateVehicleLoanOverdue } from '../utils/vehicleOverdueCalculation.js';
@@ -251,6 +251,31 @@ export const useDashboardData = () => {
             closingBalance: closingBalance
         };
 
+        // Chit Data for Dashboard ChitOverviewCard
+        let chitData = null;
+        try {
+          // Chit transactions from the API; someone without income/expense
+          // access just gets no chit card figures.
+          const chitTxs = await apiGet('/chits/transactions').catch(() => []);
+          const chitPaid = chitTxs
+            .filter((t) => t.type === "Chit Paid" || t.category === "Expense")
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+          const chitInward = chitTxs
+            .filter((t) => t.type === "Chit Income" || t.category === "Income")
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+          
+          if (chitTxs.length > 0 || chitPaid > 0 || chitInward > 0) {
+            chitData = {
+              paid: chitPaid,
+              amount: chitPaid + chitInward,
+              investment: chitPaid,
+              inward: chitInward
+            };
+          }
+        } catch {
+          chitData = null;
+        }
+
         setData({
             totalOutstanding,
             totalCredit,
@@ -261,7 +286,7 @@ export const useDashboardData = () => {
             incomeBreakdown,
             expenseBreakdown,
             capitalData,
-            chitData: null, // No chit data in standard app
+            chitData,
             outstandingOverview: {
                 totalOutstanding,
                 debit: totalDebit,
