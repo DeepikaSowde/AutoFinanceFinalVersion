@@ -491,7 +491,6 @@ const Collection = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between shrink-0 mb-5 sm:mb-6 gap-3.5 sm:gap-4">
         <div>
           <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 sm:text-3xl">Collection</h1>
-          <p className="mt-1 sm:mt-2 text-xs sm:text-[15px] text-slate-500">Today's dues and overdue payments</p>
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full md:w-auto">

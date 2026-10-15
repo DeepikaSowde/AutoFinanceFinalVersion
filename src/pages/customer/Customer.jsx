@@ -232,10 +232,6 @@ const Customer = () => {
           <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
             Customers
           </h1>
-
-          <p className="mt-3 text-[15px] text-slate-500">
-            Manage and view all customers and their active loan information.
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 self-start sm:self-auto shrink-0">

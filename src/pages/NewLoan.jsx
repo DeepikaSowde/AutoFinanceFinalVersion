@@ -219,6 +219,7 @@ const NewLoan = () => {
 
   const [showSuccess, setShowSuccess] = useState(false)
   const [submittedLoan, setSubmittedLoan] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // TODO: connect these to your API
   const handleSaveDraft = () => console.log('Save draft', form)
@@ -264,6 +265,8 @@ const NewLoan = () => {
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       // 1. Generate Loan ID
       const customersList = JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]")
@@ -470,6 +473,8 @@ const NewLoan = () => {
     } catch (e) {
       console.error("Submission failed", e)
       alert("Error submitting loan application.")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -480,6 +485,7 @@ const NewLoan = () => {
     setForm(initialForm())
     setStep(0)
     setVerified(false)
+    navigate('/loans')
   }
 
   const handleViewSchedule = () => setShowScheduleModal(true)
@@ -564,7 +570,12 @@ const NewLoan = () => {
               {t('app.saveDraft')}
             </button>
             {isLast ? (
-              <button type="button" onClick={handleSubmit} disabled={!verified} className={`${primaryBtn} py-1.5 px-4 text-xs sm:text-sm`}>
+              <button 
+                type="button" 
+                onClick={handleSubmit} 
+                disabled={!verified || isSubmitting} 
+                className={`${primaryBtn} py-1.5 px-4 text-xs sm:text-sm`}
+              >
                 {t('app.submitApplication')} <ArrowRight className="h-3.5 w-3.5" />
               </button>
             ) : (

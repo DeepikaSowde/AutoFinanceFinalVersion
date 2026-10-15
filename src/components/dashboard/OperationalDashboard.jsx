@@ -187,7 +187,6 @@ const OperationalDashboard = ({ data }) => {
     <div className="min-w-0 space-y-5">
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-bold tracking-tight text-slate-800 sm:text-2xl">Operational Dashboard</h1>
-        <p className="text-xs text-slate-500 sm:text-sm">Track your loan activity, collections and daily operations at a glance.</p>
       </div>
 
       <section>
@@ -210,7 +209,6 @@ const OperationalDashboard = ({ data }) => {
           <BarChart3 className="h-5 w-5 text-emerald-700" />
           <div>
             <h2 className="text-base font-bold text-slate-800">Loan Activity</h2>
-            <p className="text-[11px] text-slate-400">Loans created from the available customer records.</p>
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
@@ -225,7 +223,6 @@ const OperationalDashboard = ({ data }) => {
               <BarChart3 className="h-5 w-5 text-emerald-700" />
               <h2 className="text-base font-bold text-slate-800">Collection Performance</h2>
             </div>
-            <p className="text-[11px] text-slate-400">Expected collections, actual collections, and collection rate.</p>
           </div>
           {collectionChartData.length ? (
             <div className="h-[245px] w-full min-w-0">
@@ -263,8 +260,7 @@ const OperationalDashboard = ({ data }) => {
             <Banknote className="h-5 w-5 text-emerald-700" />
             <h2 className="text-base font-bold text-slate-800">Money Movement</h2>
           </div>
-          <p className="mb-4 text-[11px] text-slate-400">Money received through each payment mode.</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <MetricCard icon={Banknote} label="Cash" value={formatCurrency(moneyMovement.cash)} />
             <MetricCard icon={CreditCard} label="UPI" value={formatCurrency(moneyMovement.upi)} tone="blue" />
             <MetricCard icon={Landmark} label="Bank Transfer" value={formatCurrency(moneyMovement.bankTransfer)} tone="violet" />
@@ -283,7 +279,6 @@ const OperationalDashboard = ({ data }) => {
             <PieChartIcon className="h-5 w-5 text-emerald-700" />
             <h2 className="text-base font-bold text-slate-800">Loan Portfolio</h2>
           </div>
-          <p className="text-[11px] text-slate-400">Loan distribution and vehicle-type breakdown.</p>
         </div>
         <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(220px,0.9fr)_minmax(0,1.1fr)]">
           <div className="flex min-w-0 flex-col items-center justify-center">

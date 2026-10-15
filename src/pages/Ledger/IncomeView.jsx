@@ -483,19 +483,6 @@ const IncomeView = () => {
                                 ? `Document Charge – ${inc.customerName || 'Customer'}`
                                 : inc.remarks || inc.type}
                             </p>
-                            <p className="text-[11px] sm:text-[12px] text-slate-500 mt-0.5 truncate" title={
-                              inc.type === 'Collection'
-                                ? `${inc.customerId} · Loan ID: ${inc.loanId}`
-                                : inc.type === 'Investment'
-                                ? `Investor ID: ${inc.investorId} · Capital`
-                                : inc.remarks || 'Income recorded'
-                            }>
-                              {inc.type === 'Collection'
-                                ? `${inc.customerId} · Loan ID: ${inc.loanId}`
-                                : inc.type === 'Investment'
-                                ? `Investor ID: ${inc.investorId} · Capital`
-                                : inc.remarks || 'Income recorded'}
-                            </p>
                           </div>
                         </div>
                       </td>

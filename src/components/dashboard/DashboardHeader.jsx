@@ -5,9 +5,6 @@ const DashboardHeader = () => {
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">Financial Dashboard</h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Track your business performance, collections and financial position — all in one place.
-        </p>
       </div>
 
       <div className="flex items-center gap-2.5 sm:gap-3 self-stretch sm:self-auto justify-end flex-wrap">
