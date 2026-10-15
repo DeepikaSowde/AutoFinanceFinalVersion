@@ -423,6 +423,14 @@ const StatusBadge = ({ status }) => {
   return <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 ring-1 ring-inset ring-slate-500/20">Due</span>;
 };
 
+export const getRepaymentColumnLabel = (frequency) => {
+  if (!frequency) return 'EMI';
+  const lower = String(frequency).trim().toLowerCase();
+  if (lower === 'daily') return 'Daily Installment';
+  if (lower === 'weekly') return 'Weekly Installment';
+  return 'EMI';
+};
+
 export default function RepaymentScheduleTable({ loanDetails = {}, schedule: propSchedule }) {
   const generatedSchedule = useMemo(() => generateSchedule(loanDetails), [loanDetails]);
 
@@ -435,6 +443,9 @@ export default function RepaymentScheduleTable({ loanDetails = {}, schedule: pro
     }
     return generatedSchedule;
   }, [propSchedule, loanDetails, generatedSchedule]);
+
+  const frequency = loanDetails?.paymentFrequency || (schedule[0]?.paymentFrequency) || 'Monthly';
+  const repaymentColumnHeader = getRepaymentColumnLabel(frequency);
 
   if (!propSchedule && (!loanDetails?.loanAmount || !loanDetails?.interestRate || !loanDetails?.tenure)) {
     return (
@@ -464,9 +475,9 @@ export default function RepaymentScheduleTable({ loanDetails = {}, schedule: pro
             <th className="px-4 py-3 text-left font-semibold text-slate-700">No.</th>
             <th className="px-4 py-3 text-left font-semibold text-slate-700">Due Date</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal</th>
-            <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal Outstanding</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Interest</th>
-            <th className="px-4 py-3 text-right font-semibold text-slate-700">Installment</th>
+            <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal Outstanding</th>
+            <th className="px-4 py-3 text-right font-semibold text-slate-700">{repaymentColumnHeader}</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Amount Paid</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Balance</th>
             <th className="px-4 py-3 text-center font-semibold text-slate-700">Status</th>
@@ -478,8 +489,8 @@ export default function RepaymentScheduleTable({ loanDetails = {}, schedule: pro
               <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-600">{row.installmentNumber}</td>
               <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">{formatDate(row.dueDate)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.principal)}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-700">{formatINR(row.principalOutstanding)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.interest)}</td>
+              <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-700">{formatINR(row.principalOutstanding)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-emerald-800">{formatINR(row.emi)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.amountPaid)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{formatINR(row.balance)}</td>

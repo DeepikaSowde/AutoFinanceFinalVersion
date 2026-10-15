@@ -262,7 +262,7 @@ const CustomerTab = ({ data = {}, onChange }) => {
                 title="Add another document"
               >
                 <Plus className="h-3 w-3" strokeWidth={2.5} />
-                <span>+ Document</span>
+                <span>Document</span>
               </button>
             </div>
 

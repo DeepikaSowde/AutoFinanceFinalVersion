@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { generateSchedule } from "../../components/RepaymentScheduleTable";
+import { generateSchedule, getRepaymentColumnLabel } from "../../components/RepaymentScheduleTable";
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -878,7 +878,7 @@ const Collection = () => {
                         {selectedCustomer.paymentFrequency || selectedCustomer.loan?.paymentFrequency || "Monthly"}
                       </span>
                       <span className="text-slate-500 text-[11px] block truncate">
-                        EMI: {formatCurrency(selectedCustomer.emiAmount || selectedCustomer.fullSchedule[0]?.emi || 0)}
+                        {getRepaymentColumnLabel(selectedCustomer.paymentFrequency || selectedCustomer.loan?.paymentFrequency)}: {formatCurrency(selectedCustomer.emiAmount || selectedCustomer.fullSchedule[0]?.emi || 0)}
                       </span>
                     </div>
                   </div>
