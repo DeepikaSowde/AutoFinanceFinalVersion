@@ -27,7 +27,7 @@ import {
   FileText,
   Receipt,
 } from "lucide-react";
-import RepaymentScheduleTable, { generateSchedule, computeEffectiveSchedule } from "../../components/RepaymentScheduleTable";
+import RepaymentScheduleTable, { generateSchedule, computeEffectiveSchedule, getRepaymentColumnLabel } from "../../components/RepaymentScheduleTable";
 import InstallmentTimeline from "../../components/InstallmentTimeline";
 import { getVehicleDisplayImage } from "../../utils/vehicleImageHelper";
 
@@ -903,9 +903,9 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                       <th className="px-3.5 py-3 text-left font-bold text-slate-700">No.</th>
                       <th className="px-3.5 py-3 text-left font-bold text-slate-700">Due Date</th>
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Principal</th>
-                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">Principal Outstanding</th>
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Interest</th>
-                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">Installment</th>
+                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">Principal Outstanding</th>
+                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">{getRepaymentColumnLabel(loan.paymentFrequency || loanRecord?.paymentFrequency)}</th>
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Amount Paid</th>
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Balance</th>
                       <th className="px-3.5 py-3 text-center font-bold text-slate-700">Status</th>
@@ -928,11 +928,11 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                         <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-600 font-medium">
                           {formatCurrency(row.principal)}
                         </td>
-                        <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-700 font-medium">
-                          {formatCurrency(row.principalOutstanding !== undefined ? row.principalOutstanding : 0)}
-                        </td>
                         <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-600 font-medium">
                           {formatCurrency(row.interest)}
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-700 font-medium">
+                          {formatCurrency(row.principalOutstanding !== undefined ? row.principalOutstanding : 0)}
                         </td>
                         <td className="whitespace-nowrap px-3.5 py-3 text-right font-bold text-emerald-800">
                           {formatCurrency(row.emi)}
@@ -1158,7 +1158,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                           <span className="font-bold text-slate-800">{formatDate(activeInst.dueDate)}</span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block">EMI Due</span>
+                          <span className="text-slate-500 block">{getRepaymentColumnLabel(loan.paymentFrequency || loanRecord?.paymentFrequency)} Due</span>
                           <span className="font-bold text-slate-800">{formatCurrency(activeInst.emi)}</span>
                         </div>
                         <div>
