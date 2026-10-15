@@ -80,6 +80,8 @@ export const getTenantAccess = async (tenantId) => {
   const tenant = {
     id: row.id,
     name: row.name,
+    // "auto_finance" or "general_finance"; the lender app doesn't act on it yet.
+    product: row.product,
     status: row.status,
     validUntil: toDateString(row.valid_until),
     plan: { id: row.plan_id, code: row.plan_code, name: row.plan_name },

@@ -33,6 +33,8 @@ export const Button = ({ variant = 'primary', className = '', type = 'button', b
 
 const BADGE_STYLES = {
   premium: 'bg-violet-100 text-violet-800 ring-violet-200',
+  auto_finance: 'bg-sky-100 text-sky-900 ring-sky-200',
+  general_finance: 'bg-teal-100 text-teal-900 ring-teal-200',
   basic: 'bg-slate-100 text-slate-700 ring-slate-200',
   active: 'bg-green-100 text-green-800 ring-green-200',
   suspended: 'bg-red-100 text-red-800 ring-red-200',
@@ -46,7 +48,14 @@ export const Badge = ({ tone = 'neutral', children }) => (
   </span>
 )
 
-export const PlanBadge = ({ plan }) => <Badge tone={plan?.code === 'premium' ? 'premium' : plan?.code === 'basic' ? 'basic' : 'neutral'}>{plan?.name || '—'}</Badge>
+// General Finance plan codes start "gf_" (gf_premium, gf_basic).
+const planTone = (code = '') => (/(^|_)premium$/.test(code) ? 'premium' : /(^|_)basic$/.test(code) ? 'basic' : 'neutral')
+
+export const PlanBadge = ({ plan }) => <Badge tone={planTone(plan?.code)}>{plan?.name || '—'}</Badge>
+
+const PRODUCT_NAMES = { auto_finance: 'Auto Finance', general_finance: 'General Finance' }
+
+export const ProductBadge = ({ product }) => <Badge tone={product}>{PRODUCT_NAMES[product] || product || '—'}</Badge>
 
 const STATUS_LABELS = { active: 'Active', suspended: 'Suspended', expired: 'Expired' }
 

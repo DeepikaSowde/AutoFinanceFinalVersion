@@ -7,7 +7,7 @@
 import { query } from "../db/connection.js";
 import { currentUsageMonth } from "../services/tenantAccess.js";
 import { EFFECTIVE_STATUS_SQL, TODAY_SQL, loadEntitlements } from "./tenantRepository.js";
-import { LIMITED_FEATURES } from "./validate.js";
+import { LIMITED_FEATURES, PRODUCTS } from "./validate.js";
 
 export const getDashboard = async () => {
   const tenants = (
@@ -26,15 +26,19 @@ export const getDashboard = async () => {
     .map((t) => ({
       id: t.id,
       name: t.name,
+      product: t.product,
       plan: { id: t.plan_id, code: t.plan_code, name: t.plan_name },
       validUntil: t.valid_until,
       daysLeft: t.days_left,
     }));
 
   const perPlan = {};
+  const perProduct = Object.fromEntries(PRODUCTS.map((product) => [product, { tenants: 0, active: 0 }]));
   for (const t of tenants) {
-    perPlan[t.plan_code] ??= { planId: t.plan_id, name: t.plan_name, count: 0 };
+    perPlan[t.plan_code] ??= { planId: t.plan_id, name: t.plan_name, product: t.product, count: 0 };
     perPlan[t.plan_code].count += 1;
+    perProduct[t.product].tenants += 1;
+    if (t.effective_status === "active") perProduct[t.product].active += 1;
   }
 
   // Usage vs capacity, over active tenants that have each feature.
@@ -66,6 +70,7 @@ export const getDashboard = async () => {
       expired: tenants.filter((t) => t.effective_status === "expired").length,
     },
     perPlan,
+    perProduct,
     usage,
     expiringSoon,
   };

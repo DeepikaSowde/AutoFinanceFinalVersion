@@ -46,6 +46,15 @@ export const FEATURE_LABELS = {
   mobile_app: 'Mobile app',
   whatsapp_reminders: 'WhatsApp reminders',
   vahan_lookup: 'VAHAN vehicle info',
+  field_collection: 'Field collection',
+}
+
+// The two products and the features each offers (matches the server).
+export const PRODUCTS = ['auto_finance', 'general_finance']
+export const PRODUCT_LABELS = { auto_finance: 'Auto Finance', general_finance: 'General Finance' }
+export const PRODUCT_FEATURES = {
+  auto_finance: ['web_app', 'mobile_app', 'whatsapp_reminders', 'vahan_lookup'],
+  general_finance: ['web_app', 'mobile_app', 'whatsapp_reminders', 'field_collection'],
 }
 
 export const PAYMENT_METHOD_LABELS = {

@@ -90,6 +90,7 @@ const mapTenant = (row, entitlements) => ({
   ownerName: row.owner_name || "",
   phone: row.phone || "",
   email: row.email || "",
+  product: row.product,
   plan: { id: row.plan_id, code: row.plan_code, name: row.plan_name },
   status: row.status,
   effectiveStatus: row.effective_status,
@@ -108,7 +109,7 @@ const getTenantRow = async (tenantId, client = null) => {
 
 /* ---------- reads ---------- */
 
-export const listTenants = async ({ search = "", planId = null, status = "", page = 1, pageSize = 20 } = {}) => {
+export const listTenants = async ({ search = "", product = "", planId = null, status = "", page = 1, pageSize = 20 } = {}) => {
   const conditions = [];
   const params = [];
 
@@ -117,6 +118,10 @@ export const listTenants = async ({ search = "", planId = null, status = "", pag
     conditions.push(
       `(tenants.name ILIKE $${params.length} OR tenants.owner_name ILIKE $${params.length} OR tenants.email ILIKE $${params.length} OR tenants.phone ILIKE $${params.length})`
     );
+  }
+  if (product) {
+    params.push(product);
+    conditions.push(`tenants.product = $${params.length}`);
   }
   if (planId) {
     params.push(planId);
@@ -181,7 +186,7 @@ export const getUsage = async (tenantId, month = currentUsageMonth()) => {
 /* ---------- changes (each with its audit entry) ---------- */
 
 const requireActivePlan = async (client, planId) => {
-  const plan = (await client.query("SELECT id, code, name, is_active FROM plans WHERE id = $1", [planId])).rows[0];
+  const plan = (await client.query("SELECT id, code, name, product, is_active FROM plans WHERE id = $1", [planId])).rows[0];
   if (!plan) throw v.badRequest("That plan does not exist.");
   if (!plan.is_active) throw v.badRequest(`The ${plan.name} plan is not active.`);
   return plan;
@@ -192,23 +197,25 @@ export const createTenant = async (input, actor) => {
   const ownerName = v.text(input.ownerName, "Owner name");
   const phone = v.phone(input.phone);
   const email = v.email(input.email);
+  const product = v.oneOf(input.product, "Product", v.PRODUCTS);
   const planId = v.id(input.planId, "Plan");
   const validUntil = v.date(input.validUntil, "Valid until");
 
   const tenantId = await withTransaction(async (client) => {
     const plan = await requireActivePlan(client, planId);
+    if (plan.product !== product) throw v.badRequest(`The ${plan.name} plan is not a plan of this product.`);
     const inserted = await client.query(
-      `INSERT INTO tenants (name, owner_name, phone, email, plan_id, status, valid_until)
-       VALUES ($1, $2, $3, $4, $5, 'active', COALESCE($6::date, (${TODAY_SQL} + INTERVAL '1 month')::date))
+      `INSERT INTO tenants (name, owner_name, phone, email, product, plan_id, status, valid_until)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active', COALESCE($7::date, (${TODAY_SQL} + INTERVAL '1 month')::date))
        RETURNING id, valid_until`,
-      [name, ownerName, phone, email, plan.id, validUntil]
+      [name, ownerName, phone, email, product, plan.id, validUntil]
     );
     const created = inserted.rows[0];
     await writeAudit(client, {
       actorId: actor.id,
       action: "tenant.created",
       tenantId: created.id,
-      details: { name, plan: plan.code, validUntil: created.valid_until },
+      details: { name, product, plan: plan.code, validUntil: created.valid_until },
     });
     return created.id;
   });
@@ -248,6 +255,7 @@ export const changePlan = async (tenantId, planId, actor) => {
   await withTransaction(async (client) => {
     const before = await getTenantRow(tenantId, client);
     const plan = await requireActivePlan(client, id);
+    if (plan.product !== before.product) throw v.badRequest(`The ${plan.name} plan belongs to the other product. Pick one of this tenant's product plans.`);
     if (plan.id === before.plan_id) return;
     await client.query("UPDATE tenants SET plan_id = $2 WHERE id = $1", [tenantId, plan.id]);
     await writeAudit(client, { actorId: actor.id, action: "tenant.plan_changed", tenantId, details: { from: before.plan_code, to: plan.code } });
@@ -314,6 +322,7 @@ export const setFeatures = async (tenantId, features, actor) => {
 
   await withTransaction(async (client) => {
     const row = await getTenantRow(tenantId, client);
+    for (const key of Object.keys(features)) v.productFeature(row.product, key);
     const planFeatures = new Set(
       (await client.query("SELECT feature_key FROM plan_features WHERE plan_id = $1", [row.plan_id])).rows.map((f) => f.feature_key)
     );

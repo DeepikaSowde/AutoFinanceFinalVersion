@@ -10,7 +10,7 @@ import { asyncHandler } from "../util/asyncHandler.js";
 import { getAuditLogs } from "./audit.js";
 import { loginSuperAdmin, logoutSuperAdmin, requireSuperAdmin } from "./auth.js";
 import { getDashboard } from "./dashboard.js";
-import { getPlans, updatePlan } from "./planRepository.js";
+import { createPlan, getPlans, updatePlan } from "./planRepository.js";
 import { loginRateLimit, recordLoginFailure, recordLoginSuccess } from "./rateLimit.js";
 import * as tenants from "./tenantRepository.js";
 import * as v from "./validate.js";
@@ -72,6 +72,7 @@ superadminRouter.get(
     res.json(
       await tenants.listTenants({
         search: v.text(req.query.search, "search", { max: 100 }),
+        product: req.query.product ? v.oneOf(req.query.product, "product", v.PRODUCTS) : "",
         planId: req.query.planId ? v.id(req.query.planId, "planId") : null,
         status: req.query.status ? v.oneOf(req.query.status, "status", v.TENANT_STATUSES) : "",
         ...paging(req),
@@ -122,7 +123,12 @@ superadminRouter.get("/tenants/:id/payments", asyncHandler(async (req, res) => r
 
 /* ---------- plans ---------- */
 
-superadminRouter.get("/plans", asyncHandler(async (req, res) => res.json(await getPlans())));
+superadminRouter.get(
+  "/plans",
+  asyncHandler(async (req, res) => res.json(await getPlans({ product: req.query.product ? v.oneOf(req.query.product, "product", v.PRODUCTS) : "" })))
+);
+
+superadminRouter.post("/plans", asyncHandler(async (req, res) => res.status(201).json(await createPlan(req.body || {}, req.superAdmin))));
 
 superadminRouter.put("/plans/:id", asyncHandler(async (req, res) => res.json(await updatePlan(v.id(req.params.id, "Plan id"), req.body || {}, req.superAdmin))));
 

@@ -58,7 +58,7 @@ authRouter.get(
     res.json({
       user: req.user,
       tenant: tenant
-        ? { name: tenant.name, status: tenant.blocked ? (tenant.status === "suspended" ? "suspended" : "expired") : tenant.status, valid_until: tenant.validUntil }
+        ? { name: tenant.name, product: tenant.product, status: tenant.blocked ? (tenant.status === "suspended" ? "suspended" : "expired") : tenant.status, valid_until: tenant.validUntil }
         : null,
       features: tenant?.features ?? [],
     });

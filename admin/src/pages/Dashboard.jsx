@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom'
 import { AlertTriangle, Building2, CalendarClock, CheckCircle2 } from 'lucide-react'
 
 import { api } from '../api'
-import { Alert, Card, PageHeader, PlanBadge, ProgressBar, Table, Td, Th } from '../components/ui'
-import { daysLeftText, formatDate } from '../format'
+import { Alert, Card, PageHeader, PlanBadge, ProductBadge, ProgressBar, Table, Td, Th } from '../components/ui'
+import { PRODUCTS, PRODUCT_LABELS, daysLeftText, formatDate } from '../format'
 import { useLoad } from '../useLoad'
 
 const Metric = ({ icon: Icon, label, value, tone }) => (
@@ -39,6 +39,20 @@ export default function Dashboard() {
         <Metric icon={AlertTriangle} label="Suspended or expired" value={totals?.suspendedOrExpired} tone="bg-red-100 text-red-700" />
       </div>
 
+      {data?.perProduct && (
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {PRODUCTS.map((key) => (
+            <div key={key} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5">
+              <div>
+                <ProductBadge product={key} />
+                <p className="mt-2 text-sm text-slate-600">{data.perProduct[key]?.active ?? 0} active of {data.perProduct[key]?.tenants ?? 0} tenants</p>
+              </div>
+              <Link to="/plans" className="text-sm font-semibold text-teal-800 hover:underline">{PRODUCT_LABELS[key]} plans</Link>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card title={`Usage this month${data ? ` · ${monthName(data.month)}` : ''}`} className="xl:col-span-1">
           {loading && !data ? (
@@ -57,7 +71,10 @@ export default function Dashboard() {
                   <ul className="space-y-1.5 text-sm">
                     {Object.entries(data.perPlan).map(([code, plan]) => (
                       <li key={code} className="flex items-center justify-between">
-                        <PlanBadge plan={{ code, name: plan.name }} />
+                        <span className="flex items-center gap-2">
+                          <PlanBadge plan={{ code, name: plan.name }} />
+                          <span className="text-xs text-slate-500">{PRODUCT_LABELS[plan.product]}</span>
+                        </span>
                         <span className="tabular-nums text-slate-700">{plan.count}</span>
                       </li>
                     ))}

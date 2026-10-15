@@ -3,8 +3,22 @@
 // Small input checks for the super admin API. Each throws a 400 with a
 // message the admin app can show next to the form.
 
-export const FEATURE_KEYS = ["web_app", "mobile_app", "whatsapp_reminders", "vahan_lookup"];
+// Each product offers its own set of features; a plan or tenant override can
+// only use its product's.
+export const PRODUCTS = ["auto_finance", "general_finance"];
+export const PRODUCT_FEATURES = {
+  auto_finance: ["web_app", "mobile_app", "whatsapp_reminders", "vahan_lookup"],
+  general_finance: ["web_app", "mobile_app", "whatsapp_reminders", "field_collection"],
+};
+export const FEATURE_KEYS = [...new Set(Object.values(PRODUCT_FEATURES).flat())];
 export const LIMITED_FEATURES = ["whatsapp_reminders", "vahan_lookup"];
+
+export const productFeature = (product, key) => {
+  if (!PRODUCT_FEATURES[product]?.includes(key)) {
+    throw badRequest(`${key} is not a ${product === "general_finance" ? "General Finance" : "Auto Finance"} feature.`);
+  }
+  return key;
+};
 export const TENANT_STATUSES = ["active", "suspended", "expired"];
 export const PAYMENT_METHODS = ["upi", "bank_transfer", "cheque", "cash", "razorpay"];
 

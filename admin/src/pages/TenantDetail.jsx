@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Copy, KeyRound } from 'lucide-react'
 
 import { api, query } from '../api'
-import { Alert, Button, Card, Field, PlanBadge, ProgressBar, StatusBadge, Table, Td, Th } from '../components/ui'
+import { Alert, Button, Card, Field, PlanBadge, ProductBadge, ProgressBar, StatusBadge, Table, Td, Th } from '../components/ui'
 import {
   FEATURE_LABELS,
   PAYMENT_METHOD_LABELS,
@@ -16,11 +16,11 @@ import {
   formatDateTime,
   formatMoney,
   todayIST,
+  PRODUCT_FEATURES,
 } from '../format'
 import { inputClass } from '../styles'
 import { useLoad } from '../useLoad'
 
-const FEATURES = ['web_app', 'mobile_app', 'whatsapp_reminders', 'vahan_lookup']
 
 /* ---------- small pieces ---------- */
 
@@ -257,7 +257,10 @@ function PaymentsCard({ tenant, onRecorded, payments, setNotice }) {
 
 /* ---------- the page ---------- */
 
-function TenantView({ tenant, plans, onTenant, reloadSide, payments, audit, notice, setNotice }) {
+function TenantView({ tenant, plans: allPlans, onTenant, reloadSide, payments, audit, notice, setNotice }) {
+  // Only this tenant's product: its plans and the features it offers.
+  const FEATURES = PRODUCT_FEATURES[tenant.product] || PRODUCT_FEATURES.auto_finance
+  const plans = allPlans.filter((p) => p.product === tenant.product)
   const [details, setDetails] = useState({ name: tenant.name, ownerName: tenant.ownerName, phone: tenant.phone, email: tenant.email })
   const [planId, setPlanId] = useState(String(tenant.plan.id))
   const [features, setFeatures] = useState(() => Object.fromEntries(FEATURES.map((key) => [key, tenant.features.includes(key)])))
@@ -319,6 +322,7 @@ function TenantView({ tenant, plans, onTenant, reloadSide, payments, audit, noti
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">{tenant.name}</h1>
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            <ProductBadge product={tenant.product} />
             <PlanBadge plan={tenant.plan} />
             <StatusBadge status={tenant.effectiveStatus} />
             {tenant.status === 'suspended' || tenant.effectiveStatus === tenant.status ? null : (
@@ -377,7 +381,7 @@ function TenantView({ tenant, plans, onTenant, reloadSide, payments, audit, noti
             </div>
           </Card>
 
-          <PaymentsCard key={`${tenant.validUntil}-${tenant.plan.id}`} tenant={{ ...tenant, planPrice: plans.find((p) => p.id === tenant.plan.id)?.priceMonthly }} payments={payments} setNotice={setNotice} onRecorded={(updated) => { onTenant(updated); reloadSide() }} />
+          <PaymentsCard key={`${tenant.validUntil}-${tenant.plan.id}`} tenant={{ ...tenant, planPrice: allPlans.find((p) => p.id === tenant.plan.id)?.priceMonthly }} payments={payments} setNotice={setNotice} onRecorded={(updated) => { onTenant(updated); reloadSide() }} />
         </div>
 
         <div className="space-y-6">
@@ -403,7 +407,9 @@ function TenantView({ tenant, plans, onTenant, reloadSide, payments, audit, noti
           <Card title="Usage this month">
             <div className="space-y-5">
               <ProgressBar id="t-usage-wa" label="WhatsApp reminders" used={tenant.usage?.whatsapp_reminders.used} limit={tenant.usage?.whatsapp_reminders.limit} />
-              <ProgressBar id="t-usage-vahan" label="VAHAN lookups" used={tenant.usage?.vahan_lookup.used} limit={tenant.usage?.vahan_lookup.limit} />
+              {FEATURES.includes('vahan_lookup') && (
+                <ProgressBar id="t-usage-vahan" label="VAHAN lookups" used={tenant.usage?.vahan_lookup.used} limit={tenant.usage?.vahan_lookup.limit} />
+              )}
             </div>
           </Card>
 
