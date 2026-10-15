@@ -11,6 +11,7 @@ const ROUTE_LABELS = {
   '/vehicle': 'Vehicle',
   '/users': 'User Management',
   '/reminders': 'Reminder',
+  '/chit-investment': 'Chit Investment',
 };
 
 const Breadcrumb = () => {

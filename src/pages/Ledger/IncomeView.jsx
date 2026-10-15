@@ -468,7 +468,7 @@ const IncomeView = () => {
                                 : inc.type === 'Investment'
                                 ? `${inc.investorName} – ${inc.subType || 'Capital Deposit'}`
                                 : inc.type === 'Chit Investment'
-                                ? `Chit Investment – ${inc.remarks || 'Investment Deposit'}`
+                                ? 'Chit Investment'
                                 : inc.type === 'Document Charge'
                                 ? `Document Charge – ${inc.customerName || 'Customer'}`
                                 : inc.remarks || inc.type
@@ -478,7 +478,7 @@ const IncomeView = () => {
                                 : inc.type === 'Investment'
                                 ? `${inc.investorName} – ${inc.subType || 'Capital Deposit'}`
                                 : inc.type === 'Chit Investment'
-                                ? `Chit Investment – ${inc.remarks || 'Investment Deposit'}`
+                                ? 'Chit Investment'
                                 : inc.type === 'Document Charge'
                                 ? `Document Charge – ${inc.customerName || 'Customer'}`
                                 : inc.remarks || inc.type}

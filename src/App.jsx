@@ -17,6 +17,7 @@ import UserManagement from './pages/UserManagement'
 import Reminder from './pages/Reminder'
 import GuarantorReferral from './pages/customer/GuarantorReferral'
 import ReferralCommission from './pages/customer/ReferralCommission'
+import ChitInvestment from './pages/ChitInvestment'
 
 function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
@@ -46,6 +47,7 @@ function App() {
             <Route path="/vehicle" element={<Vehicle />} />
             <Route path="/users" element={<UserManagement />} />
             <Route path="/reminders" element={<Reminder />} />
+            <Route path="/chit-investment" element={<ChitInvestment />} />
             <Route path="*" element={<Navigate to="/newloan" replace />} />
           </Routes>
         </main>

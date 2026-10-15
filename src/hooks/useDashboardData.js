@@ -245,6 +245,29 @@ export const useDashboardData = () => {
             closingBalance: closingBalance
         };
 
+        // Chit Data for Dashboard ChitOverviewCard
+        let chitData = null;
+        try {
+          const chitTxs = JSON.parse(window.localStorage.getItem("motoLendChitTransactions_data") || "[]");
+          const chitPaid = chitTxs
+            .filter((t) => t.type === "Chit Paid" || t.category === "Expense")
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+          const chitInward = chitTxs
+            .filter((t) => t.type === "Chit Income" || t.category === "Income")
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+          
+          if (chitTxs.length > 0 || chitPaid > 0 || chitInward > 0) {
+            chitData = {
+              paid: chitPaid,
+              amount: chitPaid + chitInward,
+              investment: chitPaid,
+              inward: chitInward
+            };
+          }
+        } catch {
+          chitData = null;
+        }
+
         setData({
             totalOutstanding,
             totalCredit,
@@ -255,7 +278,7 @@ export const useDashboardData = () => {
             incomeBreakdown,
             expenseBreakdown,
             capitalData,
-            chitData: null, // No chit data in standard app
+            chitData,
             outstandingOverview: {
                 totalOutstanding,
                 debit: totalDebit,
