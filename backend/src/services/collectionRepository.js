@@ -63,6 +63,7 @@ const mapCollection = (row) => {
     payMode: row.pay_mode || "",
     paymentMode: row.pay_mode || "",
     receiptNumber: row.receipt_number || "",
+    transactionId: row.transaction_ref || "",
     dueDate: row.due_date || "",
     installment: row.installment_number,
 
@@ -180,8 +181,9 @@ export const createCollection = async (payload = {}, submittedBy) => {
         `INSERT INTO collections
           (id, customer_pk, loan_pk, status, amount, due_amount, penalty_amount, total_payable,
            payment_type, pay_mode, receipt_number, due_date, installment_number,
-           staff_name, location, remarks, overdue_days, grace_days, collected_date, client_ref, tenant_id)
-         VALUES ('', $1, $2, 'Pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+           staff_name, location, remarks, overdue_days, grace_days, collected_date, client_ref, tenant_id,
+           transaction_ref)
+         VALUES ('', $1, $2, 'Pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
          RETURNING pk`,
         [
           customerRow?.pk ?? loanRow.customer_pk,
@@ -203,6 +205,8 @@ export const createCollection = async (payload = {}, submittedBy) => {
           payload.collectedDate || new Date().toISOString(),
           clientRef,
           currentTenantId(),
+          // UPI ref / UTR / cheque no. of a non-cash payment; none for cash.
+          String(payload.transactionId || payload.transactionRef || "").trim().slice(0, 120) || null,
         ]
       );
 

@@ -16,6 +16,7 @@ const toPayment = (collection) => ({
   advance: collection.amountTowardAdvance || 0,
   mode: collection.payMode,
   remarks: collection.remarks,
+  transactionId: collection.transactionId || '',
   // Which installments this payment went to (from the server's allocation),
   // for the Installment No. column. Deliberately not "allocations": the
   // schedule views must not re-apply a payment the server already applied.
@@ -34,7 +35,7 @@ export const loadPayments = async () => {
 
 // clientRef is made once per payment attempt (when the dialog opens) so a
 // double click or a retry after a lost response does not post twice.
-export const recordCollection = ({ entry, amount, paymentMode, remarks, dueAmount, clientRef, collectedDate }) =>
+export const recordCollection = ({ entry, amount, paymentMode, remarks, dueAmount, clientRef, collectedDate, transactionId }) =>
   apiPost('/collections', {
     loanId: entry.loanId,
     customerId: entry.customerId,
@@ -44,4 +45,6 @@ export const recordCollection = ({ entry, amount, paymentMode, remarks, dueAmoun
     dueAmount,
     collectedDate: collectedDate || new Date().toISOString(),
     clientRef,
+    // Bank / UPI reference of a non-cash payment.
+    transactionId: paymentMode && paymentMode !== 'Cash' ? (transactionId || '').trim() : '',
   })
