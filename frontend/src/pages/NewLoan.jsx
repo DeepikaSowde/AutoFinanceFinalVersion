@@ -427,6 +427,7 @@ const NewLoan = () => {
     setForm(initialForm())
     setStep(0)
     setVerified(false)
+    navigate('/loans')
   }
 
   const handleViewSchedule = () => setShowScheduleModal(true)

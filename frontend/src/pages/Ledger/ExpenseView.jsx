@@ -316,15 +316,11 @@ const ExpenseView = ({ onAddExpense, data }) => {
                           <span className="text-[11px] font-semibold text-slate-600 mt-1 truncate">
                             {exp.investorName}
                           </span>
-                        ) : exp.referrerName ? (
-                          <span className="text-[11px] font-semibold text-[#006052] mt-0.5 truncate max-w-[200px]">
-                            Ref: {exp.referrerName} {exp.loanId && exp.loanId !== '—' ? `(${exp.loanId})` : ''}
-                          </span>
                         ) : (exp.regNo || exp.vehicleRegNo) ? (
                           <span className="text-[11px] font-semibold text-amber-800 mt-0.5 truncate max-w-[200px]">
                             Veh: {exp.regNo || exp.vehicleRegNo} {exp.customerName && exp.customerName !== '—' ? `(${exp.customerName})` : ''}
                           </span>
-                        ) : exp.remarks ? (
+                        ) : (exp.remarks && exp.category !== 'Referral Commission' && !exp.remarks.toLowerCase().includes('commission paid')) ? (
                           <span className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[180px]">
                             {exp.remarks}
                           </span>

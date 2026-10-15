@@ -1105,7 +1105,12 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                               {formatCurrency(p.amount)}
                             </td>
                             <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                              {p.paymentMethod || p.method || p.mode || 'Cash'}
+                              <span className="block">{p.paymentMethod || p.method || p.mode || 'Cash'}</span>
+                              {p.transactionId && (
+                                <span className="block text-[11px] text-slate-400 font-mono mt-0.5">
+                                  Transaction ID: {p.transactionId}
+                                </span>
+                              )}
                             </td>
                             <td className="whitespace-nowrap px-4 py-3 text-center">
                               <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">

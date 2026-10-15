@@ -190,9 +190,6 @@ const Vehicle = () => {
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             Vehicle Management
           </h1>
-          <p className="mt-0.5 text-xs sm:text-sm text-slate-500 font-medium">
-            Manage and track all vehicles in one place.
-          </p>
         </div>
 
         {/* =========================================================

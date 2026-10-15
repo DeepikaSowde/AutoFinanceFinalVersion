@@ -497,11 +497,6 @@ const Ledger = () => {
             <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 sm:text-3xl">
               {filter === 'Ledger' ? 'Ledger' : filter}
             </h1>
-            <p className="mt-2 text-[15px] text-slate-500 hidden sm:block">
-              {filter === 'Ledger' && 'Track all money coming in and going out from your business.'}
-              {filter === 'Income' && 'Track all income received by the business.'}
-              {filter === 'Expense' && 'Track all business expenses and outgoing operating costs.'}
-            </p>
           </div>
           <button
             onClick={() => setIsDrawerOpen(true)}
