@@ -87,6 +87,7 @@ const Collection = () => {
   const [collectAmount, setCollectAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [paymentMode, setPaymentMode] = useState("Cash");
+  const [transactionId, setTransactionId] = useState("");
   const [remarks, setRemarks] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
@@ -233,6 +234,7 @@ const Collection = () => {
     setCollectAmount(String(initialAmount || ""));
     setPaymentDate(date);
     setPaymentMode("Cash");
+    setTransactionId("");
     setRemarks("EMI Collection");
     setIsSubmitting(false);
   };
@@ -444,6 +446,7 @@ const Collection = () => {
         interest: totalInterestEarned,
         advance: unappliedAdvance,
         mode: paymentMode,
+        transactionId: paymentMode !== "Cash" ? (transactionId ? transactionId.trim() : "") : "",
         remarks: remarks || "Collection Payment",
         allocations: appliedAllocations,
         totalPrincipalOutstandingAfter: totalPrincipalOutstanding,
@@ -811,10 +814,10 @@ const Collection = () => {
               <div className="p-4 sm:p-6 flex flex-col gap-4 sm:gap-5">
                 {/* 3 SUMMARY CARDS AT THE TOP (EXACTLY 3 CARDS) */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
-                  {/* Card 1: Total Installment Amount */}
+                  {/* Card 1: Total Outstanding Amount */}
                   <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3.5 sm:p-4 shadow-2xs">
                     <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 truncate">
-                      Total Installment Amount
+                      Total Outstanding Amount
                     </p>
                     <p className="text-lg sm:text-xl font-black text-slate-900 mt-0.5 sm:mt-1 truncate">
                       {formatCurrency(selectedCustomer.totalUnpaidInstallmentAmount)}
@@ -1057,6 +1060,31 @@ const Collection = () => {
                   </div>
                 </div>
 
+                {/* Transaction ID */}
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Transaction ID {paymentMode !== "Cash" && <span className="text-slate-400 font-normal">(Optional)</span>}
+                  </label>
+                  <input
+                    type="text"
+                    value={transactionId}
+                    onChange={(e) => setTransactionId(e.target.value)}
+                    disabled={paymentMode === "Cash"}
+                    placeholder={
+                      paymentMode === "Cash"
+                        ? "Not applicable for Cash payments"
+                        : paymentMode === "UPI"
+                        ? "e.g. UPI123456789"
+                        : "e.g. TXN987654321"
+                    }
+                    className={`w-full rounded-xl border px-3.5 py-2 sm:py-2.5 text-xs sm:text-sm shadow-2xs outline-none transition-all ${
+                      paymentMode === "Cash"
+                        ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed placeholder:text-slate-400"
+                        : "border-slate-300 bg-white text-slate-800 placeholder:text-slate-400 focus:border-[#006052] focus:ring-1 focus:ring-[#006052]"
+                    }`}
+                  />
+                </div>
+
                 {/* Remarks */}
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
@@ -1074,28 +1102,11 @@ const Collection = () => {
                 {/* Live Payment Allocation Preview */}
                 {amountReceived > 0 && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 sm:p-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2.5 gap-1.5">
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-slate-500 shrink-0" />
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                          Payment Allocation Preview
-                        </h4>
-                      </div>
-                      <span
-                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] sm:text-[11px] font-bold w-fit ${
-                          allocationPreview.paymentType === "FULL"
-                            ? "bg-emerald-100 text-emerald-800"
-                            : allocationPreview.paymentType === "EXCESS"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {allocationPreview.paymentType === "FULL"
-                          ? "Full Payment"
-                          : allocationPreview.paymentType === "EXCESS"
-                          ? "Excess / Advance Payment"
-                          : "Partial Payment"}
-                      </span>
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <Clock className="h-4 w-4 text-slate-500 shrink-0" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                        Payment Allocation Preview
+                      </h4>
                     </div>
 
                     <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1 text-xs">
@@ -1193,6 +1204,11 @@ const Collection = () => {
                   <div className="text-left sm:text-right">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment Method</span>
                     <p className="text-xs sm:text-sm font-bold text-slate-800">{confirmedTransaction.mode}</p>
+                    {confirmedTransaction.transactionId && (
+                      <p className="text-[11px] font-mono text-slate-500 mt-0.5">
+                        Transaction ID: {confirmedTransaction.transactionId}
+                      </p>
+                    )}
                   </div>
                 </div>
 

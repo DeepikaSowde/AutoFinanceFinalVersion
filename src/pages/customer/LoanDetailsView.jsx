@@ -1036,6 +1036,11 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                             <span className="inline-flex px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-semibold border border-slate-200">
                               {p.mode || "Cash"}
                             </span>
+                            {p.transactionId && (
+                              <span className="block text-[10px] text-slate-500 font-mono mt-0.5">
+                                Transaction ID: {p.transactionId}
+                              </span>
+                            )}
                           </td>
                           <td className="whitespace-nowrap px-3.5 py-3 text-center">
                             <span className="text-xs font-semibold text-emerald-800">

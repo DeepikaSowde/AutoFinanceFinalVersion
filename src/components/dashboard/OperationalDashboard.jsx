@@ -195,11 +195,11 @@ const OperationalDashboard = ({ data }) => {
           <h2 className="text-base font-bold text-slate-800">Key Metrics</h2>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-5">
-          <MetricCard icon={ClipboardList} label="Total Active Loans" value={activeLoans.toLocaleString('en-IN')} />
           <MetricCard icon={Users} label="Total Customers" value={keyMetrics.activeCustomers.toLocaleString('en-IN')} tone="blue" />
+          <MetricCard icon={ClipboardList} label="Total Active Loans" value={activeLoans.toLocaleString('en-IN')} />
+          <MetricCard icon={ShieldCheck} label="Closed Loans" value={dashboardOnlyData.portfolio.Closed.toLocaleString('en-IN')} tone="blue" />
           <MetricCard icon={CircleDollarSign} label="Today's Collections" value={formatCurrency(dashboardOnlyData.collectionToday)} tone="violet" />
           <MetricCard icon={Gauge} label="Overdue Amount" value={formatCurrency(keyMetrics.overdueAmount)} tone="amber" />
-          <MetricCard icon={ShieldCheck} label="Closed Loans" value={dashboardOnlyData.portfolio.Closed.toLocaleString('en-IN')} tone="blue" />
         </div>
       </section>
 
