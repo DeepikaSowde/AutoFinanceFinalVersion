@@ -161,26 +161,32 @@ const validate = (income) => {
   }
 };
 
+// Inserts an income on the caller's transaction and returns its id, so other
+// records (e.g. a chit transaction) can book their income atomically.
+export const insertIncome = async (client, income = {}) => {
+  validate(income);
+
+  const result = await client.query(
+    `INSERT INTO incomes
+      (id, amount, status, category, sub_category, income_date, payment_mode, received_from,
+       reference, description, remarks, details, created_by, tenant_id)
+     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     RETURNING pk`,
+    [...toValues(income), currentTenantId()]
+  );
+
+  const pk = result.rows[0].pk;
+  const id = `INC-${pad(pk)}`;
+
+  await client.query("UPDATE incomes SET id = $1 WHERE pk = $2", [id, pk]);
+
+  return id;
+};
+
 export const addIncome = async (income = {}) => {
   validate(income);
 
-  const incomeId = await withTransaction(async (client) => {
-    const result = await client.query(
-      `INSERT INTO incomes
-        (id, amount, status, category, sub_category, income_date, payment_mode, received_from,
-         reference, description, remarks, details, created_by, tenant_id)
-       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-       RETURNING pk`,
-      [...toValues(income), currentTenantId()]
-    );
-
-    const pk = result.rows[0].pk;
-    const id = `INC-${pad(pk)}`;
-
-    await client.query("UPDATE incomes SET id = $1 WHERE pk = $2", [id, pk]);
-
-    return id;
-  });
+  const incomeId = await withTransaction((client) => insertIncome(client, income));
 
   return getIncomeById(incomeId);
 };
