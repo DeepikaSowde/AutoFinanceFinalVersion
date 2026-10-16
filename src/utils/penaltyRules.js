@@ -14,21 +14,24 @@ export const PENALTY_SETTINGS_STORAGE_KEY = 'motoLendPenaltySettings_data';
 export const PENALTY_RECORDS_STORAGE_KEY = 'motoLendPenaltyRecords_data';
 export const PENALTY_UPDATE_EVENT = 'motoLend_penalty_settings_updated';
 
-// Sensible initial defaults: 0 grace days, Fixed Penalty, ₹0 amount
+// Sensible initial defaults: 0 grace days, Fixed Penalty, ₹0 amount, Monthly enabled by default
 export const DEFAULT_PENALTY_SETTINGS = {
   Daily: {
+    enabled: false,
     gracePeriodDays: 0,
     penaltyType: 'Fixed Penalty', // 'Fixed Penalty' | 'Daily Increasing'
     fixedAmount: 0,
     dailyRate: 0,
   },
   Weekly: {
+    enabled: false,
     gracePeriodDays: 0,
     penaltyType: 'Fixed Penalty',
     fixedAmount: 0,
     dailyRate: 0,
   },
   Monthly: {
+    enabled: true,
     gracePeriodDays: 0,
     penaltyType: 'Fixed Penalty',
     fixedAmount: 0,
@@ -46,9 +49,21 @@ export const getPenaltySettings = () => {
     if (!raw) return { ...DEFAULT_PENALTY_SETTINGS };
     const parsed = JSON.parse(raw);
     return {
-      Daily: { ...DEFAULT_PENALTY_SETTINGS.Daily, ...(parsed.Daily || {}) },
-      Weekly: { ...DEFAULT_PENALTY_SETTINGS.Weekly, ...(parsed.Weekly || {}) },
-      Monthly: { ...DEFAULT_PENALTY_SETTINGS.Monthly, ...(parsed.Monthly || {}) },
+      Daily: {
+        ...DEFAULT_PENALTY_SETTINGS.Daily,
+        ...(parsed.Daily || {}),
+        enabled: parsed.Daily?.enabled !== undefined ? Boolean(parsed.Daily.enabled) : false,
+      },
+      Weekly: {
+        ...DEFAULT_PENALTY_SETTINGS.Weekly,
+        ...(parsed.Weekly || {}),
+        enabled: parsed.Weekly?.enabled !== undefined ? Boolean(parsed.Weekly.enabled) : false,
+      },
+      Monthly: {
+        ...DEFAULT_PENALTY_SETTINGS.Monthly,
+        ...(parsed.Monthly || {}),
+        enabled: parsed.Monthly?.enabled !== undefined ? Boolean(parsed.Monthly.enabled) : true,
+      },
       updatedAt: parsed.updatedAt || null,
     };
   } catch (err) {
@@ -158,6 +173,20 @@ export const checkInstallmentPenaltyEligibility = (
 
   const normFreq = normalizeFrequency(frequency);
   const rule = settings[normFreq] || DEFAULT_PENALTY_SETTINGS[normFreq];
+
+  // If frequency is disabled (specifically when Monthly penalty is disabled):
+  // Stop applying new grace-period rules and penalty calculations
+  const isEnabled = normFreq === 'Monthly' ? (rule.enabled !== false) : Boolean(rule.enabled);
+  if (!isEnabled) {
+    return {
+      isEligible: false,
+      eligibleOverdueDays: 0,
+      penaltyAmount: 0,
+      disabled: true,
+      normFreq,
+    };
+  }
+
   const graceDays = Math.max(0, parseInt(rule.gracePeriodDays, 10) || 0);
 
   const daysPastDueDate = getCalendarDaysDiff(installment.dueDate, referenceDate);
@@ -194,6 +223,10 @@ export const checkInstallmentPenaltyEligibility = (
  * Looks up existing records first:
  * - If status is 'Cancelled', it stays permanently cancelled.
  * - If status is 'Collected', it returns the collected record unchanged.
+ * - If status is 'Frozen', it returns the frozen record unchanged.
+ * - If frequency is disabled (e.g. Monthly disabled):
+ *     - If an existing record exists, it is preserved completely without modification.
+ *     - If no existing record exists, returns null (no new penalties generated).
  * - If status is 'Pending', recalculates amount using latest settings.
  * - If no record exists yet, returns newly calculated pending penalty object.
  */
@@ -230,6 +263,15 @@ export const getOrCalculatePenaltyRecord = (
     return existing;
   }
 
+  const rule = settings[normFreq] || DEFAULT_PENALTY_SETTINGS[normFreq];
+  const isEnabled = normFreq === 'Monthly' ? (rule.enabled !== false) : Boolean(rule.enabled);
+
+  // When disabled (specifically Monthly disabled):
+  // Preserve all existing penalty records, amounts, dates, and statuses without rewriting or zeroing them out
+  if (!isEnabled) {
+    return existing || null;
+  }
+
   // Evaluate current eligibility under latest settings
   const eligibility = checkInstallmentPenaltyEligibility(installment, normFreq, settings, referenceDate);
   if (!eligibility.isEligible && !existing) {
@@ -247,7 +289,6 @@ export const getOrCalculatePenaltyRecord = (
   }
 
   const nowIso = new Date().toISOString();
-  const rule = settings[normFreq] || DEFAULT_PENALTY_SETTINGS[normFreq];
 
   if (existing && existing.status === 'Pending') {
     // Audit amount change if calculated amount updated
@@ -341,6 +382,18 @@ export const recalculateAllPendingPenalties = (newSettings = getPenaltySettings(
 
         // Skip permanently collected, cancelled, or frozen
         if (existing && (existing.status === 'Collected' || existing.status === 'Cancelled' || existing.status === 'Frozen')) {
+          return;
+        }
+
+        const normFreq = normalizeFrequency(frequency);
+        const rule = newSettings[normFreq] || DEFAULT_PENALTY_SETTINGS[normFreq];
+        const isEnabled = normFreq === 'Monthly' ? (rule.enabled !== false) : Boolean(rule.enabled);
+
+        // When frequency is disabled (specifically Monthly disabled):
+        // Requirement: "Disabling Monthly penalties must not delete or rewrite existing records.
+        // Previously calculated monthly penalties must remain in the system."
+        // Do not zero out existing records, and do not create new records!
+        if (!isEnabled) {
           return;
         }
 
@@ -835,6 +888,20 @@ export const getInstallmentPenaltySupportingAmount = (
     if (existing && existing.status === 'Frozen') {
       return Number(existing.calculatedAmount || 0);
     }
+
+    // Pending penalty that already exists: return its preserved calculated amount if > 0
+    if (existing && existing.status === 'Pending') {
+      return Number(existing.calculatedAmount || 0) > 0 ? Number(existing.calculatedAmount) : null;
+    }
+  }
+
+  const normFreq = normalizeFrequency(frequency);
+  const rule = activeSettings[normFreq] || DEFAULT_PENALTY_SETTINGS[normFreq];
+  const isEnabled = normFreq === 'Monthly' ? (rule.enabled !== false) : Boolean(rule.enabled);
+
+  // If disabled and no existing record exists, do not generate or show new penalties
+  if (!isEnabled) {
+    return null;
   }
 
   // 3. Evaluate eligibility using existing penalty calculation logic

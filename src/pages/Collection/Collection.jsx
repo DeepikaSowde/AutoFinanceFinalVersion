@@ -28,7 +28,7 @@ import {
   Coins
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { generateSchedule, getRepaymentColumnLabel } from "../../components/RepaymentScheduleTable";
 import MidwayClosureModal from "../../components/MidwayClosureModal";
 import { formatDate, formatDateTime, getLocalDateString, getTransactionTimestamp } from "../../utils/dateUtils";
@@ -673,6 +673,24 @@ const Collection = () => {
       setPenaltyAmountInput("");
     }
   };
+
+  const location = useLocation();
+  const handledCollectLoanIdRef = useRef(null);
+
+  // Auto-open Collect Payment modal when navigated with ?collectLoanId=...
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const collectLoanId = params.get("collectLoanId");
+    if (collectLoanId && allProcessedCustomers.length > 0 && handledCollectLoanIdRef.current !== collectLoanId) {
+      const target = allProcessedCustomers.find(
+        (c) => c.loanId && c.loanId.trim().toLowerCase() === collectLoanId.trim().toLowerCase()
+      );
+      if (target) {
+        handledCollectLoanIdRef.current = collectLoanId;
+        handleCollectClick(target);
+      }
+    }
+  }, [location.search, allProcessedCustomers]);
 
   const handleUnfreezeLoanPenalties = (c) => {
     const loanId = c.loanId || c.loan?.loanId;

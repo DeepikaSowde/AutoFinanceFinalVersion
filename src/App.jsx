@@ -20,6 +20,8 @@ import ReferralCommission from './pages/customer/ReferralCommission'
 import ChitInvestment from './pages/ChitInvestment'
 import SettingsOverview from './pages/Settings/SettingsOverview'
 import PenaltyGraceSettings from './pages/Settings/PenaltyGraceSettings'
+import SmartSearch from './pages/SmartSearch'
+import SmartSearchFloatingButton from './components/SmartSearchFloatingButton'
 
 function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
@@ -35,6 +37,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/smart-search" element={<SmartSearch />} />
             <Route path="/loans" element={<Loans />} />
             <Route path="/loans/:loanId" element={<Loans />} />
             <Route path="/newloan" element={<NewLoan />} />
@@ -54,6 +57,7 @@ function App() {
             <Route path="/chit-investment" element={<ChitInvestment />} />
             <Route path="*" element={<Navigate to="/newloan" replace />} />
           </Routes>
+          <SmartSearchFloatingButton />
         </main>
       </div>
     </BrowserRouter>

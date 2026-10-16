@@ -41,6 +41,7 @@ import {
   checkInstallmentPenaltyEligibility,
   getOrCalculatePenaltyRecord,
   getInstallmentPenaltySupportingAmount,
+  PENALTY_UPDATE_EVENT,
 } from "../../utils/penaltyRules";
 
 const formatCurrency = (value) => {
@@ -107,7 +108,11 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
       setRefreshKey((prev) => prev + 1);
     };
     window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+    window.addEventListener(PENALTY_UPDATE_EVENT, handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(PENALTY_UPDATE_EVENT, handleStorageChange);
+    };
   }, []);
 
   // Load Customers List from localStorage
@@ -342,6 +347,16 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
       return [];
     }
   }, [effectiveLoanId, effectiveCustomerId, schedule, loan, loanRecord, customer, refreshKey]);
+
+  // Check if monthly penalty configuration is disabled
+  const isMonthlyPenaltyDisabled = useMemo(() => {
+    try {
+      const settings = getPenaltySettings();
+      return settings?.Monthly?.enabled === false;
+    } catch {
+      return false;
+    }
+  }, [refreshKey]);
 
   // Penalty Log: One record per penalty collection transaction + active uncollected penalty records
   const penaltyLogRecords = useMemo(() => {
@@ -1459,7 +1474,15 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                   <FileText className="h-4.5 w-4.5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Penalty Log</h3>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h3 className="text-base font-bold text-slate-900">Penalty Log</h3>
+                    {isMonthlyPenaltyDisabled && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 shadow-2xs">
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+                        <span>Monthly Penalty Disabled</span>
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Penalty summary per installment for {effectiveLoanId}
                   </p>

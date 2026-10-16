@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { calculateLoanOutstanding, calculateTotalPortfolioOutstanding } from '../utils/loanCalculations.js';
+import { calculateLoanOutstanding, calculateTotalPortfolioOutstanding, isEligiblePayment } from '../utils/loanCalculations.js';
 import { calculateVehicleLoanOverdue } from '../utils/vehicleOverdueCalculation.js';
 import { formatDate } from '../utils/dateUtils.js';
 
@@ -262,11 +262,54 @@ export const useDashboardData = () => {
           chitData = null;
         }
 
+        // -------------------------------------------------------------
+        // Calculate Actual Recorded Interest Earned
+        // -------------------------------------------------------------
+        const eligiblePayments = (payments || []).filter(isEligiblePayment);
+
+        // Track customer/loan IDs with payment records to prevent duplicate counting with schedules
+        const loansWithRecordedPayments = new Set();
+        eligiblePayments.forEach((p) => {
+          if (p.loanId) loansWithRecordedPayments.add(String(p.loanId).trim().toLowerCase());
+          if (p.customerId) loansWithRecordedPayments.add(String(p.customerId).trim().toLowerCase());
+        });
+
+        // 1. Accumulate actual recorded interest from eligible collection payments
+        const interestFromPayments = eligiblePayments.reduce((sum, p) => {
+          // Explicit recorded interest component on payment transaction
+          if (p.interest !== undefined && p.interest !== null) {
+            return sum + Number(p.interest || 0);
+          }
+          // Allocations array with per-installment interestPaid
+          if (Array.isArray(p.allocations) && p.allocations.length > 0) {
+            return sum + p.allocations.reduce((aSum, a) => aSum + Number(a.interestPaid || 0), 0);
+          }
+          return sum;
+        }, 0);
+
+        // 2. Fallback for loans without transaction entries in payment history (e.g. seeded loans)
+        let interestFromSchedulesOnly = 0;
+        customers.forEach((cust) => {
+          const lId = String(cust.loanId || '').trim().toLowerCase();
+          const cId = String(cust.customerId || '').trim().toLowerCase();
+          const hasRecordedPayment =
+            (lId && loansWithRecordedPayments.has(lId)) ||
+            (cId && loansWithRecordedPayments.has(cId));
+
+          if (!hasRecordedPayment && Array.isArray(cust.repaymentSchedule)) {
+            cust.repaymentSchedule.forEach((inst) => {
+              interestFromSchedulesOnly += Number(inst.interestPaid || 0);
+            });
+          }
+        });
+
+        const totalInterestEarned = Math.round((interestFromPayments + interestFromSchedulesOnly) * 100) / 100;
+
         setData({
             totalOutstanding,
             totalCredit,
             totalDebit,
-            interestEarned: 0, // No specific interest data available in the schema
+            interestEarned: totalInterestEarned,
             closingBalance,
             monthlyData,
             incomeBreakdown,
@@ -279,7 +322,7 @@ export const useDashboardData = () => {
                 credit: totalCredit,
                 balance: closingBalance
             },
-            repaymentVsInterest: [], // No pure interest data
+            repaymentVsInterest: [],
             operational: {
               keyMetrics: {
                 totalLoans: customers.length,
@@ -317,7 +360,13 @@ export const useDashboardData = () => {
 
     fetchData();
     window.addEventListener("storage", fetchData);
-    return () => window.removeEventListener("storage", fetchData);
+    window.addEventListener("motoLendStorageUpdate", fetchData);
+    window.addEventListener("customersDataUpdated", fetchData);
+    return () => {
+      window.removeEventListener("storage", fetchData);
+      window.removeEventListener("motoLendStorageUpdate", fetchData);
+      window.removeEventListener("customersDataUpdated", fetchData);
+    };
   }, []);
 
   return { data, loading };

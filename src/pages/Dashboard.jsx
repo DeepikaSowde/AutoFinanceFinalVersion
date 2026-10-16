@@ -10,10 +10,13 @@ import OutstandingOverviewCard from '../components/dashboard/OutstandingOverview
 import CapitalPositionCard from '../components/dashboard/CapitalPositionCard';
 import OperationalDashboard from '../components/dashboard/OperationalDashboard';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Search } from 'lucide-react';
 
 const Dashboard = () => {
   const { data, loading } = useDashboardData();
   const [activeTab, setActiveTab] = useState('financial');
+  const navigate = useNavigate();
 
   if (loading) {
     return (
@@ -26,31 +29,46 @@ const Dashboard = () => {
   return (
     <div className="h-full w-full flex flex-col p-4 sm:p-6 bg-slate-50 overflow-y-auto">
       <div className="w-full">
-        <div className="mb-6 flex w-full overflow-x-auto border-b border-slate-200">
-          <button
-            type="button"
-            onClick={() => setActiveTab('financial')}
-            className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
-              activeTab === 'financial'
-                ? 'border-emerald-700 text-emerald-800'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-            aria-current={activeTab === 'financial' ? 'page' : undefined}
-          >
-            Financial Dashboard
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('operational')}
-            className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
-              activeTab === 'operational'
-                ? 'border-emerald-700 text-emerald-800'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-            aria-current={activeTab === 'operational' ? 'page' : undefined}
-          >
-            Operational Dashboard
-          </button>
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200">
+          <div className="flex w-full sm:w-auto overflow-x-auto -mb-px">
+            <button
+              type="button"
+              onClick={() => setActiveTab('financial')}
+              className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+                activeTab === 'financial'
+                  ? 'border-emerald-700 text-emerald-800'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+              aria-current={activeTab === 'financial' ? 'page' : undefined}
+            >
+              Financial Dashboard
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('operational')}
+              className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+                activeTab === 'operational'
+                  ? 'border-emerald-700 text-emerald-800'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+              aria-current={activeTab === 'operational' ? 'page' : undefined}
+            >
+              Operational Dashboard
+            </button>
+          </div>
+
+          <div className="flex items-center justify-end pb-2.5 sm:pb-0">
+            <button
+              type="button"
+              onClick={() => navigate('/smart-search')}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#07111F] hover:bg-[#0e1f36] border border-slate-700/60 px-3.5 py-1.5 sm:py-2 text-xs sm:text-[13px] font-semibold text-white shadow-sm hover:shadow transition-all duration-150 active:scale-[0.98] cursor-pointer group focus:outline-none focus:ring-2 focus:ring-[#FACC15]/40"
+              title="Smart Search"
+              aria-label="Smart Search"
+            >
+              <Search className="h-4 w-4 text-[#FACC15] stroke-[2.5] transition-transform duration-200 group-hover:scale-110 shrink-0" />
+              <span className="text-white">Smart Search</span>
+            </button>
+          </div>
         </div>
 
         {activeTab === 'operational' ? (
