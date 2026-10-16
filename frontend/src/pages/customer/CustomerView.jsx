@@ -35,6 +35,7 @@ const StatusBadge = ({ status }) => {
   const styles = {
     Active: "bg-emerald-100 text-emerald-700 border-emerald-200",
     Closed: "bg-slate-100 text-slate-600 border-slate-200",
+    "Midway Closed": "bg-amber-100 text-amber-800 border-amber-300",
     Overdue: "bg-red-100 text-red-700 border-red-200",
   };
   return (
@@ -261,7 +262,14 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
         const loanCalc = calculateLoanOutstanding(d, allPayments);
         const loanAmount = loanCalc.principal;
         const outstandingAmount = loanCalc.outstandingAmount;
-        const status = d.status || loanCalc.status;
+        const isMidway = Boolean(
+          d.isMidwayClosed ||
+          d.midwayClosure ||
+          String(d.status || '').toLowerCase() === 'midway closed' ||
+          String(d.closureType || '').toLowerCase() === 'midway closure' ||
+          loanCalc.status === 'Midway Closed'
+        );
+        const status = isMidway ? "Midway Closed" : (d.status || loanCalc.status);
         const totalPaidForLoan = loanCalc.totalRepaid;
 
         return {
@@ -355,9 +363,17 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
   // Selected loan payments for the Payments tab and progress
   const selectedLoanPayments = useMemo(() => {
     if (!activeSelectedLoanId) return [];
+    const targetLoanClean = activeSelectedLoanId.trim().toLowerCase();
+    const targetCustClean = customerId ? customerId.trim().toLowerCase() : "";
     return allPayments.filter(
-      p => (p.loanId ? p.loanId === activeSelectedLoanId : p.customerId === customerId) &&
-           p.status !== "Failed" && p.status !== "Cancelled" && p.status !== "Reversed"
+      p => {
+        if (!p) return false;
+        const pLoan = (p.loanId || "").trim().toLowerCase();
+        const pCust = (p.customerId || "").trim().toLowerCase();
+        const matchesLoan = pLoan ? pLoan === targetLoanClean : (targetCustClean && pCust === targetCustClean);
+        const status = (p.status || "").toLowerCase();
+        return matchesLoan && status !== "failed" && status !== "cancelled" && status !== "reversed";
+      }
     );
   }, [allPayments, activeSelectedLoanId, customerId]);
 
@@ -365,6 +381,9 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
   const selectedLoanBaseSchedule = useMemo(() => {
     if (selectedLoanData?.repaymentSchedule && selectedLoanData.repaymentSchedule.length > 0) {
       return selectedLoanData.repaymentSchedule;
+    }
+    if (selectedLoanData?.loanCalculations?.effectiveSchedule && selectedLoanData.loanCalculations.effectiveSchedule.length > 0) {
+      return selectedLoanData.loanCalculations.effectiveSchedule;
     }
     if (selectedLoanData?.loanAmount && selectedLoanData.loan?.interestRate && selectedLoanData.loan?.tenure) {
       return generateSchedule({
@@ -383,8 +402,96 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
   // Effective authoritative schedule reconciled with actual recorded transactions
   const effectiveCustomerLoanSchedule = useMemo(() => {
-    return computeEffectiveSchedule(selectedLoanBaseSchedule, selectedLoanPayments);
-  }, [selectedLoanBaseSchedule, selectedLoanPayments]);
+    const isMidway = Boolean(
+      selectedLoanData?.isMidwayClosed ||
+      selectedLoanData?.midwayClosure ||
+      String(selectedLoanData?.status || "").toLowerCase() === "midway closed" ||
+      String(selectedLoanData?.closureType || "").toLowerCase() === "midway closure"
+    );
+
+    const computed = computeEffectiveSchedule(selectedLoanBaseSchedule, selectedLoanPayments);
+
+    if (!isMidway) {
+      return computed;
+    }
+
+    // For Midway Closed loans:
+    // 1. Installments paid normally before midway closure retain Paid status & normal styling
+    // 2. From the midway closure installment through remaining installments until tenure ends,
+    //    mark as Paid with light orange background, balance 0, and no Partial status.
+    let closureStartNum = null;
+    const mc = selectedLoanData?.midwayClosure;
+    if (mc?.installmentNumber && !isNaN(Number(mc.installmentNumber))) {
+      closureStartNum = Number(mc.installmentNumber);
+    } else if (mc?.closureInstallment && !isNaN(Number(mc.closureInstallment))) {
+      closureStartNum = Number(mc.closureInstallment);
+    } else if (mc?.settlementInstallment && !isNaN(Number(mc.settlementInstallment))) {
+      closureStartNum = Number(mc.settlementInstallment);
+    } else if (mc?.instalmentsRange) {
+      const match = String(mc.instalmentsRange).match(/#(\d+)/);
+      if (match) closureStartNum = Number(match[1]);
+    }
+
+    if (closureStartNum === null) {
+      const midwayP = selectedLoanPayments.find(
+        (p) => p.isMidwayClosure || String(p.remarks || "").toLowerCase().includes("midway closure")
+      );
+      if (midwayP) {
+        if (midwayP.allocations && midwayP.allocations.length > 0) {
+          const minNum = Math.min(
+            ...midwayP.allocations.map((a) => Number(a.installmentNumber)).filter((n) => !isNaN(n) && n > 0)
+          );
+          if (isFinite(minNum) && minNum > 0) closureStartNum = minNum;
+        }
+        if (closureStartNum === null) {
+          const match = String(midwayP.installmentNumber || midwayP.remarks || "").match(/#(\d+)/);
+          if (match) closureStartNum = Number(match[1]);
+        }
+      }
+    }
+
+    if (closureStartNum === null) {
+      const firstMidway = computed.find(
+        (s) => Boolean(s.isMidwayClosed || s.closureAdjusted || s.status === "Midway Closed")
+      );
+      if (firstMidway && Number(firstMidway.installmentNumber) > 0) {
+        closureStartNum = Number(firstMidway.installmentNumber);
+      }
+    }
+
+    if (closureStartNum === null) {
+      const firstUnpaid = selectedLoanBaseSchedule.find((s) => s.status !== "Paid" && s.status !== "Collected");
+      if (firstUnpaid && Number(firstUnpaid.installmentNumber) > 0) {
+        closureStartNum = Number(firstUnpaid.installmentNumber);
+      }
+    }
+
+    let hasSeenClosurePoint = false;
+
+    return computed.map((item) => {
+      const isPastOrAtClosure = closureStartNum !== null && Number(item.installmentNumber) >= closureStartNum;
+      const isExplicitMidway = Boolean(item.isMidwayClosed || item.closureAdjusted || item.status === "Midway Closed");
+
+      if (isPastOrAtClosure || isExplicitMidway || hasSeenClosurePoint) {
+        hasSeenClosurePoint = true;
+        return {
+          ...item,
+          amountPaid: Math.round(Number(item.amountPaid ?? item.emi ?? 0) * 100) / 100,
+          principalOutstanding: 0,
+          balance: 0,
+          status: "Paid",
+          isMidwayClosed: true,
+          closureAdjusted: true,
+        };
+      }
+
+      return {
+        ...item,
+        isMidwayClosed: false,
+        closureAdjusted: false,
+      };
+    });
+  }, [selectedLoanBaseSchedule, selectedLoanPayments, selectedLoanData]);
 
   const totalPaidForSelectedLoan = useMemo(() => {
     const fromPayments = selectedLoanPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
@@ -766,50 +873,125 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
                     {/* Repayment Progress */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                      <div className="px-5 py-3 border-b border-slate-100 font-bold text-slate-900">
-                        Repayment Progress
+                      <div className="px-5 py-3 border-b border-slate-100 font-bold text-slate-900 flex items-center justify-between">
+                        <span>Repayment Progress</span>
+                        {Boolean(selectedLoanData.isMidwayClosed || selectedLoanData.midwayClosure) && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                            Midway Settled
+                          </span>
+                        )}
                       </div>
                       <div className="p-5 flex-1 flex flex-col justify-center">
                         {(() => {
+                          const isMidway = Boolean(selectedLoanData.isMidwayClosed || selectedLoanData.midwayClosure);
                           const totalRepay = effectiveCustomerLoanSchedule.length > 0
                             ? effectiveCustomerLoanSchedule.reduce((sum, s) => sum + Number(s.emi || 0), 0)
                             : (loanSummary?.totalAmount || selectedLoanData.loanAmount || 0);
+
                           const paid = totalPaidForSelectedLoan || 0;
-                          const pct = totalRepay > 0 ? Math.min(100, Math.round((paid / totalRepay) * 100)) : 0;
-                          const pendingPct = Math.max(0, 100 - pct);
+
+                          // For midway-closed loans, distinguish regular paid installments vs closure-adjusted settlement
+                          const regularPayments = selectedLoanPayments.filter((p) => !p.isMidwayClosure);
+                          const midwayPayment = selectedLoanPayments.find((p) => p.isMidwayClosure);
+
+                          const regularPaidAmount = isMidway
+                            ? regularPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+                            : paid;
+                          const closureAdjustedAmount = isMidway
+                            ? (midwayPayment ? Number(midwayPayment.amount || 0) : Math.max(0, paid - regularPaidAmount))
+                            : 0;
+
+                          // Percentages out of totalRepay
+                          const regularPct = totalRepay > 0 ? Math.min(100, Math.round((regularPaidAmount / totalRepay) * 100)) : 0;
+                          const closurePct = totalRepay > 0
+                            ? Math.min(100 - regularPct, Math.round((closureAdjustedAmount / totalRepay) * 100))
+                            : 0;
+                          const totalSettledPct = Math.min(100, regularPct + closurePct);
+                          const remainingPct = Math.max(0, 100 - totalSettledPct);
 
                           const totalInstCount = effectiveCustomerLoanSchedule.length || loanSummary?.numberOfPayments || 0;
-                          const paidInst = effectiveCustomerLoanSchedule.filter(
-                            (s) => s.status === 'Paid' || s.status === 'Collected'
+                          
+                          // Count regular paid instalments vs closure-adjusted instalments
+                          const regularPaidInstCount = effectiveCustomerLoanSchedule.filter((s) => {
+                            const isPaid = s.status === 'Paid' || s.status === 'Collected';
+                            return isPaid && !s.closureAdjusted;
+                          }).length;
+
+                          const closureAdjustedInstCount = effectiveCustomerLoanSchedule.filter(
+                            (s) => s.closureAdjusted
                           ).length;
-                          const pendingInst = Math.max(0, totalInstCount - paidInst);
+
+                          const pendingInst = Math.max(0, totalInstCount - regularPaidInstCount - closureAdjustedInstCount);
 
                           return (
                             <>
                               <div className="text-center mb-6">
-                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Total Paid</p>
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">
+                                  {isMidway ? "Total Settled" : "Total Paid"}
+                                </p>
                                 <p className="text-3xl font-black text-emerald-700">{formatCurrency(paid)}</p>
                                 <p className="text-xs text-slate-500 mt-1">out of {formatCurrency(totalRepay)}</p>
                               </div>
                               
                               <div className="space-y-2">
                                 <div className="flex justify-between text-xs font-semibold">
-                                  <span className="text-emerald-700">{pct}% Paid</span>
-                                  <span className="text-slate-500">{pendingPct}% Pending</span>
+                                  {isMidway ? (
+                                    <>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-emerald-700 flex items-center gap-1">
+                                          <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
+                                          {regularPct}% Paid
+                                        </span>
+                                        <span className="text-amber-700 flex items-center gap-1">
+                                          <span className="inline-block h-2 w-2 rounded-full bg-amber-500"></span>
+                                          {closurePct}% Closure
+                                        </span>
+                                      </div>
+                                      <span className="text-slate-500">{remainingPct}% Waived</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="text-emerald-700">{regularPct}% Paid</span>
+                                      <span className="text-slate-500">{remainingPct}% Pending</span>
+                                    </>
+                                  )}
                                 </div>
-                                <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
-                                  <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }}></div>
+
+                                {/* Progress Bar */}
+                                <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                                  {/* Already-paid regular portion in green */}
+                                  <div
+                                    className="h-full bg-emerald-500 transition-all duration-300"
+                                    style={{ width: `${regularPct}%` }}
+                                    title={`Regular Paid: ${regularPct}% (${formatCurrency(regularPaidAmount)})`}
+                                  ></div>
+                                  {/* Closure-adjusted portion in orange */}
+                                  {isMidway && closurePct > 0 && (
+                                    <div
+                                      className="h-full bg-amber-500 transition-all duration-300"
+                                      style={{ width: `${closurePct}%` }}
+                                      title={`Midway Closure Adjusted: ${closurePct}% (${formatCurrency(closureAdjustedAmount)})`}
+                                    ></div>
+                                  )}
                                 </div>
                               </div>
 
                               <div className="grid grid-cols-2 gap-4 mt-6">
                                 <div className="bg-slate-50 rounded-lg p-3 text-center">
-                                  <p className="text-[10px] text-slate-500 uppercase font-semibold">Paid Inst.</p>
-                                  <p className="text-lg font-bold text-slate-900 mt-0.5">{paidInst}</p>
+                                  <p className="text-[10px] text-slate-500 uppercase font-semibold">
+                                    {isMidway ? "Paid Prior" : "Paid Inst."}
+                                  </p>
+                                  <p className="text-lg font-bold text-slate-900 mt-0.5">
+                                    {regularPaidInstCount}
+                                  </p>
                                 </div>
                                 <div className="bg-slate-50 rounded-lg p-3 text-center">
-                                  <p className="text-[10px] text-slate-500 uppercase font-semibold">Pending Inst.</p>
-                                  <p className="text-lg font-bold text-slate-900 mt-0.5">{pendingInst}</p>
+                                  <p className="text-[10px] text-slate-500 uppercase font-semibold">
+                                    {isMidway ? "Closure Settled" : "Pending Inst."}
+                                  </p>
+                                  <p className="text-lg font-bold text-amber-700 mt-0.5">
+                                    {isMidway ? closureAdjustedInstCount : pendingInst}
+                                  </p>
                                 </div>
                               </div>
                             </>

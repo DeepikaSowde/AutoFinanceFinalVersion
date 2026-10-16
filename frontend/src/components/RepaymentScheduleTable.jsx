@@ -229,7 +229,8 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
     return baseOrRawSchedule.map((item) => {
       const amountPaid = Math.round(Number(item.amountPaid || 0) * 100) / 100;
       const emi = Number(item.emi || 0);
-      const balance = Math.max(0, Math.round((emi - amountPaid) * 100) / 100);
+      // Interest waived by a midway closure is settled, not owed.
+      const balance = Math.max(0, Math.round((emi - amountPaid - Number(item.waivedInterest || 0)) * 100) / 100);
       const dueDate = new Date(item.dueDate);
       dueDate.setHours(0, 0, 0, 0);
 
@@ -264,9 +265,36 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
   // If there are NO eligible payments recorded in payment history,
   // preserve the existing rawSchedule amounts and compute statuses
   if (eligiblePayments.length === 0) {
+    const firstMidwayRaw = baseOrRawSchedule.find(
+      (s) => Boolean(s.isMidwayClosed || s.closureAdjusted || s.status === "Midway Closed")
+    );
+    const closureStart = firstMidwayRaw && Number(firstMidwayRaw.installmentNumber) > 0
+      ? Number(firstMidwayRaw.installmentNumber)
+      : null;
+
     return baseOrRawSchedule.map((item) => {
+      const isSettledMidway = Boolean(
+        item.status === "Midway Closed" ||
+        item.isMidwayClosed ||
+        item.closureAdjusted ||
+        (closureStart !== null && Number(item.installmentNumber) >= closureStart)
+      );
+      if (isSettledMidway) {
+        return {
+          ...item,
+          amountPaid: Math.round(Number(item.amountPaid ?? item.emi ?? 0) * 100) / 100,
+          balance: 0,
+          status: "Paid",
+          closureAdjusted: true,
+          isMidwayClosed: true,
+          principalOutstanding: 0,
+          paymentsList: item.paymentsList || [],
+        };
+      }
       const amountPaid = Math.round(Number(item.amountPaid || 0) * 100) / 100;
       const emi = Number(item.emi || 0);
+      const principal = Number(item.principal ?? (item.emi ? item.emi - (Number(item.interest || 0)) : 0));
+      const interest = Number(item.interest ?? item.allocatedInterest ?? item.interestAmount ?? (emi > principal ? emi - principal : 0));
       const balance = Math.max(0, Math.round((emi - amountPaid) * 100) / 100);
       let status = "Due";
       if (balance <= 0.01 && emi > 0) {
@@ -284,28 +312,42 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
       }
       return {
         ...item,
+        principal,
+        interest,
+        emi,
         amountPaid,
+        principalPaid: Number(item.principalPaid || 0),
+        interestPaid: Number(item.interestPaid || 0),
         balance: balance <= 0.01 ? 0 : balance,
         status,
+        isMidwayClosed: false,
+        closureAdjusted: false,
         paymentsList: item.paymentsList || [],
       };
     });
   }
 
-  // When payments exist, derive schedule strictly from baseline terms and recorded transactions
-  const schedule = baseOrRawSchedule.map((item) => ({
-    ...item,
-    principal: Number(item.principal || 0),
-    interest: Number(item.interest || 0),
-    emi: Number(item.emi || 0),
-    principalOutstanding: item.principalOutstanding !== undefined ? Number(item.principalOutstanding) : undefined,
-    amountPaid: 0,
-    principalPaid: 0,
-    interestPaid: 0,
-    balance: Number(item.emi || 0),
-    status: "Due",
-    paymentsList: [],
-  }));
+  const schedule = baseOrRawSchedule.map((item) => {
+    const emi = Number(item.emi || 0);
+    const principal = Number(item.principal ?? (item.emi ? item.emi - (Number(item.interest || 0)) : 0));
+    const interest = Number(item.interest ?? item.allocatedInterest ?? item.interestAmount ?? (emi > principal ? emi - principal : 0));
+    const isMidway = Boolean(item.isMidwayClosed || item.status === "Midway Closed" || item.closureAdjusted);
+    return {
+      ...item,
+      principal,
+      interest,
+      emi,
+      principalOutstanding: item.principalOutstanding !== undefined ? Number(item.principalOutstanding) : undefined,
+      amountPaid: isMidway ? (Number(item.amountPaid ?? emi)) : 0,
+      principalPaid: isMidway ? (Number(item.principalPaid ?? principal)) : 0,
+      interestPaid: isMidway ? (Number(item.interestPaid ?? 0)) : 0,
+      balance: isMidway ? 0 : emi,
+      status: isMidway ? "Paid" : (item.status || "Due"),
+      isMidwayClosed: isMidway,
+      closureAdjusted: isMidway,
+      paymentsList: [],
+    };
+  });
 
   const unassignedPayments = [];
   const sortedPayments = [...eligiblePayments].sort(
@@ -313,7 +355,7 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
   );
 
   sortedPayments.forEach((p) => {
-    // 1. Explicit allocations array (from Collection.jsx)
+    // 1. Explicit allocations array (from Collection.jsx or MidwayClosureModal.jsx)
     if (p.allocations && Array.isArray(p.allocations) && p.allocations.length > 0) {
       let anyAllocated = false;
       p.allocations.forEach((alloc) => {
@@ -328,6 +370,10 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
             inst.amountPaid += allocAmt;
             inst.interestPaid += intAlloc;
             inst.principalPaid += prinAlloc;
+            if (alloc.statusAfter === "Midway Closed" || alloc.isMidwayClosed || alloc.isClosureAdjusted || p.isMidwayClosure) {
+              inst.isMidwayClosed = true;
+              inst.closureAdjusted = true;
+            }
             if (!inst.paymentsList.some((ep) => ep.id === p.id)) {
               inst.paymentsList.push(p);
             }
@@ -421,10 +467,65 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
     }
   });
 
+  // Check if there is an explicit midway closure in eligiblePayments or baseOrRawSchedule
+  const midwayPayment = eligiblePayments.find(
+    (p) => Boolean(p.isMidwayClosure) || String(p.remarks || "").toLowerCase().includes("midway closure")
+  );
+
+  let closureStartNum = null;
+  if (midwayPayment) {
+    if (midwayPayment.allocations && midwayPayment.allocations.length > 0) {
+      const minAllocNum = Math.min(
+        ...midwayPayment.allocations.map((a) => Number(a.installmentNumber)).filter((n) => !isNaN(n) && n > 0)
+      );
+      if (isFinite(minAllocNum) && minAllocNum > 0) {
+        closureStartNum = minAllocNum;
+      }
+    }
+    if (closureStartNum === null) {
+      const rangeMatch = String(midwayPayment.installmentNumber || midwayPayment.remarks || "").match(/#(\d+)/);
+      if (rangeMatch) {
+        closureStartNum = Number(rangeMatch[1]);
+      }
+    }
+  }
+
+  // Fallback: check baseOrRawSchedule for the first explicitly midway-closed row
+  if (closureStartNum === null) {
+    const firstMidwayRaw = baseOrRawSchedule.find(
+      (s) => Boolean(s.isMidwayClosed || s.closureAdjusted || s.status === "Midway Closed")
+    );
+    if (firstMidwayRaw && Number(firstMidwayRaw.installmentNumber) > 0) {
+      closureStartNum = Number(firstMidwayRaw.installmentNumber);
+    }
+  }
+
   // Calculate balances and final statuses
   return schedule.map((item) => {
     const roundedPaid = Math.round(item.amountPaid * 100) / 100;
     const balance = Math.max(0, Math.round((item.emi - roundedPaid) * 100) / 100);
+
+    const isMidwayRow = Boolean(
+      item.isMidwayClosed ||
+      item.status === "Midway Closed" ||
+      item.closureAdjusted ||
+      (closureStartNum !== null && Number(item.installmentNumber) >= closureStartNum)
+    );
+
+    // If this instalment was settled through midway closure:
+    // Status MUST be 'Paid', balance 0, and partial is never shown.
+    if (isMidwayRow) {
+      return {
+        ...item,
+        amountPaid: roundedPaid > 0 ? roundedPaid : item.emi,
+        principalOutstanding: 0,
+        balance: 0,
+        status: "Paid",
+        isMidwayClosed: true,
+        closureAdjusted: true,
+      };
+    }
+
     let status = "Due";
     if (balance <= 0.01 && item.emi > 0) {
       status = "Paid";
@@ -445,12 +546,30 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
       amountPaid: roundedPaid,
       balance: balance <= 0.01 ? 0 : balance,
       status,
+      isMidwayClosed: false,
+      closureAdjusted: false,
     };
   });
 };
 
-const StatusBadge = ({ status }) => {
-  if (status === 'Paid') return <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-600/20">Paid</span>;
+const StatusBadge = ({ status, isMidwaySettled = false }) => {
+  if (status === 'Paid') {
+    if (isMidwaySettled) {
+      return (
+        <span className="inline-flex items-center rounded-full bg-orange-100/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-900 border border-amber-300 ring-1 ring-amber-500/20">
+          Paid
+        </span>
+      );
+    }
+    return <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-600/20">Paid</span>;
+  }
+  if (status === 'Midway Closed') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-orange-100/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-900 border border-amber-300 ring-1 ring-amber-500/20">
+        Paid
+      </span>
+    );
+  }
   if (status === 'Partial') return <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 ring-1 ring-inset ring-amber-600/20">Partial</span>;
   if (status === 'Overdue') return <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 ring-1 ring-inset ring-red-600/10">Overdue</span>;
   return <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 ring-1 ring-inset ring-slate-500/20">Due</span>;
@@ -505,31 +624,43 @@ export default function RepaymentScheduleTable({ loanDetails = {}, schedule: pro
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50">
           <tr>
-            <th className="px-4 py-3 text-left font-semibold text-slate-700">No.</th>
+            <th className="px-4 py-3 text-left font-semibold text-slate-700">Instalment Number</th>
             <th className="px-4 py-3 text-left font-semibold text-slate-700">Due Date</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Interest</th>
+            <th className="px-4 py-3 text-right font-semibold text-slate-700">Total EMI</th>
             <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal Outstanding</th>
-            <th className="px-4 py-3 text-right font-semibold text-slate-700">{repaymentColumnHeader}</th>
-            <th className="px-4 py-3 text-right font-semibold text-slate-700">Amount Paid</th>
-            <th className="px-4 py-3 text-right font-semibold text-slate-700">Balance</th>
+            <th className="px-4 py-3 text-right font-semibold text-slate-700">Balance Amount</th>
             <th className="px-4 py-3 text-center font-semibold text-slate-700">Status</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200 bg-white">
-          {schedule.map((row) => (
-            <tr key={row.installmentNumber} className="hover:bg-slate-50 transition-colors">
-              <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-600">{row.installmentNumber}</td>
-              <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">{formatDate(row.dueDate)}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.principal)}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.interest)}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-700">{formatINR(row.principalOutstanding)}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-emerald-800">{formatINR(row.emi)}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.amountPaid)}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{formatINR(row.balance)}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-center"><StatusBadge status={row.status} /></td>
-            </tr>
-          ))}
+          {schedule.map((row) => {
+            const isMidwaySettled = Boolean(row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed");
+            return (
+              <tr
+                key={row.installmentNumber}
+                className={`transition-colors ${
+                  isMidwaySettled
+                    ? "bg-amber-50/70 hover:bg-amber-100/60"
+                    : "hover:bg-slate-50"
+                }`}
+              >
+                <td className={`whitespace-nowrap px-4 py-3 font-medium ${isMidwaySettled ? "text-amber-950 font-semibold" : "text-slate-600"}`}>
+                  {row.installmentNumber}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">{formatDate(row.dueDate)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.principal)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.interest)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-emerald-800">{formatINR(row.emi)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-700">{formatINR(row.principalOutstanding)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{formatINR(row.balance)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-center">
+                  <StatusBadge status={row.status} isMidwaySettled={isMidwaySettled} />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

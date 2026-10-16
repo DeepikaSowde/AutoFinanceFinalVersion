@@ -177,6 +177,34 @@ export const calculateLoanOutstanding = (loanRecord, allPayments = []) => {
   );
 
   // 7. Remaining Balances
+  const isMidwayClosedLoan = Boolean(
+    loanRecord.isMidwayClosed ||
+    loanRecord.midwayClosure ||
+    rawStatus.toLowerCase() === 'midway closed' ||
+    String(loanRecord.closureType || '').toLowerCase() === 'midway closure'
+  );
+
+  // If midway closed, all principal is fully repaid, interest repaid is normal + closure interest,
+  // and remaining principal, remaining interest, and outstanding are ₹0.
+  if (isMidwayClosedLoan) {
+    const effectivePrincipalRepaid = totalScheduledPrincipal;
+    const effectiveInterest = interestRepaid;
+    return {
+      principal: totalScheduledPrincipal,
+      totalInterest: effectiveInterest,
+      totalRepayable: totalScheduledPrincipal + effectiveInterest,
+      principalRepaid: effectivePrincipalRepaid,
+      interestRepaid,
+      totalRepaid: totalCollected,
+      remainingPrincipal: 0,
+      remainingInterest: 0,
+      outstandingAmount: 0,
+      advanceBalance: advance,
+      status: 'Midway Closed',
+      effectiveSchedule,
+    };
+  }
+
   // Remaining Principal = Total Principal - Principal Repaid (reduced by any unapplied advance)
   const remainingPrincipal = Math.max(0, totalScheduledPrincipal - principalRepaid - advance);
 

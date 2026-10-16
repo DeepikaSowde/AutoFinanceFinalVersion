@@ -328,6 +328,10 @@ const toUiSchedule = (rows = [], paymentHistory = []) => {
     interest: row.interest,
     principalPaid: row.paidPrincipal,
     interestPaid: row.paidInterest,
+    // Interest waived by a midway closure, and whether the closure settled it.
+    waivedInterest: row.waivedInterest || 0,
+    closureAdjusted: Boolean(row.midwayClosed),
+    isMidwayClosed: Boolean(row.midwayClosed),
     status: SCHEDULE_STATUS[row.status] || 'Due',
     fromServer: true,
     allocations: allocations[row.installmentNumber] || [],

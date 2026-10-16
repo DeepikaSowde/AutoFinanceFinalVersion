@@ -14,6 +14,7 @@ import {
   CreditCard,
   Edit,
   MoreVertical,
+  CheckCircle,
   CheckCircle2,
   Clock,
   Car,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 import RepaymentScheduleTable, { generateSchedule, computeEffectiveSchedule, getRepaymentColumnLabel } from "../../components/RepaymentScheduleTable";
 import InstallmentTimeline from "../../components/InstallmentTimeline";
+import MidwayClosureModal from "../../components/MidwayClosureModal";
 import { getVehicleDisplayImage } from "../../utils/vehicleImageHelper";
 
 const formatCurrency = (value) => {
@@ -104,6 +106,8 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
   const [allPayments, setAllPayments] = useState([]);
   const [loadError, setLoadError] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [showMidwayModal, setShowMidwayModal] = useState(false);
 
   // Read target IDs from prop, route params (/loans/:loanId), or query string (?loanId=...)
   const selectedLoanId = (propLoanId || params.loanId || searchParams.get("loanId") || "").trim();
@@ -176,6 +180,15 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
     Boolean(loanRecord?.isForeclosed || loanRecord?.foreclosure);
   const foreclosureData = loanRecord?.foreclosure || {};
 
+  // Midway Closure detection
+  const isMidwayClosed = Boolean(
+    loanRecord?.isMidwayClosed ||
+    loanRecord?.midwayClosure ||
+    rawStatus.toLowerCase() === "midway closed" ||
+    String(loanRecord?.closureType || "").toLowerCase() === "midway closure"
+  );
+  const midwayClosureData = loanRecord?.midwayClosure || {};
+
   const effectiveLoanId = loanRecord?.loanId || loan.loanId || selectedLoanId || "LN-001";
   const effectiveCustomerId =
     loanRecord?.customerId ||
@@ -230,8 +243,76 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
 
   // Derive authoritative schedule reconciled with actual recorded transactions
   const schedule = useMemo(() => {
-    return computeEffectiveSchedule(rawSchedule, loanPayments);
-  }, [rawSchedule, loanPayments]);
+    const computed = computeEffectiveSchedule(rawSchedule, loanPayments);
+    if (!isMidwayClosed) {
+      return computed;
+    }
+
+    // Identify the closure start installment number
+    let closureStartNum = null;
+    if (midwayClosureData?.installmentNumber && !isNaN(Number(midwayClosureData.installmentNumber))) {
+      closureStartNum = Number(midwayClosureData.installmentNumber);
+    } else if (midwayClosureData?.instalmentsRange) {
+      const match = String(midwayClosureData.instalmentsRange).match(/#(\d+)/);
+      if (match) closureStartNum = Number(match[1]);
+    }
+
+    if (closureStartNum === null) {
+      const midwayP = loanPayments.find((p) => p.isMidwayClosure || String(p.remarks || "").toLowerCase().includes("midway closure"));
+      if (midwayP) {
+        if (midwayP.allocations && midwayP.allocations.length > 0) {
+          const minNum = Math.min(
+            ...midwayP.allocations.map((a) => Number(a.installmentNumber)).filter((n) => !isNaN(n) && n > 0)
+          );
+          if (isFinite(minNum) && minNum > 0) closureStartNum = minNum;
+        }
+        if (closureStartNum === null) {
+          const match = String(midwayP.installmentNumber || midwayP.remarks || "").match(/#(\d+)/);
+          if (match) closureStartNum = Number(match[1]);
+        }
+      }
+    }
+
+    if (closureStartNum === null) {
+      const firstMidway = computed.find((s) => Boolean(s.isMidwayClosed || s.closureAdjusted || s.status === "Midway Closed"));
+      if (firstMidway && Number(firstMidway.installmentNumber) > 0) {
+        closureStartNum = Number(firstMidway.installmentNumber);
+      }
+    }
+
+    // Fallback if not recorded: find first installment not fully paid before closure
+    if (closureStartNum === null) {
+      const firstUnpaid = rawSchedule.find((s) => s.status !== "Paid" && s.status !== "Collected");
+      if (firstUnpaid && Number(firstUnpaid.installmentNumber) > 0) {
+        closureStartNum = Number(firstUnpaid.installmentNumber);
+      }
+    }
+
+    let hasSeenClosurePoint = false;
+    return computed.map((item) => {
+      const isPastOrAtClosure = closureStartNum !== null && Number(item.installmentNumber) >= closureStartNum;
+      const isExplicitMidway = Boolean(item.isMidwayClosed || item.closureAdjusted || item.status === "Midway Closed");
+
+      if (isPastOrAtClosure || isExplicitMidway || hasSeenClosurePoint) {
+        hasSeenClosurePoint = true;
+        return {
+          ...item,
+          amountPaid: Math.round(Number(item.amountPaid ?? item.emi ?? 0) * 100) / 100,
+          principalOutstanding: 0,
+          balance: 0,
+          status: "Paid",
+          isMidwayClosed: true,
+          closureAdjusted: true,
+        };
+      }
+
+      return {
+        ...item,
+        isMidwayClosed: false,
+        closureAdjusted: false,
+      };
+    });
+  }, [rawSchedule, loanPayments, isMidwayClosed, midwayClosureData]);
 
   // Financial summary metrics
   const totalCollectedFromPayments = loanPayments.reduce(
@@ -246,39 +327,48 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
     ? totalCollectedFromPayments
     : totalCollectedFromSchedule;
 
-  const totalPrincipalRepaid = schedule.reduce(
-    (sum, s) => sum + Number(s.principalPaid || 0),
-    0
-  );
+  const totalPrincipalRepaid = isMidwayClosed
+    ? principalAmount
+    : schedule.reduce(
+        (sum, s) => sum + Number(s.principalPaid || 0),
+        0
+      );
   const totalInterestCollected = schedule.reduce(
     (sum, s) => sum + Number(s.interestPaid || 0),
     0
   );
 
   // Total Interest and Repayable
+  // For Midway Closed loans, total interest is the interest actually collected through normal repayments
+  // plus the closure interest charged and collected by the admin.
   const totalInterest = useMemo(() => {
+    if (isMidwayClosed) {
+      return totalInterestCollected;
+    }
     if (schedule.length > 0) {
       return schedule.reduce((sum, s) => sum + Number(s.interest || 0), 0);
     }
     const rate = Number(loan.interestRate || 0);
     const tenureVal = Number(loan.tenure || 0);
     return Math.round((principalAmount * (rate / 100) * tenureVal) / 12);
-  }, [schedule, loan, principalAmount]);
+  }, [schedule, loan, principalAmount, isMidwayClosed, totalInterestCollected]);
 
   const documentCharges = Number(loan.documentCharge || 0);
-  const totalRepayable = principalAmount + totalInterest;
+  const totalRepayable = isMidwayClosed
+    ? principalAmount + totalInterestCollected
+    : principalAmount + totalInterest;
 
   // Total Outstanding = Total Repayable Amount - Total Eligible Collections
-  // For Foreclosed loans or Closed loans, outstanding balance is ₹0
-  const outstandingBalance = isForeclosed || loanRecord?.status === "Closed"
+  // For Foreclosed loans, Midway Closed loans, or Closed loans, outstanding balance is ₹0
+  const outstandingBalance = isForeclosed || isMidwayClosed || loanRecord?.status === "Closed"
     ? 0
     : Math.max(totalRepayable - totalCollected, 0);
 
-  const remainingPrincipal = isForeclosed || loanRecord?.status === "Closed"
+  const remainingPrincipal = isForeclosed || isMidwayClosed || loanRecord?.status === "Closed"
     ? 0
     : Math.max(principalAmount - totalPrincipalRepaid, 0);
 
-  const remainingInterest = isForeclosed || loanRecord?.status === "Closed"
+  const remainingInterest = isForeclosed || isMidwayClosed || loanRecord?.status === "Closed"
     ? 0
     : Math.max(totalInterest - totalInterestCollected, 0);
 
@@ -313,7 +403,9 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
 
   // Status
   let loanStatus = "Active";
-  if (isForeclosed) {
+  if (isMidwayClosed) {
+    loanStatus = "Midway Closed";
+  } else if (isForeclosed) {
     loanStatus = "Foreclosed";
   } else if (outstandingBalance <= 0 || loanRecord?.status === "Closed") {
     loanStatus = "Closed";
@@ -407,11 +499,13 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                   className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border shrink-0 ${
                     loanStatus === "Active"
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : loanStatus === "Foreclosed"
-                        ? "bg-purple-50 text-purple-700 border-purple-200"
-                        : loanStatus === "Overdue"
-                          ? "bg-rose-50 text-rose-700 border-rose-200"
-                          : "bg-slate-100 text-slate-600 border-slate-200"
+                      : loanStatus === "Midway Closed"
+                        ? "bg-amber-50 text-amber-800 border-amber-300"
+                        : loanStatus === "Foreclosed"
+                          ? "bg-purple-50 text-purple-700 border-purple-200"
+                          : loanStatus === "Overdue"
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : "bg-slate-100 text-slate-600 border-slate-200"
                   }`}
                 >
                   {loanStatus}
@@ -449,17 +543,54 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
               </div>
             )}
 
+            {/* Midway Closed Status Indicator if midway closed */}
+            {isMidwayClosed && (
+              <div
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold shadow-2xs"
+                title="Loan is midway closed."
+              >
+                <Coins className="h-3.5 w-3.5 text-amber-700" />
+                <span>Midway Closed</span>
+              </div>
+            )}
+
             {/* Edit Loan Button */}
             <button
               type="button"
+              disabled={isMidwayClosed}
               onClick={() => {
+                if (isMidwayClosed) return;
                 if (onEditLoan) onEditLoan(loanRecord);
                 else alert("Edit Loan initiated for " + effectiveLoanId);
               }}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-3.5 py-2 text-xs sm:text-sm font-semibold text-slate-700 shadow-2xs transition-all cursor-pointer whitespace-nowrap"
+              title={isMidwayClosed ? "Editing is disabled for midway-closed loans" : "Edit Loan"}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${
+                isMidwayClosed
+                  ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-60 pointer-events-none"
+                  : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer"
+              }`}
             >
-              <Edit className="h-3.5 w-3.5 text-slate-500" strokeWidth={2} />
+              <Edit className={`h-3.5 w-3.5 ${isMidwayClosed ? "text-slate-400" : "text-slate-500"}`} strokeWidth={2} />
               <span>Edit Loan</span>
+            </button>
+
+            {/* Midway Closure Button (orange accent beside Edit Loan) */}
+            <button
+              type="button"
+              disabled={isMidwayClosed}
+              onClick={() => {
+                if (isMidwayClosed) return;
+                setShowMidwayModal(true);
+              }}
+              title={isMidwayClosed ? "This loan is already midway closed" : "Midway Closure"}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${
+                isMidwayClosed
+                  ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60 pointer-events-none"
+                  : "bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+              }`}
+            >
+              <Coins className="h-3.5 w-3.5" />
+              <span>Midway Closure</span>
             </button>
 
             {/* More Actions Menu */}
@@ -578,7 +709,11 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 {formatCurrency(remainingPrincipal)}
               </p>
               <span className="text-[11px] text-slate-400 mt-0.5 block leading-tight">
-                {isForeclosed ? "Settled (Foreclosed)" : "Balance principal"}
+                {isForeclosed
+                  ? "Settled (Foreclosed)"
+                  : isMidwayClosed
+                  ? "Settled (Midway Closed)"
+                  : "Balance principal"}
               </span>
             </div>
           </div>
@@ -596,7 +731,11 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 {formatCurrency(remainingInterest)}
               </p>
               <span className="text-[11px] text-slate-400 mt-0.5 block leading-tight">
-                {isForeclosed ? "Settled / Waived" : "Balance interest"}
+                {isForeclosed
+                  ? "Settled / Waived"
+                  : isMidwayClosed
+                  ? "Settled (Midway Closed)"
+                  : "Balance interest"}
               </span>
             </div>
           </div>
@@ -840,23 +979,27 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 </div>
 
                 {/* 3. Total Outstanding Card */}
-                <div className={`${isForeclosed ? "bg-purple-50/50 border-purple-200/80" : "bg-amber-50/50 border-amber-200/80"} rounded-2xl border p-4 sm:p-5 shadow-2xs flex-1 flex flex-col justify-between transition-all duration-200 hover:shadow-xs min-h-[120px]`}>
+                <div className={`${isForeclosed ? "bg-purple-50/50 border-purple-200/80" : isMidwayClosed ? "bg-amber-50/50 border-amber-200/80" : "bg-amber-50/50 border-amber-200/80"} rounded-2xl border p-4 sm:p-5 shadow-2xs flex-1 flex flex-col justify-between transition-all duration-200 hover:shadow-xs min-h-[120px]`}>
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <span className={`text-xs font-bold uppercase tracking-wider ${isForeclosed ? "text-purple-800/80" : "text-amber-800/80"} block`}>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${isForeclosed ? "text-purple-800/80" : isMidwayClosed ? "text-amber-800/80" : "text-amber-800/80"} block`}>
                         Total Outstanding
                       </span>
                       <p className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1 leading-snug break-words">
                         {formatCurrency(outstandingBalance)}
                       </p>
                     </div>
-                    <div className={`h-11 w-11 rounded-xl ${isForeclosed ? "bg-purple-100 text-purple-700 border-purple-200/90" : "bg-amber-100 text-amber-700 border-amber-200/90"} border flex items-center justify-center shrink-0 shadow-2xs`}>
-                      {isForeclosed ? <ShieldCheck className="h-5 w-5" strokeWidth={2.2} /> : <Landmark className="h-5 w-5" strokeWidth={2.2} />}
+                    <div className={`h-11 w-11 rounded-xl ${isForeclosed ? "bg-purple-100 text-purple-700 border-purple-200/90" : isMidwayClosed ? "bg-amber-100 text-amber-700 border-amber-200/90" : "bg-amber-100 text-amber-700 border-amber-200/90"} border flex items-center justify-center shrink-0 shadow-2xs`}>
+                      {isForeclosed ? <ShieldCheck className="h-5 w-5" strokeWidth={2.2} /> : isMidwayClosed ? <CheckCircle className="h-5 w-5" strokeWidth={2.2} /> : <Landmark className="h-5 w-5" strokeWidth={2.2} />}
                     </div>
                   </div>
-                  <div className={`pt-2 mt-auto border-t ${isForeclosed ? "border-purple-100/70" : "border-amber-100/70"}`}>
-                    <span className={`text-[11px] ${isForeclosed ? "text-purple-700 font-semibold" : "text-amber-700/90 font-medium"} block`}>
-                      {isForeclosed ? "Settled via Foreclosure (₹0 balance)" : "Remaining payable balance"}
+                  <div className={`pt-2 mt-auto border-t ${isForeclosed ? "border-purple-100/70" : isMidwayClosed ? "border-amber-100/70" : "border-amber-100/70"}`}>
+                    <span className={`text-[11px] ${isForeclosed ? "text-purple-700 font-semibold" : isMidwayClosed ? "text-amber-700 font-semibold" : "text-amber-700/90 font-medium"} block`}>
+                      {isForeclosed
+                        ? "Settled via Foreclosure (₹0 balance)"
+                        : isMidwayClosed
+                        ? "Settled via Midway Closure (₹0 balance)"
+                        : "Remaining payable balance"}
                     </span>
                   </div>
                 </div>
@@ -891,6 +1034,13 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
               </div>
             )}
 
+            {isMidwayClosed && !isForeclosed && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-amber-700 shrink-0" />
+                <span>This loan is settled via Midway Closure. Genuine prior payments are preserved and future cancelled instalments are marked Midway Closed with ₹0 balance.</span>
+              </div>
+            )}
+
             {schedule.length === 0 ? (
               <div className="py-12 text-center text-xs text-slate-400">
                 No repayment schedule available for this loan.
@@ -900,66 +1050,75 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 <table className="min-w-full divide-y divide-slate-200 text-xs sm:text-sm">
                   <thead className="bg-slate-50/80">
                     <tr>
-                      <th className="px-3.5 py-3 text-left font-bold text-slate-700">No.</th>
+                      <th className="px-3.5 py-3 text-left font-bold text-slate-700">Instalment Number</th>
                       <th className="px-3.5 py-3 text-left font-bold text-slate-700">Due Date</th>
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Principal</th>
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Interest</th>
+                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">Total EMI</th>
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Principal Outstanding</th>
-                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">{getRepaymentColumnLabel(loan.paymentFrequency || loanRecord?.paymentFrequency)}</th>
-                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">Amount Paid</th>
-                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">Balance</th>
+                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">Balance Amount</th>
                       <th className="px-3.5 py-3 text-center font-bold text-slate-700">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {schedule.map((row) => (
-                      <tr
-                        key={row.installmentNumber}
-                        onClick={() => setSelectedInstallmentForHistory(row)}
-                        className="hover:bg-emerald-50/40 transition-colors cursor-pointer group"
-                        title="Click to view collection history"
-                      >
-                        <td className="whitespace-nowrap px-3.5 py-3 font-semibold text-slate-700 group-hover:text-emerald-800">
-                          #{row.installmentNumber}
-                        </td>
-                        <td className="whitespace-nowrap px-3.5 py-3 font-semibold text-slate-900">
-                          {formatDate(row.dueDate)}
-                        </td>
-                        <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-600 font-medium">
-                          {formatCurrency(row.principal)}
-                        </td>
-                        <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-600 font-medium">
-                          {formatCurrency(row.interest)}
-                        </td>
-                        <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-700 font-medium">
-                          {formatCurrency(row.principalOutstanding !== undefined ? row.principalOutstanding : 0)}
-                        </td>
-                        <td className="whitespace-nowrap px-3.5 py-3 text-right font-bold text-emerald-800">
-                          {formatCurrency(row.emi)}
-                        </td>
-                        <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-600 font-medium">
-                          {formatCurrency(row.amountPaid || 0)}
-                        </td>
-                        <td className="whitespace-nowrap px-3.5 py-3 text-right font-bold text-slate-900">
-                          {formatCurrency(row.balance !== undefined ? row.balance : Math.max(0, row.emi - (row.amountPaid || 0)))}
-                        </td>
-                        <td className="whitespace-nowrap px-3.5 py-3 text-center">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              row.status === "Collected" || row.status === "Paid"
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : row.status === "Partial"
-                                  ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                  : row.status === "Overdue"
-                                    ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                    : "bg-slate-100 text-slate-700 border border-slate-200"
-                            }`}
-                          >
-                            {row.status || "Due"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {schedule.map((row) => {
+                      const isMidwaySettled = Boolean(row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed");
+                      return (
+                        <tr
+                          key={row.installmentNumber}
+                          onClick={() => setSelectedInstallmentForHistory(row)}
+                          className={`transition-colors cursor-pointer group ${
+                            isMidwaySettled
+                              ? "bg-amber-50/70 hover:bg-amber-100/60"
+                              : "hover:bg-emerald-50/40"
+                          }`}
+                          title="Click to view collection history"
+                        >
+                          <td className={`whitespace-nowrap px-3.5 py-3 font-semibold ${
+                            isMidwaySettled
+                              ? "text-amber-950 group-hover:text-amber-900"
+                              : "text-slate-700 group-hover:text-emerald-800"
+                          }`}>
+                            {row.installmentNumber}
+                          </td>
+                          <td className="whitespace-nowrap px-3.5 py-3 font-semibold text-slate-900">
+                            {formatDate(row.dueDate)}
+                          </td>
+                          <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-600 font-medium">
+                            {formatCurrency(row.principal)}
+                          </td>
+                          <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-600 font-medium">
+                            {formatCurrency(row.interest)}
+                          </td>
+                          <td className="whitespace-nowrap px-3.5 py-3 text-right font-bold text-emerald-800">
+                            {formatCurrency(row.emi)}
+                          </td>
+                          <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-700 font-medium">
+                            {formatCurrency(row.principalOutstanding !== undefined ? row.principalOutstanding : 0)}
+                          </td>
+                          <td className="whitespace-nowrap px-3.5 py-3 text-right font-bold text-slate-900">
+                            {formatCurrency(row.balance !== undefined ? row.balance : Math.max(0, row.emi - (row.amountPaid || 0)))}
+                          </td>
+                          <td className="whitespace-nowrap px-3.5 py-3 text-center">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                isMidwaySettled
+                                  ? "bg-orange-100/90 text-amber-900 border border-amber-300 ring-1 ring-amber-500/20"
+                                  : row.status === "Collected" || row.status === "Paid"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : row.status === "Partial"
+                                    ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                    : row.status === "Overdue"
+                                      ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                      : "bg-slate-100 text-slate-700 border border-slate-200"
+                              }`}
+                            >
+                              {isMidwaySettled ? "Paid" : (row.status || "Due")}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1244,6 +1403,16 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
             </div>
           </div>
         )}
+
+        {/* Midway Closure Modal with preselected current loan */}
+        <MidwayClosureModal
+          isOpen={showMidwayModal}
+          onClose={() => setShowMidwayModal(false)}
+          preselectedLoanRecord={loanRecord}
+          onSuccess={() => {
+            setRefreshKey((k) => k + 1);
+          }}
+        />
       </div>
     </div>
   );

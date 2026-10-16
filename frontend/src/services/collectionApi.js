@@ -48,3 +48,16 @@ export const recordCollection = ({ entry, amount, paymentMode, remarks, dueAmoun
     // Bank / UPI reference of a non-cash payment.
     transactionId: paymentMode && paymentMode !== 'Cash' ? (transactionId || '').trim() : '',
   })
+
+// Midway closure: the server settles the loan from its own schedule (all
+// remaining principal + interest of the next `interestInstalments` unpaid
+// instalments; the rest of the interest is waived) and returns the payment.
+export const closeLoanMidway = ({ loanId, interestInstalments, paymentDate, paymentMode, transactionId, remarks, clientRef }) =>
+  apiPost(`/loans/${encodeURIComponent(loanId)}/midway-closure`, {
+    interestInstalments,
+    paymentDate,
+    paymentMode,
+    transactionId: paymentMode && paymentMode !== 'Cash' ? (transactionId || '').trim() : '',
+    remarks,
+    clientRef,
+  })
