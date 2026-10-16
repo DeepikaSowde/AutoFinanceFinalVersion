@@ -28,6 +28,7 @@ export const LOAN_STATUS = {
   OVERDUE: "Overdue",
   CLOSED: "Closed",
   FORECLOSED: "Foreclosed",
+  MIDWAY_CLOSED: "Midway Closed",
 };
 
 export const roundMoney = (value) =>
@@ -55,8 +56,11 @@ export const describeInstallment = (row, referenceDate = new Date()) => {
   const paidPrincipal = roundMoney(row.paid_principal ?? row.paidPrincipal ?? 0);
   const paidInterest = roundMoney(row.paid_interest ?? row.paidInterest ?? 0);
 
+  // Interest waived by a midway closure counts as settled.
+  const waivedInterest = roundMoney(row.waived_interest ?? row.waivedInterest ?? 0);
+
   const remainingPrincipal = roundMoney(Math.max(principal - paidPrincipal, 0));
-  const remainingInterest = roundMoney(Math.max(interest - paidInterest, 0));
+  const remainingInterest = roundMoney(Math.max(interest - paidInterest - waivedInterest, 0));
 
   const paymentAmount = roundMoney(principal + interest);
   const paidAmount = roundMoney(paidPrincipal + paidInterest);
@@ -93,6 +97,8 @@ export const describeInstallment = (row, referenceDate = new Date()) => {
     remainingAmount,
     balance: remainingAmount,
     penaltyPaidAmount: roundMoney(row.penalty_paid_amount ?? row.penaltyPaidAmount ?? 0),
+    waivedInterest,
+    midwayClosed: Boolean(row.midway_closed ?? row.midwayClosed),
     status,
   };
 };

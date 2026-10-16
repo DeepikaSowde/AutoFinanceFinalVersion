@@ -13,6 +13,8 @@ import { query, withTransaction } from "../db/connection.js";
 import { currentTenantId } from "../db/tenantContext.js";
 import { buildLoan, getCustomerRow } from "./customerRepository.js";
 import {
+  ALLOCATION_TYPE,
+  LOAN_STATUS,
   applyAllocation,
   buildAllocation,
   deriveLoanStatus,
@@ -238,7 +240,181 @@ export const createCollection = async (payload = {}, submittedBy) => {
   return getCollectionById(collectionId);
 };
 
-const CLOSED_LOAN_STATUSES = new Set(["closed", "paid", "settled", "completed", "foreclosed"]);
+const CLOSED_LOAN_STATUSES = new Set(["closed", "paid", "settled", "completed", "foreclosed", "midway closed"]);
+
+export const MIDWAY_CLOSURE_PAYMENT_TYPE = "MIDWAY_CLOSURE";
+
+/*
+ * Midway closure: settles a loan early, in one transaction.
+ *
+ * Collects all remaining principal plus the remaining interest of the next N
+ * unpaid instalments (in due-date order) that still carry interest; interest
+ * on every other remaining instalment is waived (installments.waived_interest).
+ * It is recorded as one Approved collection (payment_type MIDWAY_CLOSURE) with
+ * its payment_allocations, every remaining instalment is settled and marked
+ * midway_closed, and the loan becomes "Midway Closed" (no further payments).
+ * Figures come from the database schedule; the client's preview is not trusted.
+ * Reversing the collection reopens the loan (see reverseCollection).
+ */
+export const closeLoanMidway = async (loanId, payload = {}, closedBy) => {
+  const clientRef = String(payload.clientRef || "").trim().slice(0, 120) || null;
+  if (clientRef) {
+    const existing = await query("SELECT id FROM collections WHERE client_ref = $1 AND tenant_id = $2", [clientRef, currentTenantId()]);
+    if (existing.rows[0]) return { collection: await getCollectionById(existing.rows[0].id), duplicate: true };
+  }
+
+  const count = Number(payload.interestInstalments ?? 0);
+  if (!Number.isInteger(count) || count < 0) {
+    throw new CollectionError("Interest instalments must be a whole number, 0 or more.");
+  }
+
+  const collectionId = await withTransaction(async (client) => {
+    const loanResult = await client.query("SELECT * FROM loans WHERE id = $1 AND tenant_id = $2 FOR UPDATE", [
+      loanId,
+      currentTenantId(),
+    ]);
+    const loanRow = loanResult.rows[0];
+    if (!loanRow) throw new CollectionError("Loan not found.", 404);
+    if (CLOSED_LOAN_STATUSES.has(String(loanRow.status || "").toLowerCase())) {
+      throw new CollectionError(`Loan is ${loanRow.status}; it cannot be closed again.`, 409);
+    }
+
+    const referenceDate = new Date();
+    const rows = (await client.query(
+      "SELECT * FROM installments WHERE loan_pk = $1 ORDER BY installment_number ASC",
+      [loanRow.pk]
+    )).rows.map((row) => describeInstallment(row, referenceDate));
+
+    const remaining = rows.filter((r) => r.remainingAmount > 0.009);
+    if (!remaining.length) throw new CollectionError("Nothing is outstanding on this loan.", 409);
+
+    const eligible = remaining.filter((r) => r.remainingInterest > 0.009);
+    if (count > eligible.length) {
+      throw new CollectionError(`Only ${eligible.length} instalment(s) with interest remain; choose between 0 and ${eligible.length}.`);
+    }
+    const charged = new Set(eligible.slice(0, count).map((r) => r.installmentNumber));
+
+    const items = [];
+    let principal = 0;
+    let interest = 0;
+    let waived = 0;
+    for (const r of remaining) {
+      if (r.remainingPrincipal > 0.009) {
+        items.push({ installmentNumber: r.installmentNumber, dueDate: r.dueDate, amount: r.remainingPrincipal,
+          type: ALLOCATION_TYPE.PRINCIPAL, isPenalty: false, isInterest: false, isPrincipal: true });
+        principal = roundMoney(principal + r.remainingPrincipal);
+      }
+      if (r.remainingInterest > 0.009) {
+        if (charged.has(r.installmentNumber)) {
+          items.push({ installmentNumber: r.installmentNumber, dueDate: r.dueDate, amount: r.remainingInterest,
+            type: ALLOCATION_TYPE.INTEREST, isPenalty: false, isInterest: true, isPrincipal: false });
+          interest = roundMoney(interest + r.remainingInterest);
+        } else {
+          waived = roundMoney(waived + r.remainingInterest);
+        }
+      }
+    }
+    const total = roundMoney(principal + interest);
+    if (!(total > 0)) throw new CollectionError("The closure amount must be greater than zero.");
+
+    const chargedNumbers = [...charged].sort((a, b) => a - b);
+    const range = !chargedNumbers.length
+      ? "None"
+      : chargedNumbers.length === 1
+        ? `Instalment #${chargedNumbers[0]}`
+        : `Instalments #${chargedNumbers[0]} – #${chargedNumbers[chargedNumbers.length - 1]}`;
+    const collectedDate = String(payload.paymentDate || payload.collectedDate || "").slice(0, 10) || referenceDate.toISOString().slice(0, 10);
+    const payMode = String(payload.paymentMode || "Cash").trim() || "Cash";
+
+    const inserted = await client.query(
+      `INSERT INTO collections
+        (id, customer_pk, loan_pk, status, amount, due_amount, penalty_amount, total_payable,
+         payment_type, pay_mode, remarks, collected_date, client_ref, tenant_id, transaction_ref,
+         staff_name, approved_at, approved_by, amount_toward_due, amount_toward_penalty,
+         amount_toward_principal, amount_toward_advance, amount_excess, allocation,
+         repayment_processed, repayment_processed_at, repayment_processing_status)
+       VALUES ('', $1, $2, 'Approved', $3, $3, 0, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), $12, $3, 0, $13,
+               0, 0, $14, true, now(), 'Processed')
+       RETURNING pk`,
+      [
+        loanRow.customer_pk,
+        loanRow.pk,
+        total,
+        MIDWAY_CLOSURE_PAYMENT_TYPE,
+        payMode,
+        String(payload.remarks || "").trim() || `Midway Closure Settlement: ${range}`,
+        collectedDate,
+        clientRef,
+        currentTenantId(),
+        payMode !== "Cash" ? String(payload.transactionId || "").trim().slice(0, 120) || null : null,
+        closedBy?.name || "",
+        closedBy?.username || "",
+        principal,
+        JSON.stringify({ items, principal, interest, penalty: 0, advance: 0, excess: 0, midwayClosure: true,
+          interestInstalments: count, chargedInstalments: chargedNumbers, waivedInterest: waived }),
+      ]
+    );
+    const pk = inserted.rows[0].pk;
+    const id = `COL-${pad(pk)}`;
+    await client.query("UPDATE collections SET id = $1 WHERE pk = $2", [id, pk]);
+
+    for (const [index, item] of items.entries()) {
+      await client.query(
+        `INSERT INTO payment_allocations
+          (id, loan_pk, collection_pk, installment_number, due_date, amount, type, is_penalty, is_interest, is_principal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9)`,
+        [`PAY-${id}-${index + 1}`, loanRow.pk, pk, item.installmentNumber, item.dueDate || "", item.amount, item.type,
+          item.isInterest, item.isPrincipal]
+      );
+    }
+
+    // Settle every remaining instalment: principal in full, the chosen
+    // interest paid, the rest of the interest waived.
+    for (const r of remaining) {
+      const isCharged = charged.has(r.installmentNumber);
+      await client.query(
+        `UPDATE installments SET
+           paid_principal = principal,
+           paid_interest = paid_interest + $3,
+           waived_interest = waived_interest + $4,
+           midway_closed = true,
+           status = 'Paid'
+         WHERE loan_pk = $1 AND installment_number = $2`,
+        [loanRow.pk, r.installmentNumber, isCharged ? r.remainingInterest : 0, isCharged ? 0 : r.remainingInterest]
+      );
+    }
+
+    await client.query(
+      `UPDATE loans SET status = $2, foreclosure_status = $2, foreclosed_at = now(), foreclosure_reason = $3,
+         repayment_meta = $4, updated_at = now()
+       WHERE pk = $1`,
+      [
+        loanRow.pk,
+        LOAN_STATUS.MIDWAY_CLOSED,
+        `Midway closure (${range}; interest waived on the rest)`,
+        JSON.stringify({
+          repaymentMeta: {
+            lastPaymentAt: referenceDate.toISOString(),
+            lastPaymentAmount: total,
+            lastPaymentType: MIDWAY_CLOSURE_PAYMENT_TYPE,
+            lastInterestPaid: interest,
+            lastPrincipalPaid: principal,
+            outstanding: 0,
+            principalOutstanding: 0,
+            interestOutstanding: 0,
+          },
+          midwayClosure: { collectionId: id, closedAt: referenceDate.toISOString(), paymentDate: collectedDate,
+            principal, interest, total, waivedInterest: waived, interestInstalments: count,
+            chargedInstalments: chargedNumbers, range },
+        }),
+      ]
+    );
+
+    return id;
+  });
+
+  return { collection: await getCollectionById(collectionId), duplicate: false };
+};
 
 /*
  * The one path that actually moves money.
@@ -506,6 +682,18 @@ export const reverseCollection = async (collectionId, { reason = "", reversedBy 
     }
 
     await client.query("DELETE FROM payment_allocations WHERE collection_pk = $1", [row.pk]);
+
+    // Undoing a midway closure also lifts its interest waiver and reopens the loan.
+    if (row.payment_type === MIDWAY_CLOSURE_PAYMENT_TYPE) {
+      await client.query(
+        "UPDATE installments SET waived_interest = 0, midway_closed = false WHERE loan_pk = $1 AND midway_closed",
+        [row.loan_pk]
+      );
+      await client.query(
+        "UPDATE loans SET foreclosure_status = NULL, foreclosed_at = NULL, foreclosure_reason = NULL WHERE pk = $1",
+        [row.loan_pk]
+      );
+    }
 
     const referenceDate = new Date();
 
