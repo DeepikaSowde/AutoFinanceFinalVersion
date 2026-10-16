@@ -299,6 +299,9 @@ const Collection = () => {
   // Collection Details Modal state (Shared between Today and Overdue)
   const [detailsCustomer, setDetailsCustomer] = useState(null);
 
+  // View Schedule Modal state
+  const [scheduleModalCustomer, setScheduleModalCustomer] = useState(null);
+
   // Amount Collected Successfully Modal state
   const [confirmedTransaction, setConfirmedTransaction] = useState(null);
 
@@ -337,18 +340,18 @@ const Collection = () => {
 
   // Lock background body scroll when any modal is open, and restore when closed
   useEffect(() => {
-    if (selectedCustomer || confirmedTransaction || detailsCustomer || selectedHistoryTx || showMidwayModal) {
+    if (selectedCustomer || confirmedTransaction || detailsCustomer || scheduleModalCustomer || selectedHistoryTx || showMidwayModal) {
       const originalOverflow = document.body.style.overflow;
       document.body.style.overflow = "hidden";
       return () => {
         document.body.style.overflow = originalOverflow;
       };
     }
-  }, [selectedCustomer, confirmedTransaction, detailsCustomer, selectedHistoryTx, showMidwayModal]);
+  }, [selectedCustomer, confirmedTransaction, detailsCustomer, scheduleModalCustomer, selectedHistoryTx, showMidwayModal]);
 
-  // Compute processed customers and schedules
-  const processedCustomers = useMemo(() => {
-    return customers.map((c) => {
+  // Compute processed customer loans and schedules across all records
+  const allProcessedCustomers = useMemo(() => {
+    return customers.map((c, index) => {
       let schedule = c.repaymentSchedule;
       if (!schedule || schedule.length === 0) {
         const P = Number(c.loanAmount || (Number(c.loan?.vehicleAmount) - Number(c.loan?.downPayment || 0)) || 0);
@@ -406,10 +409,23 @@ const Collection = () => {
         } else if (anyPartial) {
           statusText = "Partial";
         }
+      } else if (allUnpaidInstalls.length === 0 && schedule.length > 0) {
+        statusText = "Collected";
       }
+
+      const customerId =
+        c.customerId ||
+        c.customer?.customerId ||
+        (c.customer?.mobile && c.customer.mobile.trim().length >= 5 && !/^0+$/.test(c.customer.mobile.trim().slice(-5))
+          ? `CUS-${c.customer.mobile.trim().slice(-5)}`
+          : `CUS-${String(index + 1).padStart(3, "0")}`);
+
+      const loanId = c.loanId || c.loan?.loanId || `LN-${String(index + 1).padStart(3, "0")}`;
 
       return {
         ...c,
+        customerId,
+        loanId,
         isDueToday,
         isOverdue,
         overdueCount: overdueInstalls.length,
@@ -425,26 +441,42 @@ const Collection = () => {
         allUnpaidInstalls,
         fullSchedule: schedule,
       };
-    }).filter((c) => c.isDueToday || c.isOverdue);
+    });
   }, [customers, date]);
 
-  const todayList = processedCustomers.filter((c) => c.isDueToday);
-  const overdueList = processedCustomers.filter((c) => c.isOverdue);
+  const processedCustomers = useMemo(() => {
+    return allProcessedCustomers.filter((c) => c.isDueToday || c.isOverdue);
+  }, [allProcessedCustomers]);
 
-  // Search and Filter
+  const todayList = useMemo(() => allProcessedCustomers.filter((c) => c.isDueToday), [allProcessedCustomers]);
+  const overdueList = useMemo(() => allProcessedCustomers.filter((c) => c.isOverdue), [allProcessedCustomers]);
+
+  // Search and Filter:
+  // When a search term is entered, search dynamically across ALL customer and loan records
+  // by customer name, customer ID, or loan ID (including customers with multiple loans).
   const getFilteredList = (list) => {
-    return list.filter((c) => {
-      if (activeTab === "Overdue" && overdueFilter !== "All") {
+    const baseList = search.trim() ? allProcessedCustomers : list;
+
+    return baseList.filter((c) => {
+      if (!search.trim() && activeTab === "Overdue" && overdueFilter !== "All") {
         if (overdueFilter === "1" && c.overdueCount !== 1) return false;
         if (overdueFilter === "2" && c.overdueCount !== 2) return false;
         if (overdueFilter === "3+" && c.overdueCount < 3) return false;
       }
       if (search.trim()) {
-        const q = search.toLowerCase();
-        const name = c.customer?.name?.toLowerCase() || "";
-        const loanId = c.loanId?.toLowerCase() || "";
-        const vehicle = c.vehicle?.regNo?.toLowerCase() || "";
-        if (!name.includes(q) && !loanId.includes(q) && !vehicle.includes(q)) return false;
+        const q = search.trim().toLowerCase();
+        const name = (c.customer?.name || "").toLowerCase();
+        const customerId = (c.customerId || c.customer?.customerId || "").toLowerCase();
+        const loanId = (c.loanId || c.loan?.loanId || "").toLowerCase();
+        const vehicle = (c.vehicle?.regNo || "").toLowerCase();
+        if (
+          !name.includes(q) &&
+          !customerId.includes(q) &&
+          !loanId.includes(q) &&
+          !vehicle.includes(q)
+        ) {
+          return false;
+        }
       }
       return true;
     });
@@ -896,7 +928,7 @@ const Collection = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full md:w-auto">
-          <div className="relative w-full sm:w-[240px] md:w-[260px]">
+          <div className="relative w-full sm:w-[280px] md:w-[320px] lg:w-[360px]">
             <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -905,18 +937,8 @@ const Collection = () => {
                 setSearch(e.target.value);
                 setHistoryPage(1);
               }}
-              placeholder="Search Customer / Vehicle..."
+              placeholder="Search Customer Name, Customer ID, Loan ID..."
               className="h-10 sm:h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-4 text-xs sm:text-[14px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-2xs transition-all"
-            />
-          </div>
-
-          <div className="relative w-full sm:w-[160px]">
-            <CalendarIcon className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-10 sm:h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 sm:pr-4 text-xs sm:text-[14px] font-medium text-slate-700 shadow-2xs outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] transition-all cursor-pointer"
             />
           </div>
 
@@ -1406,18 +1428,24 @@ const Collection = () => {
             {currentDisplayList.length === 0 ? (
               <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 text-center shadow-2xs">
                 <div className="flex flex-col items-center justify-center text-slate-400">
-                  <p className="text-sm font-semibold text-slate-600">No collections for this date</p>
-                  <p className="text-xs mt-1">There are no pending collections for the selected date.</p>
+                  <p className="text-sm font-semibold text-slate-600">
+                    {search.trim() ? "No matching records found" : (activeTab === "Today" ? "No collections due today" : "No overdue collections")}
+                  </p>
+                  <p className="text-xs mt-1">
+                    {search.trim() ? `No customer or loan matches "${search}".` : (activeTab === "Today" ? "There are no pending collections due today." : "There are no overdue collections at this time.")}
+                  </p>
                 </div>
               </div>
             ) : (
               currentDisplayList.map((c) => {
                 const dueAmt = c.statusText === "Collected"
-                  ? (activeTab === "Today" ? c.originalDueToday : c.originalOverdue)
-                  : (activeTab === "Today" ? c.totalDueToday : c.totalOverdue);
+                  ? (activeTab === "Today" ? (c.originalDueToday || c.totalUnpaidInstallmentAmount) : (c.originalOverdue || c.totalUnpaidInstallmentAmount))
+                  : (activeTab === "Today"
+                      ? (c.totalDueToday || c.totalOverdue || (c.allUnpaidInstalls?.[0]?.emi ?? 0))
+                      : (c.totalOverdue || c.totalDueToday || (c.allUnpaidInstalls?.[0]?.emi ?? 0)));
 
                 return (
-                  <div key={c.loanId} className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 transition-shadow hover:shadow-xs">
+                  <div key={`${c.customerId}-${c.loanId}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 transition-shadow hover:shadow-xs">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <h3 className="font-bold text-slate-900 text-sm sm:text-base truncate">{c.customer?.name}</h3>
@@ -1449,6 +1477,11 @@ const Collection = () => {
                             Partial
                           </span>
                         )}
+                        {c.statusText === "Overdue" && (
+                          <span className="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-xs font-bold text-red-700 ring-1 ring-inset ring-red-600/20">
+                            Overdue
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -1462,19 +1495,17 @@ const Collection = () => {
                     </div>
 
                     <div className="flex items-center gap-2 pt-1">
-                      {c.statusText !== "Collected" && (
-                        <button
-                          onClick={() => handleCollectClick(c)}
-                          className="flex-1 rounded-lg bg-[#006052] py-2 px-3 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors text-center"
-                        >
-                          Collect Payment
-                        </button>
-                      )}
                       <button
-                        onClick={() => handleView(c, activeTab)}
-                        className="flex-1 rounded-lg bg-white border border-slate-300 py-2 px-3 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors text-center"
+                        onClick={() => handleCollectClick(c)}
+                        className="flex-1 rounded-lg bg-[#006052] py-2 px-3 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors text-center cursor-pointer"
                       >
-                        View Details
+                        Collect Payment
+                      </button>
+                      <button
+                        onClick={() => setScheduleModalCustomer(c)}
+                        className="flex-1 rounded-lg bg-white border border-slate-300 py-2 px-3 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors text-center cursor-pointer"
+                      >
+                        View Schedule
                       </button>
                     </div>
                   </div>
@@ -1490,7 +1521,7 @@ const Collection = () => {
                 <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
                   <tr>
                     <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
-                      Customer ID
+                      Customer ID / Loan ID
                     </th>
                     <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
                       Customer
@@ -1511,16 +1542,21 @@ const Collection = () => {
                     <tr>
                       <td colSpan={5} className="py-12 text-center">
                         <div className="flex flex-col items-center justify-center text-slate-400">
-                          <p className="text-[15px] font-semibold text-slate-600">No collections for this date</p>
-                          <p className="text-[13px] mt-1">There are no pending collections for the selected date.</p>
+                          <p className="text-[15px] font-semibold text-slate-600">
+                            {search.trim() ? "No matching records found" : (activeTab === "Today" ? "No collections due today" : "No overdue collections")}
+                          </p>
+                          <p className="text-[13px] mt-1">
+                            {search.trim() ? `No customer or loan matches "${search}".` : (activeTab === "Today" ? "There are no pending collections due today." : "There are no overdue collections at this time.")}
+                          </p>
                         </div>
                       </td>
                     </tr>
                   ) : (
                     currentDisplayList.map((c) => (
-                      <tr key={c.loanId} className="hover:bg-slate-50/50 transition-colors">
+                      <tr key={`${c.customerId}-${c.loanId}`} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="text-[14px] text-slate-600 font-bold">{c.customerId}</p>
+                          <p className="text-[14px] text-slate-700 font-bold">{c.customerId}</p>
+                          <p className="text-[12px] text-slate-400 font-mono font-medium">{c.loanId}</p>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <p className="font-bold text-[14px] text-slate-900">{c.customer?.name}</p>
@@ -1528,8 +1564,12 @@ const Collection = () => {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <p className="font-bold text-[14px] text-slate-900">
                             {c.statusText === "Collected"
-                              ? `${formatCurrency(activeTab === "Today" ? c.originalDueToday : c.originalOverdue)}`
-                              : formatCurrency(activeTab === "Today" ? c.totalDueToday : c.totalOverdue)}
+                              ? `${formatCurrency(activeTab === "Today" ? (c.originalDueToday || c.totalUnpaidInstallmentAmount) : (c.originalOverdue || c.totalUnpaidInstallmentAmount))}`
+                              : formatCurrency(
+                                  activeTab === "Today"
+                                    ? (c.totalDueToday || c.totalOverdue || (c.allUnpaidInstalls?.[0]?.emi ?? 0))
+                                    : (c.totalOverdue || c.totalDueToday || (c.allUnpaidInstalls?.[0]?.emi ?? 0))
+                                )}
                           </p>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -1548,22 +1588,25 @@ const Collection = () => {
                               Partial
                             </span>
                           )}
+                          {c.statusText === "Overdue" && (
+                            <span className="inline-flex items-center rounded-md bg-red-50 px-2.5 py-1 text-[12px] font-bold text-red-700 ring-1 ring-inset ring-red-600/20">
+                              Overdue
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-right whitespace-nowrap">
                           <div className="flex justify-end gap-2">
-                            {c.statusText !== "Collected" && (
-                              <button
-                                onClick={() => handleCollectClick(c)}
-                                className="rounded-md bg-[#006052] px-5 py-2.5 text-[13px] font-bold text-white shadow-sm hover:bg-[#004d43] transition-colors"
-                              >
-                                Collect Payment
-                              </button>
-                            )}
                             <button
-                              onClick={() => handleView(c, activeTab)}
-                              className="rounded-md bg-white border border-slate-300 px-5 py-2.5 text-[13px] font-bold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                              onClick={() => handleCollectClick(c)}
+                              className="rounded-md bg-[#006052] px-5 py-2.5 text-[13px] font-bold text-white shadow-sm hover:bg-[#004d43] transition-colors cursor-pointer"
                             >
-                              View Details
+                              Collect Payment
+                            </button>
+                            <button
+                              onClick={() => setScheduleModalCustomer(c)}
+                              className="rounded-md bg-white border border-slate-300 px-5 py-2.5 text-[13px] font-bold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
+                            >
+                              View Schedule
                             </button>
                           </div>
                         </td>
@@ -2648,248 +2691,233 @@ const Collection = () => {
       )}
 
       {/* =========================================================================
-          3. SHARED COLLECTION DETAILS POPUP (FOR TODAY & OVERDUE SECTIONS)
+          3. VIEW SCHEDULE MODAL (FOR SELECTED CUSTOMER LOAN)
       ========================================================================= */}
-      {detailsCustomer && (() => {
-        const c = detailsCustomer.customer;
-        const isToday = detailsCustomer.context === "Today";
+      {scheduleModalCustomer && (() => {
+        const c = scheduleModalCustomer;
+        const schedule = c.fullSchedule || [];
+        const customerName = c.customer?.name || "Customer";
+        const customerId = c.customerId;
+        const loanId = c.loanId;
+        const vehicleReg = c.vehicle?.regNo;
+        const frequency = c.paymentFrequency || c.loan?.paymentFrequency || "Monthly";
 
-        // Relevant Due Amount and scheduled items based on originating section
-        const relevantDueAmount = isToday ? c.totalDueToday : c.totalOverdue;
-        const relevantOriginalScheduled = isToday ? c.originalDueToday : c.originalOverdue;
-        const relevantCollected = Math.max(0, relevantOriginalScheduled - relevantDueAmount);
-        const relevantInstalls = isToday ? (c.todayInstalls || []) : (c.overdueInstalls || []);
-
-        // Dynamic status for the selected context
-        let statusBadge = "Pending";
-        if (relevantDueAmount <= 0.01) {
-          statusBadge = "Paid";
-        } else if (relevantCollected > 0.01) {
-          statusBadge = "Partial";
-        } else if (!isToday) {
-          statusBadge = "Overdue";
-        }
-
-        const canCollect = relevantDueAmount > 0.01 && c.statusText !== "Collected";
+        // Total stats for this loan
+        const totalPrincipal = Number(c.loanAmount || (Number(c.loan?.vehicleAmount) - Number(c.loan?.downPayment || 0)) || 0);
+        const totalPaid = schedule.reduce((sum, s) => sum + Number(s.amountPaid || 0), 0);
+        const totalOutstanding = schedule.reduce(
+          (sum, s) => sum + Math.max(0, Number(s.emi || 0) - Number(s.amountPaid || 0)),
+          0
+        );
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4 md:p-6 backdrop-blur-xs overflow-y-auto overscroll-contain">
-            <div className="w-full max-w-xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] rounded-2xl bg-white shadow-2xl relative flex flex-col border border-slate-200 overflow-hidden my-auto">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 bg-white sticky top-0 z-20 shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                    isToday ? "bg-teal-50 text-[#006052] ring-4 ring-teal-50/50" : "bg-red-50 text-red-700 ring-4 ring-red-50/50"
-                  }`}>
-                    {isToday ? <CalendarIcon className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-2 sm:p-4 md:p-6 backdrop-blur-xs overflow-hidden overscroll-contain">
+            <div className="w-full max-w-4xl max-h-[92vh] sm:max-h-[86vh] rounded-2xl bg-white shadow-2xl relative flex flex-col border border-slate-200 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-white sticky top-0 z-20 shrink-0">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                  <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-[#006052] ring-2 sm:ring-4 ring-teal-50/50">
+                    <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5" />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                        Collection Details
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <h3 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 leading-tight truncate">
+                        Repayment Schedule
                       </h3>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                        isToday ? "bg-teal-50 text-teal-800 border border-teal-200" : "bg-red-50 text-red-800 border border-red-200"
-                      }`}>
-                        {isToday ? "Today Collection" : "Overdue Collection"}
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        {frequency}
                       </span>
                     </div>
-                    <p className="text-[11px] sm:text-xs text-slate-500 font-medium mt-0.5">
-                      {isToday ? "Current installment details scheduled for today" : "Overdue installment status and outstanding breakdown"}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs text-slate-500 font-medium mt-0.5">
+                      <span className="font-bold text-slate-800">{customerName}</span>
+                      <span>•</span>
+                      <span className="font-mono">{customerId}</span>
+                      <span>•</span>
+                      <span className="font-mono font-semibold text-slate-700">{loanId}</span>
+                      {vehicleReg && (
+                        <>
+                          <span className="hidden sm:inline">•</span>
+                          <span className="hidden sm:inline">{vehicleReg}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
+
                 <button
                   type="button"
-                  onClick={() => setDetailsCustomer(null)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors shrink-0"
+                  onClick={() => setScheduleModalCustomer(null)}
+                  className="rounded-lg p-1.5 sm:p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors shrink-0 cursor-pointer"
+                  aria-label="Close modal"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              {/* Scrollable Content */}
-              <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
-                {/* A. Customer Information Card */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2.5">
-                    Customer Information
+              {/* Summary KPIs Banner */}
+              <div className="grid grid-cols-3 gap-2 px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-100 text-xs shrink-0">
+                <div className="min-w-0">
+                  <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">
+                    Loan Amount
                   </span>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div>
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Customer Name</span>
-                      <p className="text-xs sm:text-sm font-bold text-slate-900 truncate mt-0.5">{c.customer?.name || "Customer"}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Customer ID</span>
-                      <p className="text-xs sm:text-sm font-bold text-slate-700 font-mono mt-0.5">{c.customerId}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Loan ID</span>
-                      <p className="text-xs sm:text-sm font-bold text-slate-700 font-mono mt-0.5">{c.loanId}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Loan Status</span>
-                      <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20 mt-0.5">
-                        {c.loanStatus || (c.totalUnpaidInstallmentAmount > 0 ? "Active" : "Closed")}
-                      </span>
-                    </div>
-                  </div>
+                  <p className="text-xs sm:text-sm font-bold text-slate-900 truncate mt-0.5">
+                    {formatCurrency(totalPrincipal)}
+                  </p>
                 </div>
-
-                {/* B. Outstanding Summary Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                      Total Loan Outstanding
-                    </span>
-                    <p className="text-lg sm:text-xl font-bold text-slate-900">
-                      {formatCurrency(c.totalUnpaidInstallmentAmount || c.outstandingAmount || 0)}
-                    </p>
-                    <span className="text-[11px] text-slate-400 mt-0.5 block">
-                      Remaining principal & interest across all installments
-                    </span>
-                  </div>
-
-                  <div className={`rounded-xl border p-3.5 shadow-2xs ${
-                    isToday ? "bg-teal-50/50 border-teal-200" : "bg-red-50/50 border-red-200"
-                  }`}>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${
-                      isToday ? "text-teal-800" : "text-red-800"
-                    }`}>
-                      {isToday ? "Today's Due Amount" : "Applicable Overdue Amount"}
-                    </span>
-                    <p className={`text-lg sm:text-xl font-bold ${
-                      isToday ? "text-[#006052]" : "text-red-700"
-                    }`}>
-                      {formatCurrency(relevantDueAmount)}
-                    </p>
-                    <span className={`text-[11px] mt-0.5 block ${
-                      isToday ? "text-teal-700/80" : "text-red-600/80"
-                    }`}>
-                      {isToday ? "Amount payable for today's installment" : `${c.overdueCount || relevantInstalls.length} installment(s) overdue`}
-                    </span>
-                  </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">
+                    Total Paid
+                  </span>
+                  <p className="text-xs sm:text-sm font-bold text-emerald-700 truncate mt-0.5">
+                    {formatCurrency(totalPaid)}
+                  </p>
                 </div>
-
-                {/* C. Collection Summary Section */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                      {isToday ? "Today's Installment Breakdown" : "Overdue Installments Breakdown"}
-                    </span>
-                    <div>
-                      {statusBadge === "Paid" && (
-                        <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-                          Paid
-                        </span>
-                      )}
-                      {statusBadge === "Partial" && (
-                        <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                          Partial
-                        </span>
-                      )}
-                      {statusBadge === "Overdue" && (
-                        <span className="inline-flex items-center rounded-md bg-red-50 px-2.5 py-0.5 text-xs font-bold text-red-700 ring-1 ring-inset ring-red-600/20">
-                          Overdue
-                        </span>
-                      )}
-                      {statusBadge === "Pending" && (
-                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-500/20">
-                          Pending
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2.5 text-center py-1">
-                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Scheduled
-                      </span>
-                      <p className="text-sm font-bold text-slate-800 mt-1">
-                        {formatCurrency(relevantOriginalScheduled)}
-                      </p>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-100">
-                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
-                        Collected
-                      </span>
-                      <p className="text-sm font-bold text-emerald-800 mt-1">
-                        {formatCurrency(relevantCollected)}
-                      </p>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-amber-50/60 border border-amber-100">
-                      <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">
-                        Remaining Due
-                      </span>
-                      <p className="text-sm font-bold text-amber-900 mt-1">
-                        {formatCurrency(relevantDueAmount)}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Installments List */}
-                  {relevantInstalls.length > 0 && (
-                    <div className="pt-2 border-t border-slate-100">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
-                        Installment Details
-                      </span>
-                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                        {relevantInstalls.map((inst, idx) => {
-                          const instDue = Math.max(0, inst.emi - (inst.amountPaid || 0));
-                          const isInstPartial = (inst.amountPaid || 0) > 0 && instDue > 0;
-                          return (
-                            <div
-                              key={inst.installmentNumber || idx}
-                              className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50/80 border border-slate-100"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-slate-800 font-mono">
-                                  Installment {inst.installmentNumber}
-                                </span>
-                                <span className="text-slate-400">•</span>
-                                <span className="text-slate-500 text-[11px]">
-                                  Due: {formatDate(inst.dueDate)}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 text-right">
-                                {isInstPartial && (
-                                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                    Paid: {formatCurrency(inst.amountPaid)}
-                                  </span>
-                                )}
-                                <span className="font-bold text-slate-900">
-                                  Due: {formatCurrency(instDue)}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                <div className="min-w-0">
+                  <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">
+                    Outstanding
+                  </span>
+                  <p className="text-xs sm:text-sm font-bold text-amber-700 truncate mt-0.5">
+                    {formatCurrency(totalOutstanding)}
+                  </p>
                 </div>
               </div>
 
-              {/* D. Footer Actions */}
-              <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-3.5 bg-white border-t border-slate-100 sticky bottom-0 z-20 shrink-0">
+              {/* Compact Scrollable Schedule Table Container */}
+              <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0 p-3 sm:p-5">
+                {schedule.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <p className="text-sm font-semibold text-slate-600">No schedule available</p>
+                    <p className="text-xs mt-1">Repayment schedule has not been generated for this loan.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-50/95 sticky top-0 z-10 border-b border-slate-200">
+                        <tr>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px]">
+                            Instalment #
+                          </th>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px]">
+                            Due Date
+                          </th>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px] text-right">
+                            Amount
+                          </th>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px] text-right">
+                            Paid Amount
+                          </th>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px] text-right">
+                            Outstanding Amount
+                          </th>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px] text-center">
+                            Status
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {schedule.map((row) => {
+                          const emi = Number(row.emi || 0);
+                          const paid = Number(row.amountPaid || 0);
+                          const outstanding = Math.max(0, Math.round((emi - paid) * 100) / 100);
+                          const isMidwaySettled = Boolean(
+                            row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed"
+                          );
+
+                          let rowStatus = "Due";
+                          if (isMidwaySettled) {
+                            rowStatus = "Paid";
+                          } else if (outstanding <= 0.01 && emi > 0) {
+                            rowStatus = "Paid";
+                          } else if (paid > 0.01) {
+                            rowStatus = "Partial";
+                          } else {
+                            const d = new Date(row.dueDate);
+                            d.setHours(0, 0, 0, 0);
+                            const t = new Date(date);
+                            t.setHours(0, 0, 0, 0);
+                            if (!isNaN(d.getTime()) && d.getTime() < t.getTime()) {
+                              rowStatus = "Overdue";
+                            } else {
+                              rowStatus = "Due";
+                            }
+                          }
+
+                          return (
+                            <tr
+                              key={row.installmentNumber}
+                              className={`transition-colors ${
+                                isMidwaySettled
+                                  ? "bg-amber-50/70 hover:bg-amber-100/60"
+                                  : "hover:bg-slate-50/70"
+                              }`}
+                            >
+                              <td className={`px-3.5 py-2.5 whitespace-nowrap font-medium ${
+                                isMidwaySettled ? "text-amber-950 font-semibold" : "text-slate-700"
+                              }`}>
+                                {row.installmentNumber}
+                              </td>
+                              <td className="px-3.5 py-2.5 whitespace-nowrap font-medium text-slate-800">
+                                {formatDate(row.dueDate)}
+                              </td>
+                              <td className="px-3.5 py-2.5 whitespace-nowrap text-right font-medium text-slate-700">
+                                {formatCurrency(emi)}
+                              </td>
+                              <td className="px-3.5 py-2.5 whitespace-nowrap text-right font-semibold text-emerald-700">
+                                {formatCurrency(paid)}
+                              </td>
+                              <td className="px-3.5 py-2.5 whitespace-nowrap text-right font-semibold text-slate-900">
+                                {formatCurrency(outstanding)}
+                              </td>
+                              <td className="px-3.5 py-2.5 whitespace-nowrap text-center">
+                                {isMidwaySettled ? (
+                                  <span className="inline-flex items-center rounded-full bg-orange-100/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-900 border border-amber-300 ring-1 ring-amber-500/20">
+                                    Paid
+                                  </span>
+                                ) : rowStatus === "Paid" ? (
+                                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                                    Paid
+                                  </span>
+                                ) : rowStatus === "Partial" ? (
+                                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                                    Partial
+                                  </span>
+                                ) : rowStatus === "Overdue" ? (
+                                  <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700 ring-1 ring-inset ring-red-600/10">
+                                    Overdue
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 ring-1 ring-inset ring-slate-500/20">
+                                    Due
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-white border-t border-slate-200 sticky bottom-0 z-20 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setDetailsCustomer(null)}
-                  className="rounded-xl border border-slate-200 bg-white px-5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
+                  onClick={() => setScheduleModalCustomer(null)}
+                  className="rounded-xl border border-slate-300 bg-white px-4 sm:px-5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
                 >
                   Close
                 </button>
-                {canCollect && (
+                {totalOutstanding > 0.01 && (
                   <button
                     type="button"
                     onClick={() => {
-                      const cust = detailsCustomer.customer;
-                      setDetailsCustomer(null);
+                      const cust = scheduleModalCustomer;
+                      setScheduleModalCustomer(null);
                       handleCollectClick(cust);
                     }}
-                    className="rounded-xl bg-[#006052] px-6 sm:px-7 py-2 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors flex items-center gap-2"
+                    className="rounded-xl bg-[#006052] px-5 sm:px-6 py-2 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <span>Collect Payment</span>
                     <ArrowRight className="h-3.5 w-3.5" />
