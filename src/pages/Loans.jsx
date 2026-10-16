@@ -68,6 +68,7 @@ const StatusBadge = ({ status }) => {
   const styles = {
     Active: "bg-emerald-50 text-emerald-700 border-emerald-200",
     Closed: "bg-slate-100 text-slate-600 border-slate-200",
+    "Midway Closed": "bg-amber-100 text-amber-800 border-amber-300",
     Overdue: "bg-amber-50 text-amber-800 border-amber-300",
     Foreclosed: "bg-purple-50 text-purple-700 border-purple-200",
   };
@@ -167,8 +168,16 @@ export default function Loans() {
       // 4. Active: ongoing loan without overdue installments
       const rawStatus = String(record.status || loan.status || '').trim();
       const isForeclosed = rawStatus.toLowerCase() === "foreclosed" || Boolean(record.isForeclosed || record.foreclosure);
+      const isMidwayClosed = Boolean(
+        record.isMidwayClosed ||
+        record.midwayClosure ||
+        rawStatus.toLowerCase() === "midway closed" ||
+        String(record.closureType || "").toLowerCase() === "midway closure"
+      );
       let status = "Active";
-      if (isForeclosed) {
+      if (isMidwayClosed) {
+        status = "Midway Closed";
+      } else if (isForeclosed) {
         status = "Foreclosed";
       } else if (rawStatus.toLowerCase() === "closed" || (outstandingAmount <= 0 && rawStatus !== "Foreclosed")) {
         status = "Closed";
@@ -409,7 +418,7 @@ export default function Loans() {
 
             {statusDropdownOpen && (
               <div className="absolute left-0 top-[44px] z-30 w-full rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
-                {["All Statuses", "Active", "Overdue", "Closed", "Foreclosed"].map((option) => (
+                {["All Statuses", "Active", "Overdue", "Closed", "Midway Closed", "Foreclosed"].map((option) => (
                   <button
                     key={option}
                     type="button"

@@ -24,11 +24,13 @@ import {
   Layers,
   Users,
   Hash,
-  Percent
+  Percent,
+  Coins
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { generateSchedule, getRepaymentColumnLabel } from "../../components/RepaymentScheduleTable";
+import MidwayClosureModal from "../../components/MidwayClosureModal";
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -37,6 +39,113 @@ const formatDate = (dateStr) => {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return String(dateStr);
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+};
+
+// Formats installment numbers as '1', '2', '3' or consecutive ranges like '1–10' without '#' or long comma-separated lists
+const formatInstallmentDisplay = (txOrAllocations) => {
+  if (!txOrAllocations) return "1";
+
+  const numSet = new Set();
+
+  if (Array.isArray(txOrAllocations)) {
+    txOrAllocations.forEach((item) => {
+      const n = typeof item === "object" ? Number(item.installmentNumber) : Number(item);
+      if (!isNaN(n) && n > 0) numSet.add(n);
+    });
+  } else if (typeof txOrAllocations === "object") {
+    const tx = txOrAllocations;
+    if (Array.isArray(tx.allocations) && tx.allocations.length > 0) {
+      tx.allocations.forEach((a) => {
+        const n = Number(a.installmentNumber);
+        if (!isNaN(n) && n > 0) numSet.add(n);
+      });
+    }
+    if (Array.isArray(tx.installmentNumbers) && tx.installmentNumbers.length > 0) {
+      tx.installmentNumbers.forEach((item) => {
+        const n = Number(item);
+        if (!isNaN(n) && n > 0) numSet.add(n);
+      });
+    }
+    if (numSet.size === 0 && tx.installmentNumber !== undefined && tx.installmentNumber !== null) {
+      const str = String(tx.installmentNumber).replace(/#/g, "");
+      const nums = str.match(/\d+/g);
+      if (nums) {
+        nums.forEach((m) => {
+          const parsed = Number(m);
+          if (!isNaN(parsed) && parsed > 0) numSet.add(parsed);
+        });
+      }
+    }
+  } else {
+    const str = String(txOrAllocations).replace(/#/g, "");
+    const nums = str.match(/\d+/g);
+    if (nums) {
+      nums.forEach((m) => {
+        const parsed = Number(m);
+        if (!isNaN(parsed) && parsed > 0) numSet.add(parsed);
+      });
+    }
+  }
+
+  if (numSet.size === 0) return "1";
+
+  const sorted = Array.from(numSet).sort((a, b) => a - b);
+  const ranges = [];
+  let start = sorted[0];
+  let end = sorted[0];
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === end + 1) {
+      end = sorted[i];
+    } else {
+      ranges.push(start === end ? `${start}` : `${start}–${end}`);
+      start = sorted[i];
+      end = sorted[i];
+    }
+  }
+  ranges.push(start === end ? `${start}` : `${start}–${end}`);
+
+  return ranges.join(", ");
+};
+
+const formatDateTime = (dateStr, fallbackTx = null) => {
+  if (!dateStr && !fallbackTx) return "—";
+
+  let d = null;
+  const isPlainDate = typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim());
+
+  if (isPlainDate && fallbackTx) {
+    // If dateStr is only YYYY-MM-DD without time, try to extract actual creation timestamp from record's unique ID/timestamp properties
+    const recordTimestamp = fallbackTx.timestamp || fallbackTx.createdAt || fallbackTx.paidAt;
+    if (recordTimestamp) {
+      const parsedTs = new Date(recordTimestamp);
+      if (!isNaN(parsedTs.getTime())) d = parsedTs;
+    }
+    if (!d && typeof fallbackTx.id === "string") {
+      const match = fallbackTx.id.match(/(\d{12,13})/);
+      if (match) {
+        const idTs = Number(match[1]);
+        const idDate = new Date(idTs);
+        if (!isNaN(idDate.getTime()) && idDate.getFullYear() >= 2020 && idDate.getFullYear() <= 2035) {
+          d = idDate;
+        }
+      }
+    }
+  }
+
+  if (!d && dateStr) {
+    d = new Date(dateStr);
+  }
+
+  if (!d || isNaN(d.getTime())) return String(dateStr || "—");
+
+  const formattedDate = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const hasTime = typeof dateStr === "string" && (dateStr.includes("T") || dateStr.includes(":") || !isPlainDate);
+  const formattedTime = (hasTime || d)
+    ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true })
+    : "";
+
+  return formattedTime ? `${formattedDate}, ${formattedTime}` : formattedDate;
 };
 
 // Helper: Calculate if a date is today, past, or future relative to reference date (timezone-safe)
@@ -55,6 +164,83 @@ const getDayDiff = (targetDateStr, referenceDateStr) => {
   target.setHours(0, 0, 0, 0);
 
   return Math.round((target.getTime() - ref.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+// Helper to parse any transaction date format (YYYY-MM-DD, ISO string, timestamp) to local milliseconds
+const getTransactionTimestamp = (d) => {
+  if (!d) return NaN;
+  if (typeof d === "number") return d;
+  if (typeof d === "string") {
+    const trimmed = d.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [y, m, day] = trimmed.split("-").map(Number);
+      return new Date(y, m - 1, day, 12, 0, 0).getTime();
+    }
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) return parsed.getTime();
+    if (trimmed.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+      const [y, m, day] = trimmed.slice(0, 10).split("-").map(Number);
+      return new Date(y, m - 1, day, 12, 0, 0).getTime();
+    }
+  }
+  return NaN;
+};
+
+// Helper to get local YYYY-MM-DD string from a Date or ISO/date string in local timezone
+const getLocalDateString = (d = new Date()) => {
+  if (!d) return "";
+  if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d.trim())) {
+    return d.trim();
+  }
+  const ts = getTransactionTimestamp(d);
+  if (isNaN(ts)) {
+    if (typeof d === "string" && d.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(d)) {
+      return d.slice(0, 10);
+    }
+    return "";
+  }
+  const dt = new Date(ts);
+  const year = dt.getFullYear();
+  const month = String(dt.getMonth() + 1).padStart(2, "0");
+  const day = String(dt.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+// Helper to compute start & end timestamp boundaries (00:00:00 to 23:59:59) for history date presets in local timezone
+const getDateRangeBoundaries = (filterType, customStart, customEnd) => {
+  const now = new Date();
+  const todayStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+  const todayEndMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
+
+  if (filterType === "Today") {
+    return { startMs: todayStartMs, endMs: todayEndMs };
+  }
+  if (filterType === "Yesterday") {
+    const yestStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0).getTime();
+    const yestEndMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999).getTime();
+    return { startMs: yestStartMs, endMs: yestEndMs };
+  }
+  if (filterType === "This Week") {
+    // Current week starting from Monday
+    const day = now.getDay();
+    const diffToMonday = now.getDate() - day + (day === 0 ? -6 : 1);
+    const mondayStartMs = new Date(now.getFullYear(), now.getMonth(), diffToMonday, 0, 0, 0, 0).getTime();
+    return { startMs: mondayStartMs, endMs: todayEndMs };
+  }
+  if (filterType === "This Month") {
+    const monthStartMs = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+    return { startMs: monthStartMs, endMs: todayEndMs };
+  }
+  if (filterType === "Custom") {
+    const sDate = customStart ? getLocalDateString(customStart) : getLocalDateString(now);
+    const eDate = customEnd ? getLocalDateString(customEnd) : getLocalDateString(now);
+    const [sy, sm, sd] = (sDate || getLocalDateString(now)).split("-").map(Number);
+    const [ey, em, ed] = (eDate || getLocalDateString(now)).split("-").map(Number);
+    const sMs = new Date(sy, sm - 1, sd, 0, 0, 0, 0).getTime();
+    const eMs = new Date(ey, em - 1, ed, 23, 59, 59, 999).getTime();
+    return { startMs: sMs, endMs: eMs };
+  }
+  return { startMs: todayStartMs, endMs: todayEndMs };
 };
 
 const SummaryCard = ({ icon: Icon, title, value, subtext, accentClass, className = "" }) => (
@@ -84,17 +270,25 @@ const Collection = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState("Today"); // "Today" or "Overdue"
+  const [activeTab, setActiveTab] = useState("Today"); // "Today", "Overdue", or "History"
   const [overdueFilter, setOverdueFilter] = useState("All"); // "All", "1", "2", "3+"
   const [search, setSearch] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(getLocalDateString(new Date()));
+
+  // Collection History filter and pagination states
+  const [historyDateFilter, setHistoryDateFilter] = useState("Today"); // "Today", "Yesterday", "This Week", "This Month", "Custom"
+  const [historyCustomStart, setHistoryCustomStart] = useState(getLocalDateString(new Date()));
+  const [historyCustomEnd, setHistoryCustomEnd] = useState(getLocalDateString(new Date()));
+  const [historyPage, setHistoryPage] = useState(1);
+  const [selectedHistoryTx, setSelectedHistoryTx] = useState(null);
 
   const [customers, setCustomers] = useState([]);
+  const [paymentHistoryList, setPaymentHistoryList] = useState([]);
 
   // Collect Payment Modal states
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [collectAmount, setCollectAmount] = useState("");
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(getLocalDateString(new Date()));
   const [paymentMode, setPaymentMode] = useState("Cash");
   const [transactionId, setTransactionId] = useState("");
   const [remarks, setRemarks] = useState("");
@@ -108,7 +302,10 @@ const Collection = () => {
   // Amount Collected Successfully Modal state
   const [confirmedTransaction, setConfirmedTransaction] = useState(null);
 
-  // Load customer data
+  // Midway Closure Modal state
+  const [showMidwayModal, setShowMidwayModal] = useState(false);
+
+  // Load customer and payment history data
   const loadCustomers = () => {
     try {
       const list = JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]");
@@ -118,23 +315,36 @@ const Collection = () => {
     }
   };
 
+  const loadPaymentHistory = () => {
+    try {
+      const hist = JSON.parse(localStorage.getItem("motoLendPaymentHistory") || "[]");
+      setPaymentHistoryList(hist);
+    } catch {
+      setPaymentHistoryList([]);
+    }
+  };
+
   useEffect(() => {
     loadCustomers();
-    const handleStorageChange = () => loadCustomers();
+    loadPaymentHistory();
+    const handleStorageChange = () => {
+      loadCustomers();
+      loadPaymentHistory();
+    };
     window.addEventListener("storage", handleStorageChange);
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   // Lock background body scroll when any modal is open, and restore when closed
   useEffect(() => {
-    if (selectedCustomer || confirmedTransaction || detailsCustomer) {
+    if (selectedCustomer || confirmedTransaction || detailsCustomer || selectedHistoryTx || showMidwayModal) {
       const originalOverflow = document.body.style.overflow;
       document.body.style.overflow = "hidden";
       return () => {
         document.body.style.overflow = originalOverflow;
       };
     }
-  }, [selectedCustomer, confirmedTransaction, detailsCustomer]);
+  }, [selectedCustomer, confirmedTransaction, detailsCustomer, selectedHistoryTx, showMidwayModal]);
 
   // Compute processed customers and schedules
   const processedCustomers = useMemo(() => {
@@ -242,14 +452,152 @@ const Collection = () => {
 
   const currentDisplayList = getFilteredList(activeTab === "Today" ? todayList : overdueList);
 
-  // KPIs for main Collection page
-  const totalTodayDueAmount = todayList.reduce((sum, c) => sum + c.totalDueToday, 0);
-  const totalOverdueAmount = overdueList.reduce((sum, c) => sum + c.totalOverdue, 0);
+  // Date range boundaries for Collection History
+  const historyDateRange = useMemo(() => {
+    return getDateRangeBoundaries(historyDateFilter, historyCustomStart, historyCustomEnd);
+  }, [historyDateFilter, historyCustomStart, historyCustomEnd]);
 
-  const paymentHistory = JSON.parse(localStorage.getItem("motoLendPaymentHistory") || "[]");
-  const todaysPayments = paymentHistory.filter((p) => p.date && p.date.startsWith(date));
-  const collectedTodayAmount = todaysPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-  const collectedTodayCount = todaysPayments.length;
+  // Validate custom date range
+  const isCustomRangeInvalid = useMemo(() => {
+    if (historyDateFilter !== "Custom") return false;
+    return historyCustomStart && historyCustomEnd && historyCustomStart > historyCustomEnd;
+  }, [historyDateFilter, historyCustomStart, historyCustomEnd]);
+
+  // Authoritative collection transactions for Collection History and KPI calculations
+  // Excludes failed/cancelled/reversed and ensures valid amounts
+  const collectionTransactions = useMemo(() => {
+    return (paymentHistoryList || []).filter((p) => {
+      if (!p) return false;
+      const status = (p.status || "").toLowerCase();
+      if (status === "failed" || status === "cancelled" || status === "reversed") return false;
+      return true;
+    });
+  }, [paymentHistoryList]);
+
+  // Filtered transactions for the selected date range in Collection History
+  const dateRangeFilteredTransactions = useMemo(() => {
+    if (isCustomRangeInvalid) return [];
+    const { startMs, endMs } = historyDateRange;
+
+    return collectionTransactions.filter((p) => {
+      if (!p || !p.date) return false;
+      const ts = getTransactionTimestamp(p.date);
+      if (isNaN(ts)) {
+        // Fallback to local date string matching
+        const txDateStr = getLocalDateString(p.date);
+        const sStr = getLocalDateString(new Date(startMs));
+        const eStr = getLocalDateString(new Date(endMs));
+        return txDateStr >= sStr && txDateStr <= eStr;
+      }
+      return ts >= startMs && ts <= endMs;
+    });
+  }, [collectionTransactions, historyDateRange, isCustomRangeInvalid]);
+
+  // Collection History Search & Date Filtered List
+  const filteredHistoryList = useMemo(() => {
+    let list = dateRangeFilteredTransactions;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter((p) => {
+        const name = (p.customerName || "").toLowerCase();
+        const loanId = (p.loanId || "").toLowerCase();
+        const custId = (p.customerId || "").toLowerCase();
+        const mode = (p.mode || "").toLowerCase();
+        const txId = (p.transactionId || p.transactionRef || p.id || "").toLowerCase();
+        const instRef = String(p.installmentNumber || "").toLowerCase();
+        return (
+          name.includes(q) ||
+          loanId.includes(q) ||
+          custId.includes(q) ||
+          mode.includes(q) ||
+          txId.includes(q) ||
+          instRef.includes(q)
+        );
+      });
+    }
+
+    // Sort newest first by collection date & time
+    return [...list].sort((a, b) => {
+      const tsB = getTransactionTimestamp(b.date) || 0;
+      const tsA = getTransactionTimestamp(a.date) || 0;
+      return tsB - tsA;
+    });
+  }, [dateRangeFilteredTransactions, search]);
+
+  // KPI Calculations for Today Collection & Overdue Collections sections:
+  // - Today's Due: Total amount due for today's scheduled instalments
+  // - Overdue: Total unpaid overdue amount
+  // - Collected Today: Total amount actually collected today (current local day)
+  const todayDueKPI = useMemo(() => {
+    return todayList.reduce((sum, c) => sum + (c.totalDueToday || 0), 0);
+  }, [todayList]);
+
+  const overdueKPI = useMemo(() => {
+    return overdueList.reduce((sum, c) => sum + (c.totalOverdue || 0), 0);
+  }, [overdueList]);
+
+  const { collectedTodayAmount, collectedTodayCount } = useMemo(() => {
+    const now = new Date();
+    const todayStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+    const todayEndMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
+
+    const txsToday = collectionTransactions.filter((p) => {
+      if (!p || !p.date) return false;
+      const ts = getTransactionTimestamp(p.date);
+      if (isNaN(ts)) {
+        return getLocalDateString(p.date) === getLocalDateString(now);
+      }
+      return ts >= todayStartMs && ts <= todayEndMs;
+    });
+    const total = txsToday.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    return { collectedTodayAmount: total, collectedTodayCount: txsToday.length };
+  }, [collectionTransactions]);
+
+  // Three Collection History KPIs calculated strictly from the filtered dataset (date filter + search)
+  // 1. Total Collection — Total amount collected in the filtered history records
+  // 2. Principal Collected — Principal portion actually received in those records
+  // 3. Interest Collected — Interest portion actually received in those records
+  const totalCollectionKPI = useMemo(() => {
+    return filteredHistoryList.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  }, [filteredHistoryList]);
+
+  const principalCollectedKPI = useMemo(() => {
+    return filteredHistoryList.reduce((sum, p) => {
+      if (p.principal !== undefined && p.principal !== null) {
+        return sum + Number(p.principal || 0);
+      }
+      if (Array.isArray(p.allocations) && p.allocations.length > 0) {
+        const sumAllocPrin = p.allocations.reduce(
+          (s, a) => s + Number(a.principalPaid || Math.max(0, Number(a.allocated || 0) - Number(a.interestPaid || 0))),
+          0
+        );
+        return sum + sumAllocPrin;
+      }
+      return sum + Number(p.amount || 0);
+    }, 0);
+  }, [filteredHistoryList]);
+
+  const interestCollectedKPI = useMemo(() => {
+    return filteredHistoryList.reduce((sum, p) => {
+      if (p.interest !== undefined && p.interest !== null) {
+        return sum + Number(p.interest || 0);
+      }
+      if (Array.isArray(p.allocations) && p.allocations.length > 0) {
+        const sumAllocInt = p.allocations.reduce((s, a) => s + Number(a.interestPaid || 0), 0);
+        return sum + sumAllocInt;
+      }
+      return sum;
+    }, 0);
+  }, [filteredHistoryList]);
+
+  // Pagination for Collection History (Exactly 5 items per page)
+  const historyPageSize = 5;
+  const historyTotalPages = Math.max(1, Math.ceil(filteredHistoryList.length / historyPageSize));
+  const currentHistoryPage = Math.min(Math.max(1, historyPage), historyTotalPages);
+  const paginatedHistoryList = useMemo(() => {
+    const start = (currentHistoryPage - 1) * historyPageSize;
+    return filteredHistoryList.slice(start, start + historyPageSize);
+  }, [filteredHistoryList, currentHistoryPage, historyPageSize]);
 
   const handleCollectClick = (c) => {
     setSelectedCustomer(c);
@@ -456,9 +804,24 @@ const Collection = () => {
       );
       localStorage.setItem("motoLendCustomersList_data", JSON.stringify(updatedCustomersList));
 
-      // 2. Add single transaction to payment history
-      const txId = `PAY-${Date.now()}`;
-      const txnRef = `TXN-${Date.now().toString().slice(-8)}`;
+      // 2. Add single transaction to payment history with precise current timestamp
+      const now = new Date();
+      const txId = `PAY-${now.getTime()}`;
+      const txnRef = `TXN-${now.getTime().toString().slice(-8)}`;
+
+      // Combine user-chosen paymentDate (if specified) with current local time, or use now.toISOString()
+      let finalDateTimeStr = now.toISOString();
+      if (paymentDate) {
+        const isPlainDate = /^\d{4}-\d{2}-\d{2}$/.test(paymentDate.trim());
+        if (isPlainDate) {
+          const [y, m, d] = paymentDate.trim().split("-").map(Number);
+          const customDt = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+          finalDateTimeStr = customDt.toISOString();
+        } else {
+          finalDateTimeStr = paymentDate;
+        }
+      }
+
       const paymentRecord = {
         id: txId,
         transactionRef: txnRef,
@@ -469,7 +832,9 @@ const Collection = () => {
           ? appliedAllocations[0]?.installmentNumber
           : (appliedAllocations.map((a) => a.installmentNumber).join(", ") || appliedAllocations[0]?.installmentNumber),
         installmentNumbers: appliedAllocations.map((a) => a.installmentNumber),
-        date: paymentDate || new Date().toISOString(),
+        date: finalDateTimeStr,
+        createdAt: now.toISOString(),
+        timestamp: now.getTime(),
         amount: amt,
         principal: totalPrincipalRecovered,
         interest: totalInterestEarned,
@@ -536,7 +901,10 @@ const Collection = () => {
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setHistoryPage(1);
+              }}
               placeholder="Search Customer / Vehicle..."
               className="h-10 sm:h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-4 text-xs sm:text-[14px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-2xs transition-all"
             />
@@ -551,15 +919,25 @@ const Collection = () => {
               className="h-10 sm:h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 sm:pr-4 text-xs sm:text-[14px] font-medium text-slate-700 shadow-2xs outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] transition-all cursor-pointer"
             />
           </div>
+
+          {/* Midway Closure Button */}
+          <button
+            type="button"
+            onClick={() => setShowMidwayModal(true)}
+            className="flex h-10 sm:h-11 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 text-xs sm:text-sm font-bold text-white hover:bg-amber-700 shadow-2xs transition-colors shrink-0 cursor-pointer"
+          >
+            <Coins className="h-4 w-4" />
+            <span>Midway Closure</span>
+          </button>
         </div>
       </div>
 
       {/* SEGMENTED SWITCH & FILTERS ROW */}
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center mb-5 sm:mb-6 gap-3 sm:gap-4 shrink-0">
-        <div className="flex w-full sm:w-auto bg-slate-100 p-1 rounded-xl shadow-2xs border border-slate-200 shrink-0">
+        <div className="flex w-full sm:w-auto bg-slate-100 p-1 rounded-xl shadow-2xs border border-slate-200 shrink-0 overflow-x-auto">
           <button
             onClick={() => setActiveTab("Today")}
-            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-5 md:px-6 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 ${
+            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${
               activeTab === "Today"
                 ? "bg-[#006052] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
@@ -576,7 +954,7 @@ const Collection = () => {
           </button>
           <button
             onClick={() => setActiveTab("Overdue")}
-            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-5 md:px-6 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 ${
+            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${
               activeTab === "Overdue"
                 ? "bg-[#006052] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
@@ -589,6 +967,26 @@ const Collection = () => {
               }`}
             >
               {overdueList.length}
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("History");
+              setHistoryPage(1);
+            }}
+            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${
+              activeTab === "History"
+                ? "bg-[#006052] text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
+            }`}
+          >
+            <span className="truncate">Collection History</span>
+            <span
+              className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] sm:text-[12px] font-semibold shrink-0 ${
+                activeTab === "History" ? "bg-white/20 text-white" : "bg-white text-slate-500 shadow-2xs"
+              }`}
+            >
+              {filteredHistoryList.length}
             </span>
           </button>
         </div>
@@ -612,205 +1010,572 @@ const Collection = () => {
         )}
       </div>
 
-      {/* RESPONSIVE KPIS: 1 Col on Mobile, 2 Cols on Tablet, 3 Cols (Row) on Desktop */}
+      {/* DYNAMIC KPI CARDS BASED ON SELECTED COLLECTION SECTION */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 shrink-0 mb-6">
-        <SummaryCard
-          icon={Wallet}
-          title="Today's Due"
-          value={formatCurrency(totalTodayDueAmount)}
-          subtext={`${todayList.length} ${todayList.length === 1 ? "Customer" : "Customers"}`}
-          accentClass="bg-emerald-50 text-emerald-600 border border-emerald-100"
-        />
-        <SummaryCard
-          icon={AlertCircle}
-          title="Overdue"
-          value={formatCurrency(totalOverdueAmount)}
-          subtext={`${overdueList.length} ${overdueList.length === 1 ? "Customer" : "Customers"}`}
-          accentClass="bg-red-50 text-red-600 border border-red-100"
-        />
-        <SummaryCard
-          icon={CheckCircle}
-          title="Collected Today"
-          value={formatCurrency(collectedTodayAmount)}
-          subtext={`${collectedTodayCount} ${collectedTodayCount === 1 ? "Payment" : "Payments"}`}
-          accentClass="bg-teal-50 text-teal-600 border border-teal-100"
-          className="sm:col-span-2 lg:col-span-1"
-        />
-      </div>
-
-      {/* MOBILE CARDS VIEW (<md) */}
-      <div className="block md:hidden space-y-3 mb-6">
-        {currentDisplayList.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 text-center shadow-2xs">
-            <div className="flex flex-col items-center justify-center text-slate-400">
-              <p className="text-sm font-semibold text-slate-600">No collections for this date</p>
-              <p className="text-xs mt-1">There are no pending collections for the selected date.</p>
-            </div>
-          </div>
+        {activeTab === "History" ? (
+          <>
+            <SummaryCard
+              icon={Wallet}
+              title="Total Collection"
+              value={formatCurrency(totalCollectionKPI)}
+              subtext={`${filteredHistoryList.length} ${filteredHistoryList.length === 1 ? "Record" : "Records"}`}
+              accentClass="bg-emerald-50 text-emerald-700 border border-emerald-100"
+            />
+            <SummaryCard
+              icon={Building2}
+              title="Principal Collected"
+              value={formatCurrency(principalCollectedKPI)}
+              subtext="Actual received"
+              accentClass="bg-teal-50 text-teal-700 border border-teal-100"
+            />
+            <SummaryCard
+              icon={Percent}
+              title="Interest Collected"
+              value={formatCurrency(interestCollectedKPI)}
+              subtext="Actual received"
+              accentClass="bg-amber-50 text-amber-700 border border-amber-100"
+              className="sm:col-span-2 lg:col-span-1"
+            />
+          </>
         ) : (
-          currentDisplayList.map((c) => {
-            const dueAmt = c.statusText === "Collected"
-              ? (activeTab === "Today" ? c.originalDueToday : c.originalOverdue)
-              : (activeTab === "Today" ? c.totalDueToday : c.totalOverdue);
-
-            return (
-              <div key={c.loanId} className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 transition-shadow hover:shadow-xs">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-bold text-slate-900 text-sm sm:text-base truncate">{c.customer?.name}</h3>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 mt-0.5">
-                      <span className="font-medium text-slate-600">{c.customerId}</span>
-                      <span>•</span>
-                      <span className="font-semibold text-slate-700">{c.loanId}</span>
-                      {c.vehicle?.regNo && (
-                        <>
-                          <span>•</span>
-                          <span className="truncate">{c.vehicle?.regNo}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="shrink-0">
-                    {c.statusText === "Pending" && (
-                      <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-500/20">
-                        Pending
-                      </span>
-                    )}
-                    {c.statusText === "Collected" && (
-                      <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-                        Collected
-                      </span>
-                    )}
-                    {c.statusText === "Partial" && (
-                      <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                        Partial
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-lg bg-slate-50 p-2.5 flex items-center justify-between border border-slate-100">
-                  <span className="text-xs font-semibold text-slate-500">
-                    {activeTab === "Today" ? "Due Amount" : "Overdue Amount"}
-                  </span>
-                  <span className="text-base font-bold text-slate-900">
-                    {formatCurrency(dueAmt)}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 pt-1">
-                  {c.statusText !== "Collected" && (
-                    <button
-                      onClick={() => handleCollectClick(c)}
-                      className="flex-1 rounded-lg bg-[#006052] py-2 px-3 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors text-center"
-                    >
-                      Collect Payment
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleView(c, activeTab)}
-                    className="flex-1 rounded-lg bg-white border border-slate-300 py-2 px-3 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors text-center"
-                  >
-                    View Details
-                  </button>
-                </div>
-              </div>
-            );
-          })
+          <>
+            <SummaryCard
+              icon={CalendarIcon}
+              title="Today's Due"
+              value={formatCurrency(todayDueKPI)}
+              subtext={`${todayList.length} ${todayList.length === 1 ? "Customer" : "Customers"}`}
+              accentClass="bg-teal-50 text-[#006052] border border-teal-100"
+            />
+            <SummaryCard
+              icon={Clock}
+              title="Overdue"
+              value={formatCurrency(overdueKPI)}
+              subtext={`${overdueList.length} ${overdueList.length === 1 ? "Customer" : "Customers"}`}
+              accentClass="bg-red-50 text-red-700 border border-red-100"
+            />
+            <SummaryCard
+              icon={CheckCircle2}
+              title="Collected Today"
+              value={formatCurrency(collectedTodayAmount)}
+              subtext={`${collectedTodayCount} ${collectedTodayCount === 1 ? "Payment" : "Payments"}`}
+              accentClass="bg-emerald-50 text-emerald-700 border border-emerald-100"
+              className="sm:col-span-2 lg:col-span-1"
+            />
+          </>
         )}
       </div>
 
-      {/* DESKTOP/TABLET TABLE VIEW (hidden md:block) */}
-      <div className="hidden md:block rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-6">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
-              <tr>
-                <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
-                  Customer ID
-                </th>
-                <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
-                  Customer
-                </th>
-                <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
-                  {activeTab === "Today" ? "Due Amount" : "Overdue Amount"}
-                </th>
-                <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
-                  Status
-                </th>
-                <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200 text-right">
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {currentDisplayList.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-12 text-center">
-                    <div className="flex flex-col items-center justify-center text-slate-400">
-                      <p className="text-[15px] font-semibold text-slate-600">No collections for this date</p>
-                      <p className="text-[13px] mt-1">There are no pending collections for the selected date.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                currentDisplayList.map((c) => (
-                  <tr key={c.loanId} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <p className="text-[14px] text-slate-600 font-bold">{c.customerId}</p>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <p className="font-bold text-[14px] text-slate-900">{c.customer?.name}</p>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <p className="font-bold text-[14px] text-slate-900">
-                        {c.statusText === "Collected"
-                          ? `${formatCurrency(activeTab === "Today" ? c.originalDueToday : c.originalOverdue)}`
-                          : formatCurrency(activeTab === "Today" ? c.totalDueToday : c.totalOverdue)}
-                      </p>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {c.statusText === "Pending" && (
-                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[12px] font-bold text-slate-700 ring-1 ring-inset ring-slate-500/20">
-                          Pending
-                        </span>
-                      )}
-                      {c.statusText === "Collected" && (
-                        <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-1 text-[12px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-                          Collected
-                        </span>
-                      )}
-                      {c.statusText === "Partial" && (
-                        <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-[12px] font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                          Partial
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-right whitespace-nowrap">
-                      <div className="flex justify-end gap-2">
-                        {c.statusText !== "Collected" && (
-                          <button
-                            onClick={() => handleCollectClick(c)}
-                            className="rounded-md bg-[#006052] px-5 py-2.5 text-[13px] font-bold text-white shadow-sm hover:bg-[#004d43] transition-colors"
-                          >
-                            Collect Payment
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleView(c, activeTab)}
-                          className="rounded-md bg-white border border-slate-300 px-5 py-2.5 text-[13px] font-bold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 transition-colors"
-                        >
-                          View Details
-                        </button>
+      {/* =========================================================================
+          COLLECTION HISTORY VIEW (activeTab === "History")
+      ========================================================================= */}
+      {activeTab === "History" ? (
+        <div className="space-y-4 mb-6">
+          {/* COMPACT DATE FILTERS & CUSTOM DATE RANGE CONTROLS */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 sm:p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              {[
+                { key: "Today", label: "Today" },
+                { key: "Yesterday", label: "Yesterday" },
+                { key: "This Week", label: "This Week" },
+                { key: "This Month", label: "This Month" },
+                { key: "Custom", label: "Custom Date Range" },
+              ].map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => {
+                    setHistoryDateFilter(filter.key);
+                    setHistoryPage(1);
+                  }}
+                  className={`px-3 py-1.5 text-xs sm:text-[13px] font-bold rounded-lg transition-all border ${
+                    historyDateFilter === filter.key
+                      ? "bg-slate-900 border-slate-900 text-white shadow-2xs"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom Date Range Pickers (Start Date & End Date) */}
+            {historyDateFilter === "Custom" && (
+              <div className="flex flex-wrap items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-slate-500">From:</span>
+                  <input
+                    type="date"
+                    value={historyCustomStart}
+                    onChange={(e) => {
+                      setHistoryCustomStart(e.target.value);
+                      setHistoryPage(1);
+                    }}
+                    className="h-8 sm:h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-2xs outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052]"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-slate-500">To:</span>
+                  <input
+                    type="date"
+                    value={historyCustomEnd}
+                    onChange={(e) => {
+                      setHistoryCustomEnd(e.target.value);
+                      setHistoryPage(1);
+                    }}
+                    className="h-8 sm:h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-2xs outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052]"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Validation alert if custom start date is later than end date */}
+          {isCustomRangeInvalid && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-xs font-semibold text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+              <span>Start Date cannot be later than End Date. Please adjust the date range.</span>
+            </div>
+          )}
+
+          {/* MOBILE CARDS VIEW FOR HISTORY (<md) */}
+          <div className="block md:hidden space-y-3">
+            {paginatedHistoryList.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 text-center shadow-2xs">
+                <div className="flex flex-col items-center justify-center text-slate-400">
+                  <FileText className="h-8 w-8 text-slate-300 mb-2" />
+                  <p className="text-sm font-semibold text-slate-700">No collection records found for this period.</p>
+                  <p className="text-xs text-slate-400 mt-1">Try selecting a different date range or adjusting your search.</p>
+                </div>
+              </div>
+            ) : (
+              paginatedHistoryList.map((tx) => {
+                const prin = tx.principal !== undefined ? Number(tx.principal || 0) : (
+                  Array.isArray(tx.allocations)
+                    ? tx.allocations.reduce((s, a) => s + Number(a.principalPaid || 0), 0)
+                    : Number(tx.amount || 0)
+                );
+                const intr = tx.interest !== undefined ? Number(tx.interest || 0) : (
+                  Array.isArray(tx.allocations)
+                    ? tx.allocations.reduce((s, a) => s + Number(a.interestPaid || 0), 0)
+                    : 0
+                );
+
+                return (
+                  <div
+                    key={tx.id || tx.transactionRef || `${tx.loanId}-${tx.date}`}
+                    onClick={() => setSelectedHistoryTx(tx)}
+                    className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 transition-all hover:border-[#006052]/40 hover:shadow-xs cursor-pointer active:bg-slate-50"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-bold text-slate-900 text-sm truncate">{tx.customerName || "Customer"}</h3>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 mt-0.5">
+                          <span className="font-semibold text-slate-700">{tx.loanId}</span>
+                          {tx.customerId && (
+                            <>
+                              <span>•</span>
+                              <span>{tx.customerId}</span>
+                            </>
+                          )}
+                          <span>•</span>
+                          <span>Instalment {formatInstallmentDisplay(tx)}</span>
+                        </div>
                       </div>
-                    </td>
+                      <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20 shrink-0">
+                        Collected
+                      </span>
+                    </div>
+
+                    <div className="rounded-lg bg-slate-50 p-2.5 flex items-center justify-between border border-slate-100">
+                      <div>
+                        <span className="text-[11px] font-medium text-slate-500 block">Amount Collected</span>
+                        <span className="text-base font-bold text-slate-900">{formatCurrency(tx.amount)}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[11px] font-medium text-slate-500 block">Mode</span>
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700">
+                          {tx.mode || "Cash"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-100 text-slate-600">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Principal / Interest</span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(prin)} / {formatCurrency(intr)}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-400 block text-[10px]">Collection Date & Time</span>
+                        <span className="font-medium text-slate-700">{formatDateTime(tx.date, tx)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* DESKTOP/TABLET TABLE VIEW FOR HISTORY (hidden md:block) */}
+          <div className="hidden md:block rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm">
+                      Collection Date & Time
+                    </th>
+                    <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm">
+                      Customer Name
+                    </th>
+                    <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm">
+                      Loan ID
+                    </th>
+                    <th className="px-3 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm text-center">
+                      Instalment
+                    </th>
+                    <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm text-right">
+                      Amount Collected
+                    </th>
+                    <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm text-right">
+                      Principal
+                    </th>
+                    <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm text-right">
+                      Interest
+                    </th>
+                    <th className="px-3 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm text-center">
+                      Payment Mode
+                    </th>
+                    <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm text-center">
+                      Status
+                    </th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {paginatedHistoryList.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center">
+                        <div className="flex flex-col items-center justify-center text-slate-400">
+                          <FileText className="h-9 w-9 text-slate-300 mb-2" />
+                          <p className="text-[15px] font-semibold text-slate-700">No collection records found for this period.</p>
+                          <p className="text-[13px] text-slate-400 mt-1">Try selecting a different date range or adjusting your search filter.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedHistoryList.map((tx) => {
+                      const prin = tx.principal !== undefined ? Number(tx.principal || 0) : (
+                        Array.isArray(tx.allocations)
+                          ? tx.allocations.reduce((s, a) => s + Number(a.principalPaid || 0), 0)
+                          : Number(tx.amount || 0)
+                      );
+                      const intr = tx.interest !== undefined ? Number(tx.interest || 0) : (
+                        Array.isArray(tx.allocations)
+                          ? tx.allocations.reduce((s, a) => s + Number(a.interestPaid || 0), 0)
+                          : 0
+                      );
+
+                      return (
+                        <tr
+                          key={tx.id || tx.transactionRef || `${tx.loanId}-${tx.date}`}
+                          onClick={() => setSelectedHistoryTx(tx)}
+                          className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                        >
+                          <td className="px-4 py-3.5 whitespace-nowrap text-xs font-medium text-slate-700">
+                            {formatDateTime(tx.date, tx)}
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            <span className="font-bold text-[13px] text-slate-900 group-hover:text-[#006052] transition-colors">
+                              {tx.customerName || "Customer"}
+                            </span>
+                            {tx.customerId && (
+                              <p className="text-[11px] text-slate-400 font-medium">{tx.customerId}</p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-xs font-semibold text-slate-700">
+                            {tx.loanId}
+                          </td>
+                          <td className="px-3 py-3.5 whitespace-nowrap text-xs font-bold text-slate-800 text-center font-mono">
+                            {formatInstallmentDisplay(tx)}
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-xs font-bold text-slate-900 text-right">
+                            {formatCurrency(tx.amount)}
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-xs font-medium text-slate-600 text-right">
+                            {formatCurrency(prin)}
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-xs font-medium text-slate-600 text-right">
+                            {formatCurrency(intr)}
+                          </td>
+                          <td className="px-3 py-3.5 whitespace-nowrap text-center">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                              {tx.mode || "Cash"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap text-center">
+                            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                              Collected
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* PAGINATION CONTROLS FOR HISTORY */}
+          {historyTotalPages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+              <p className="text-xs text-slate-500 font-medium">
+                Showing <span className="font-bold text-slate-700">{(currentHistoryPage - 1) * historyPageSize + 1}</span> to{" "}
+                <span className="font-bold text-slate-700">
+                  {Math.min(currentHistoryPage * historyPageSize, filteredHistoryList.length)}
+                </span>{" "}
+                of <span className="font-bold text-slate-700">{filteredHistoryList.length}</span> records
+              </p>
+              <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap justify-center">
+                <button
+                  type="button"
+                  onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                  disabled={currentHistoryPage === 1}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>Previous</span>
+                </button>
+
+                {/* Page Number Buttons */}
+                {Array.from({ length: historyTotalPages }, (_, i) => i + 1)
+                  .filter((page) => {
+                    if (historyTotalPages <= 7) return true;
+                    if (page === 1 || page === historyTotalPages) return true;
+                    return Math.abs(page - currentHistoryPage) <= 1;
+                  })
+                  .reduce((acc, page, idx, arr) => {
+                    if (idx > 0 && page - arr[idx - 1] > 1) {
+                      acc.push("ellipsis-" + page);
+                    }
+                    acc.push(page);
+                    return acc;
+                  }, [])
+                  .map((item) => {
+                    if (typeof item === "string") {
+                      return (
+                        <span key={item} className="px-1 text-xs text-slate-400 font-semibold select-none">
+                          …
+                        </span>
+                      );
+                    }
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setHistoryPage(item)}
+                        className={`h-7 min-w-[28px] px-2 text-xs font-bold rounded-lg transition-colors border ${
+                          currentHistoryPage === item
+                            ? "bg-[#006052] border-[#006052] text-white shadow-2xs"
+                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    );
+                  })}
+
+                <button
+                  type="button"
+                  onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
+                  disabled={currentHistoryPage >= historyTotalPages}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      ) : (
+        <>
+          {/* MOBILE CARDS VIEW (<md) FOR TODAY / OVERDUE */}
+          <div className="block md:hidden space-y-3 mb-6">
+            {currentDisplayList.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 text-center shadow-2xs">
+                <div className="flex flex-col items-center justify-center text-slate-400">
+                  <p className="text-sm font-semibold text-slate-600">No collections for this date</p>
+                  <p className="text-xs mt-1">There are no pending collections for the selected date.</p>
+                </div>
+              </div>
+            ) : (
+              currentDisplayList.map((c) => {
+                const dueAmt = c.statusText === "Collected"
+                  ? (activeTab === "Today" ? c.originalDueToday : c.originalOverdue)
+                  : (activeTab === "Today" ? c.totalDueToday : c.totalOverdue);
+
+                return (
+                  <div key={c.loanId} className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 transition-shadow hover:shadow-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-bold text-slate-900 text-sm sm:text-base truncate">{c.customer?.name}</h3>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 mt-0.5">
+                          <span className="font-medium text-slate-600">{c.customerId}</span>
+                          <span>•</span>
+                          <span className="font-semibold text-slate-700">{c.loanId}</span>
+                          {c.vehicle?.regNo && (
+                            <>
+                              <span>•</span>
+                              <span className="truncate">{c.vehicle?.regNo}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="shrink-0">
+                        {c.statusText === "Pending" && (
+                          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-500/20">
+                            Pending
+                          </span>
+                        )}
+                        {c.statusText === "Collected" && (
+                          <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                            Collected
+                          </span>
+                        )}
+                        {c.statusText === "Partial" && (
+                          <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                            Partial
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg bg-slate-50 p-2.5 flex items-center justify-between border border-slate-100">
+                      <span className="text-xs font-semibold text-slate-500">
+                        {activeTab === "Today" ? "Due Amount" : "Overdue Amount"}
+                      </span>
+                      <span className="text-base font-bold text-slate-900">
+                        {formatCurrency(dueAmt)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      {c.statusText !== "Collected" && (
+                        <button
+                          onClick={() => handleCollectClick(c)}
+                          className="flex-1 rounded-lg bg-[#006052] py-2 px-3 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors text-center"
+                        >
+                          Collect Payment
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleView(c, activeTab)}
+                        className="flex-1 rounded-lg bg-white border border-slate-300 py-2 px-3 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors text-center"
+                      >
+                        View Details
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* DESKTOP/TABLET TABLE VIEW (hidden md:block) FOR TODAY / OVERDUE */}
+          <div className="hidden md:block rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-6">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
+                      Customer ID
+                    </th>
+                    <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
+                      Customer
+                    </th>
+                    <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
+                      {activeTab === "Today" ? "Due Amount" : "Overdue Amount"}
+                    </th>
+                    <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
+                      Status
+                    </th>
+                    <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200 text-right">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {currentDisplayList.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-12 text-center">
+                        <div className="flex flex-col items-center justify-center text-slate-400">
+                          <p className="text-[15px] font-semibold text-slate-600">No collections for this date</p>
+                          <p className="text-[13px] mt-1">There are no pending collections for the selected date.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    currentDisplayList.map((c) => (
+                      <tr key={c.loanId} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <p className="text-[14px] text-slate-600 font-bold">{c.customerId}</p>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <p className="font-bold text-[14px] text-slate-900">{c.customer?.name}</p>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <p className="font-bold text-[14px] text-slate-900">
+                            {c.statusText === "Collected"
+                              ? `${formatCurrency(activeTab === "Today" ? c.originalDueToday : c.originalOverdue)}`
+                              : formatCurrency(activeTab === "Today" ? c.totalDueToday : c.totalOverdue)}
+                          </p>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {c.statusText === "Pending" && (
+                            <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[12px] font-bold text-slate-700 ring-1 ring-inset ring-slate-500/20">
+                              Pending
+                            </span>
+                          )}
+                          {c.statusText === "Collected" && (
+                            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-1 text-[12px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                              Collected
+                            </span>
+                          )}
+                          {c.statusText === "Partial" && (
+                            <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-[12px] font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                              Partial
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                          <div className="flex justify-end gap-2">
+                            {c.statusText !== "Collected" && (
+                              <button
+                                onClick={() => handleCollectClick(c)}
+                                className="rounded-md bg-[#006052] px-5 py-2.5 text-[13px] font-bold text-white shadow-sm hover:bg-[#004d43] transition-colors"
+                              >
+                                Collect Payment
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleView(c, activeTab)}
+                              className="rounded-md bg-white border border-slate-300 px-5 py-2.5 text-[13px] font-bold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                            >
+                              View Details
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* =========================================================================
           1. COLLECT PAYMENT POPUP (REDESIGNED MATCHING REFERENCE IMAGE)
@@ -873,190 +1638,135 @@ const Collection = () => {
               </div>
 
               {/* Main Body (Scrollable with momentum touch scrolling on mobile) */}
-              <div className="px-4 sm:px-6 py-4 space-y-3.5 overflow-y-auto flex-1 overscroll-contain [webkit-overflow-scrolling:touch]">
+              <div className="px-3 sm:px-5 py-3 sm:py-3.5 space-y-3 overflow-y-auto flex-1 overscroll-contain [webkit-overflow-scrolling:touch]">
                 {/* 1. KPI Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-2.5">
                   {/* Card 1: TOTAL OUTSTANDING */}
-                  <div className="rounded-xl border border-slate-200 bg-white p-3.5 flex items-start gap-3 shadow-2xs">
-                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 shrink-0 mt-0.5">
-                      <CreditCard className="h-5 w-5" />
+                  <div className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3 flex items-start gap-2.5 shadow-2xs">
+                    <div className="p-1.5 sm:p-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 shrink-0 mt-0.5">
+                      <CreditCard className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                         TOTAL OUTSTANDING
                       </p>
-                      <p className="text-xl font-bold text-slate-900 mt-0.5">
+                      <p className="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">
                         {formatCurrency(totalOutstanding)}
                       </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
+                      <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">
                         {unpaidCount} Unpaid {unpaidCount === 1 ? "Installment" : "Installments"}
                       </p>
                     </div>
                   </div>
 
                   {/* Card 2: OVERDUE */}
-                  <div className="rounded-xl border border-red-200/80 bg-red-50/30 p-3.5 flex items-start gap-3 shadow-2xs">
-                    <div className="p-2 rounded-lg bg-red-50 text-red-600 shrink-0 mt-0.5">
-                      <Clock className="h-5 w-5" />
+                  <div className="rounded-xl border border-red-200/80 bg-red-50/30 p-2.5 sm:p-3 flex items-start gap-2.5 shadow-2xs">
+                    <div className="p-1.5 sm:p-2 rounded-lg bg-red-50 text-red-600 shrink-0 mt-0.5">
+                      <Clock className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-red-600">
                         OVERDUE
                       </p>
-                      <p className="text-xl font-bold text-red-600 mt-0.5">
+                      <p className="text-lg sm:text-xl font-bold text-red-600 mt-0.5">
                         {formatCurrency(overdueAmount)}
                       </p>
-                      <p className="text-[11px] text-red-500 mt-0.5">
+                      <p className="text-[10px] sm:text-[11px] text-red-500 mt-0.5 truncate">
                         {overdueCount} Overdue {overdueCount === 1 ? "Installment" : "Installments"}
                       </p>
                     </div>
                   </div>
 
                   {/* Card 3: DUE TODAY */}
-                  <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/30 p-3.5 flex items-start gap-3 shadow-2xs">
-                    <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700 shrink-0 mt-0.5">
-                      <CalendarIcon className="h-5 w-5" />
+                  <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/30 p-2.5 sm:p-3 flex items-start gap-2.5 shadow-2xs">
+                    <div className="p-1.5 sm:p-2 rounded-lg bg-emerald-50 text-emerald-700 shrink-0 mt-0.5">
+                      <CalendarIcon className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
                         DUE TODAY
                       </p>
-                      <p className="text-xl font-bold text-emerald-700 mt-0.5">
+                      <p className="text-lg sm:text-xl font-bold text-emerald-700 mt-0.5">
                         {formatCurrency(dueTodayAmount)}
                       </p>
-                      <p className="text-[11px] text-emerald-600 mt-0.5">
+                      <p className="text-[10px] sm:text-[11px] text-emerald-600 mt-0.5 truncate">
                         {selectedCustomer.todayInstalls?.length > 0 ? "Due Today" : "None Due Today"}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* 2. Customer & Loan Summary Bar */}
-                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                    {/* Customer */}
-                    <div className="flex items-center gap-2.5 min-w-0 pt-2 first:pt-0 md:pt-0">
-                      <User className="h-4 w-4 text-slate-400 shrink-0" />
-                      <div className="min-w-0">
-                        <span className="text-[11px] text-slate-400 block font-medium">Customer</span>
-                        <span className="text-xs font-bold text-slate-800 truncate block">
-                          {selectedCustomer.customer?.name || "—"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Loan ID */}
-                    <div className="flex items-center gap-2.5 min-w-0 pt-2 md:pt-0 md:pl-4">
-                      <FileText className="h-4 w-4 text-slate-400 shrink-0" />
-                      <div className="min-w-0">
-                        <span className="text-[11px] text-slate-400 block font-medium">Loan ID</span>
-                        <span className="text-xs font-bold text-slate-800 truncate block">
-                          {selectedCustomer.loanId || "—"}
-                        </span>
-                        <span className="text-[10px] text-slate-500 block">
-                          Amount: {formatCurrency(selectedCustomer.loanAmount)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Vehicle */}
-                    <div className="flex items-center gap-2.5 min-w-0 pt-2 md:pt-0 md:pl-4">
-                      <Car className="h-4 w-4 text-slate-400 shrink-0" />
-                      <div className="min-w-0">
-                        <span className="text-[11px] text-slate-400 block font-medium">Vehicle</span>
-                        <span className="text-xs font-bold text-slate-800 truncate block">
-                          {selectedCustomer.vehicle?.regNo || selectedCustomer.vehicle?.model || "—"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Frequency */}
-                    <div className="flex items-center gap-2.5 min-w-0 pt-2 md:pt-0 md:pl-4">
-                      <IndianRupee className="h-4 w-4 text-slate-400 shrink-0" />
-                      <div className="min-w-0">
-                        <span className="text-[11px] text-slate-400 block font-medium">Frequency</span>
-                        <span className="text-xs font-bold text-slate-800 truncate block">
-                          {selectedCustomer.paymentFrequency || selectedCustomer.loan?.paymentFrequency || "Monthly"}
-                        </span>
-                        <span className="text-[10px] text-slate-500 block">
-                          EMI: {formatCurrency(selectedCustomer.emiAmount || selectedCustomer.fullSchedule?.[0]?.emi || 0)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. Payment Amount and Dynamic Quick Actions */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+                {/* 2. Payment Amount and Dynamic Quick Actions */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 sm:gap-3 items-end">
                   {/* Amount Input (approx 4 cols) */}
                   <div className="lg:col-span-4">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                    <label className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
                       PAYMENT AMOUNT <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">₹</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">₹</span>
                       <input
                         type="number"
                         value={collectAmount}
                         onChange={(e) => setCollectAmount(e.target.value)}
                         placeholder="0.00"
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-2.5 pl-8 pr-3 text-base font-bold text-slate-900 outline-none transition-colors focus:border-[#006052] focus:bg-white focus:ring-1 focus:ring-[#006052]"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-2 pl-7 sm:pl-8 pr-3 text-sm sm:text-base font-bold text-slate-900 outline-none transition-colors focus:border-[#006052] focus:bg-white focus:ring-1 focus:ring-[#006052]"
                       />
                     </div>
                   </div>
 
                   {/* Quick Action Buttons (approx 8 cols) */}
                   <div className="lg:col-span-8">
-                    <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 items-center">
                       {/* Scenario A: Overdue and current dues exist -> Pay Overdue, Pay Current, Pay Total, Pay All */}
                       {hasOverdue && hasDueToday && (
                         <>
                           <button
                             type="button"
                             onClick={() => setCollectAmount(String(dueTodayAmount))}
-                            className="flex-1 min-w-[110px] rounded-xl border border-[#006052] bg-[#006052] text-white p-2 text-center transition-transform active:scale-[0.98] shadow-2xs hover:bg-[#004d43]"
+                            className="rounded-lg border border-teal-200 bg-teal-50/70 hover:bg-teal-100/70 text-teal-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
                           >
-                            <div className="flex items-center justify-center gap-1.5 text-xs font-semibold">
-                              <CreditCard className="h-3.5 w-3.5 opacity-90" />
-                              <span>Pay Current</span>
+                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-teal-700">
+                              <CreditCard className="h-3 w-3 shrink-0" />
+                              <span className="truncate">Pay Current</span>
                             </div>
-                            <div className="text-sm font-bold mt-0.5">{formatCurrency(dueTodayAmount)}</div>
+                            <div className="text-xs font-bold text-teal-900 mt-0.5 truncate">{formatCurrency(dueTodayAmount)}</div>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => setCollectAmount(String(overdueAmount))}
-                            className="flex-1 min-w-[110px] rounded-xl border border-slate-200 bg-white text-slate-700 p-2 text-center transition-colors hover:bg-slate-50 shadow-2xs"
+                            className="rounded-lg border border-amber-200 bg-amber-50/70 hover:bg-amber-100/70 text-amber-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
                           >
-                            <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-500">
-                              <Clock className="h-3.5 w-3.5" />
-                              <span>Pay Overdue</span>
+                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-amber-700">
+                              <Clock className="h-3 w-3 shrink-0" />
+                              <span className="truncate">Pay Overdue</span>
                             </div>
-                            <div className="text-sm font-bold text-slate-800 mt-0.5">{formatCurrency(overdueAmount)}</div>
+                            <div className="text-xs font-bold text-amber-900 mt-0.5 truncate">{formatCurrency(overdueAmount)}</div>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => setCollectAmount(String(currentTotalDue))}
-                            className="flex-1 min-w-[110px] rounded-xl border border-emerald-200 bg-emerald-50/50 text-emerald-800 p-2 text-center transition-colors hover:bg-emerald-100/50 shadow-2xs"
+                            className="rounded-lg border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70 text-emerald-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
                           >
-                            <div className="flex items-center justify-center gap-1.5 text-xs font-semibold">
-                              <Layers className="h-3.5 w-3.5 text-emerald-700" />
-                              <span>Pay Total</span>
+                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-emerald-700">
+                              <Layers className="h-3 w-3 shrink-0" />
+                              <span className="truncate">Pay Total</span>
                             </div>
-                            <div className="text-sm font-bold mt-0.5">{formatCurrency(currentTotalDue)}</div>
+                            <div className="text-xs font-bold text-emerald-900 mt-0.5 truncate">{formatCurrency(currentTotalDue)}</div>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => setCollectAmount(String(totalOutstanding))}
-                            className="flex-1 min-w-[110px] rounded-xl border border-slate-200 bg-white text-slate-700 p-2 text-center transition-colors hover:bg-slate-50 shadow-2xs"
+                            className="rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
                           >
-                            <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-700">
-                              <Users className="h-3.5 w-3.5" />
-                              <span>Pay All</span>
+                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-600">
+                              <Users className="h-3 w-3 shrink-0" />
+                              <span className="truncate">Pay All</span>
                             </div>
-                            <div className="text-sm font-bold text-emerald-800 mt-0.5">{formatCurrency(totalOutstanding)}</div>
+                            <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
                           </button>
                         </>
                       )}
@@ -1067,25 +1777,25 @@ const Collection = () => {
                           <button
                             type="button"
                             onClick={() => setCollectAmount(String(overdueAmount))}
-                            className="flex-1 min-w-[130px] rounded-xl border border-[#006052] bg-[#006052] text-white p-2 text-center transition-transform active:scale-[0.98] shadow-2xs hover:bg-[#004d43]"
+                            className="rounded-lg border border-amber-200 bg-amber-50/70 hover:bg-amber-100/70 text-amber-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
                           >
-                            <div className="flex items-center justify-center gap-1.5 text-xs font-semibold">
-                              <Clock className="h-3.5 w-3.5 opacity-90" />
-                              <span>Pay Overdue</span>
+                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-amber-700">
+                              <Clock className="h-3 w-3 shrink-0" />
+                              <span className="truncate">Pay Overdue</span>
                             </div>
-                            <div className="text-sm font-bold mt-0.5">{formatCurrency(overdueAmount)}</div>
+                            <div className="text-xs font-bold text-amber-900 mt-0.5 truncate">{formatCurrency(overdueAmount)}</div>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => setCollectAmount(String(totalOutstanding))}
-                            className="flex-1 min-w-[130px] rounded-xl border border-slate-200 bg-white text-slate-700 p-2 text-center transition-colors hover:bg-slate-50 shadow-2xs"
+                            className="rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
                           >
-                            <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-700">
-                              <Users className="h-3.5 w-3.5" />
-                              <span>Pay All</span>
+                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-600">
+                              <Users className="h-3 w-3 shrink-0" />
+                              <span className="truncate">Pay All</span>
                             </div>
-                            <div className="text-sm font-bold text-emerald-800 mt-0.5">{formatCurrency(totalOutstanding)}</div>
+                            <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
                           </button>
                         </>
                       )}
@@ -1096,25 +1806,25 @@ const Collection = () => {
                           <button
                             type="button"
                             onClick={() => setCollectAmount(String(dueTodayAmount))}
-                            className="flex-1 min-w-[130px] rounded-xl border border-[#006052] bg-[#006052] text-white p-2 text-center transition-transform active:scale-[0.98] shadow-2xs hover:bg-[#004d43]"
+                            className="rounded-lg border border-teal-200 bg-teal-50/70 hover:bg-teal-100/70 text-teal-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
                           >
-                            <div className="flex items-center justify-center gap-1.5 text-xs font-semibold">
-                              <CreditCard className="h-3.5 w-3.5 opacity-90" />
-                              <span>Pay Current</span>
+                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-teal-700">
+                              <CreditCard className="h-3 w-3 shrink-0" />
+                              <span className="truncate">Pay Current</span>
                             </div>
-                            <div className="text-sm font-bold mt-0.5">{formatCurrency(dueTodayAmount)}</div>
+                            <div className="text-xs font-bold text-teal-900 mt-0.5 truncate">{formatCurrency(dueTodayAmount)}</div>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => setCollectAmount(String(totalOutstanding))}
-                            className="flex-1 min-w-[130px] rounded-xl border border-slate-200 bg-white text-slate-700 p-2 text-center transition-colors hover:bg-slate-50 shadow-2xs"
+                            className="rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
                           >
-                            <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-700">
-                              <Users className="h-3.5 w-3.5" />
-                              <span>Pay All</span>
+                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-600">
+                              <Users className="h-3 w-3 shrink-0" />
+                              <span className="truncate">Pay All</span>
                             </div>
-                            <div className="text-sm font-bold text-emerald-800 mt-0.5">{formatCurrency(totalOutstanding)}</div>
+                            <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
                           </button>
                         </>
                       )}
@@ -1124,19 +1834,19 @@ const Collection = () => {
                         <button
                           type="button"
                           onClick={() => setCollectAmount(String(totalOutstanding))}
-                          className="flex-1 min-w-[130px] rounded-xl border border-[#006052] bg-[#006052] text-white p-2 text-center transition-transform active:scale-[0.98] shadow-2xs hover:bg-[#004d43]"
+                          className="rounded-lg border border-teal-200 bg-teal-50/70 hover:bg-teal-100/70 text-teal-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs col-span-2 sm:col-span-1"
                         >
-                          <div className="flex items-center justify-center gap-1.5 text-xs font-semibold">
-                            <Users className="h-3.5 w-3.5 opacity-90" />
-                            <span>Pay All</span>
+                          <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-teal-700">
+                            <Users className="h-3 w-3 shrink-0" />
+                            <span className="truncate">Pay All</span>
                           </div>
-                          <div className="text-sm font-bold mt-0.5">{formatCurrency(totalOutstanding)}</div>
+                          <div className="text-xs font-bold text-teal-900 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
                         </button>
                       )}
 
                       {/* If fully paid */}
                       {!hasAnyCurrentOrOverdue && !hasUnpaidFutureOnly && (
-                        <div className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 font-medium text-center">
+                        <div className="col-span-2 sm:col-span-4 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500 font-medium text-center">
                           No pending dues for this loan.
                         </div>
                       )}
@@ -1144,27 +1854,27 @@ const Collection = () => {
                   </div>
                 </div>
 
-                {/* 4. Payment Date, Payment Method, Transaction ID */}
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                {/* 3. Payment Date, Payment Method, Transaction ID */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 sm:gap-3 items-start">
                   {/* Payment Date (3 cols) */}
                   <div className="md:col-span-3">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                    <label className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
                       PAYMENT DATE <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
-                      <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                      <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
                       <input
                         type="date"
                         value={paymentDate}
                         onChange={(e) => setPaymentDate(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-2 pl-9 pr-3 text-xs font-medium text-slate-800 outline-none focus:border-[#006052] focus:bg-white focus:ring-1 focus:ring-[#006052]"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-1.5 pl-8 sm:pl-9 pr-2.5 text-xs font-medium text-slate-800 outline-none focus:border-[#006052] focus:bg-white focus:ring-1 focus:ring-[#006052]"
                       />
                     </div>
                   </div>
 
                   {/* Payment Method (5 cols) */}
                   <div className="md:col-span-5">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                    <label className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
                       PAYMENT METHOD <span className="text-red-500">*</span>
                     </label>
                     <div className="grid grid-cols-3 gap-1.5">
@@ -1172,7 +1882,7 @@ const Collection = () => {
                       <button
                         type="button"
                         onClick={() => setPaymentMode("Cash")}
-                        className={`rounded-xl border py-2 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        className={`rounded-xl border py-1.5 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                           paymentMode === "Cash"
                             ? "bg-[#006052] border-[#006052] text-white shadow-xs"
                             : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
@@ -1186,7 +1896,7 @@ const Collection = () => {
                       <button
                         type="button"
                         onClick={() => setPaymentMode("UPI")}
-                        className={`rounded-xl border py-2 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        className={`rounded-xl border py-1.5 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                           paymentMode === "UPI"
                             ? "bg-[#006052] border-[#006052] text-white shadow-xs"
                             : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
@@ -1200,7 +1910,7 @@ const Collection = () => {
                       <button
                         type="button"
                         onClick={() => setPaymentMode("Bank Transfer")}
-                        className={`rounded-xl border py-2 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        className={`rounded-xl border py-1.5 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                           paymentMode === "Bank Transfer"
                             ? "bg-[#006052] border-[#006052] text-white shadow-xs"
                             : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
@@ -1214,7 +1924,7 @@ const Collection = () => {
 
                   {/* Transaction ID (4 cols) */}
                   <div className="md:col-span-4">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                    <label className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
                       TRANSACTION ID
                     </label>
                     <div className="relative">
@@ -1231,7 +1941,7 @@ const Collection = () => {
                             ? "Not applicable for Cash"
                             : "Enter transaction ID"
                         }
-                        className={`w-full rounded-xl border py-2 text-xs outline-none transition-all ${
+                        className={`w-full rounded-xl border py-1.5 text-xs outline-none transition-all ${
                           paymentMode === "Cash"
                             ? "border-slate-200 bg-slate-50/70 text-slate-400 pl-8 pr-3 cursor-not-allowed placeholder:text-slate-400"
                             : "border-slate-200 bg-white text-slate-800 px-3 placeholder:text-slate-400 focus:border-[#006052] focus:ring-1 focus:ring-[#006052]"
@@ -1241,9 +1951,9 @@ const Collection = () => {
                   </div>
                 </div>
 
-                {/* 5. Remarks */}
+                {/* 4. Remarks */}
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  <label className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
                     REMARKS
                   </label>
                   <div className="relative">
@@ -1253,15 +1963,15 @@ const Collection = () => {
                       value={remarks}
                       onChange={(e) => setRemarks(e.target.value)}
                       placeholder="Add remarks (optional)"
-                      className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052]"
+                      className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#006052] focus:bg-white focus:ring-1 focus:ring-[#006052]"
                     />
                   </div>
                 </div>
 
-                {/* 6. Repayment Schedule (Mandatory, with compact pagination, Live Payment Allocation Preview) */}
+                {/* 5. Repayment Schedule (Mandatory, with compact pagination, Live Payment Allocation Preview) */}
                 <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
                   {/* Schedule Header */}
-                  <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-slate-100">
+                  <div className="flex items-center justify-between px-3.5 sm:px-4 py-2 bg-white border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <div className="p-1 rounded-md bg-emerald-50 text-emerald-700">
                         <CalendarIcon className="h-4 w-4" />
@@ -1474,7 +2184,7 @@ const Collection = () => {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5">
                                 <span className={`text-xs font-bold ${isAffected ? "text-purple-950" : "text-slate-800"}`}>
-                                  Installment #{s.installmentNumber}
+                                  Installment {s.installmentNumber}
                                 </span>
                                 {isAffected && (
                                   <span className="text-[9px] uppercase px-1.5 py-0.2 rounded font-extrabold bg-[#7E22CE] text-white tracking-wider">
@@ -1818,7 +2528,7 @@ const Collection = () => {
 
                         return (
                           <tr key={al.installmentNumber} className="hover:bg-slate-50/60">
-                            <td className="px-4 py-2.5 font-bold text-slate-900">#{al.installmentNumber}</td>
+                            <td className="px-4 py-2.5 font-bold text-slate-900">{al.installmentNumber}</td>
                             <td className="px-4 py-2.5 text-slate-600">{formatDate(al.dueDate)}</td>
                             <td className="px-4 py-2.5 text-right font-medium text-slate-700">
                               {formatCurrency(preRemainingDue)}
@@ -1863,7 +2573,7 @@ const Collection = () => {
                       <div key={al.installmentNumber} className="p-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-900">
-                            Installment #{al.installmentNumber}
+                            Installment {al.installmentNumber}
                           </span>
                           <div>
                             {al.statusAfter === "Paid" ? (
@@ -2136,7 +2846,7 @@ const Collection = () => {
                             >
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-slate-800 font-mono">
-                                  Installment #{inst.installmentNumber}
+                                  Installment {inst.installmentNumber}
                                 </span>
                                 <span className="text-slate-400">•</span>
                                 <span className="text-slate-500 text-[11px]">
@@ -2190,6 +2900,176 @@ const Collection = () => {
           </div>
         );
       })()}
+
+      {/* =========================================================================
+          4. READ-ONLY COLLECTION DETAILS MODAL FOR COLLECTION HISTORY
+          Displays:
+          - Customer Name
+          - Loan ID
+          - Amount Collected
+          - Principal Collected
+          - Interest Collected
+          - Collection Date & Time
+          - Payment Mode
+          - EMI / Instalment Number
+          - Payment Status ("Collected")
+          - UPI Transaction ID (Only when paymentMode is UPI, otherwise hidden)
+      ========================================================================= */}
+      {selectedHistoryTx && (() => {
+        const tx = selectedHistoryTx;
+        const isUpi = (tx.mode || "").toUpperCase() === "UPI";
+        const upiTxId = tx.transactionId || (tx.mode === "UPI" ? tx.transactionRef : null);
+        const prin = tx.principal !== undefined ? Number(tx.principal || 0) : (
+          Array.isArray(tx.allocations)
+            ? tx.allocations.reduce((s, a) => s + Number(a.principalPaid || 0), 0)
+            : Number(tx.amount || 0)
+        );
+        const intr = tx.interest !== undefined ? Number(tx.interest || 0) : (
+          Array.isArray(tx.allocations)
+            ? tx.allocations.reduce((s, a) => s + Number(a.interestPaid || 0), 0)
+            : 0
+        );
+
+        return (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4 md:p-6 backdrop-blur-xs overflow-y-auto overscroll-contain"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setSelectedHistoryTx(null);
+            }}
+          >
+            <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl relative flex flex-col border border-slate-200 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 bg-white">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 leading-tight">Collection Details</h3>
+                    <p className="text-xs text-slate-500 font-medium">Completed Collection Transaction</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedHistoryTx(null)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-5 sm:p-6 space-y-4">
+                {/* Hero Amount Banner */}
+                <div className="rounded-xl bg-emerald-50/70 border border-emerald-100/80 p-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider block">
+                      Amount Collected
+                    </span>
+                    <span className="text-2xl font-black text-emerald-900 mt-0.5 block">
+                      {formatCurrency(tx.amount)}
+                    </span>
+                  </div>
+                  <span className="inline-flex items-center rounded-md bg-emerald-100/80 px-2.5 py-1 text-xs font-bold text-emerald-800 ring-1 ring-inset ring-emerald-600/30">
+                    Collected
+                  </span>
+                </div>
+
+                {/* Key Details Grid */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 divide-y divide-slate-100 text-xs">
+                  <div className="flex items-center justify-between py-2 first:pt-0">
+                    <span className="text-slate-500 font-medium">Customer Name</span>
+                    <span className="font-bold text-slate-900 text-right">{tx.customerName || "Customer"}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-slate-500 font-medium">Loan ID</span>
+                    <span className="font-semibold text-slate-800">{tx.loanId}</span>
+                  </div>
+
+                  {tx.customerId && (
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-slate-500 font-medium">Customer ID</span>
+                      <span className="font-semibold text-slate-700">{tx.customerId}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-slate-500 font-medium">EMI / Instalment Number</span>
+                    <span className="font-bold text-slate-900 font-mono">{formatInstallmentDisplay(tx)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-slate-500 font-medium">Principal Collected</span>
+                    <span className="font-bold text-slate-800">{formatCurrency(prin)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-slate-500 font-medium">Interest Collected</span>
+                    <span className="font-bold text-slate-800">{formatCurrency(intr)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-slate-500 font-medium">Collection Date & Time</span>
+                    <span className="font-medium text-slate-700">{formatDateTime(tx.date, tx)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-slate-500 font-medium">Payment Mode</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-white text-slate-700 border border-slate-200">
+                      {tx.mode || "Cash"}
+                    </span>
+                  </div>
+
+                  {/* UPI Transaction ID: For UPI payments, display the exact ID entered by admin, or '-' if not entered.
+                      For non-UPI payment modes, display '-'. */}
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-slate-500 font-medium">UPI Transaction ID</span>
+                    <span className="font-mono font-semibold text-slate-800">
+                      {isUpi && upiTxId && String(upiTxId).trim() ? String(upiTxId).trim() : "-"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2 last:pb-0">
+                    <span className="text-slate-500 font-medium">Payment Status</span>
+                    <span className="font-bold text-emerald-700">Collected</span>
+                  </div>
+                </div>
+
+                {tx.remarks && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs">
+                    <span className="text-slate-400 font-medium block text-[10px] uppercase">Remarks</span>
+                    <p className="text-slate-700 mt-0.5 font-medium">{tx.remarks}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end px-5 sm:px-6 py-3.5 bg-white border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setSelectedHistoryTx(null)}
+                  className="rounded-xl border border-slate-200 bg-white px-5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Midway Closure Modal */}
+      <MidwayClosureModal
+        isOpen={showMidwayModal}
+        onClose={() => {
+          setShowMidwayModal(false);
+          loadCustomers();
+        }}
+        onSuccess={() => {
+          loadCustomers();
+        }}
+      />
     </div>
   );
 };
