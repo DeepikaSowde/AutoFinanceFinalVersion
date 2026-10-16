@@ -17,6 +17,7 @@ import {
 import { getCustomerOnboarding } from "../../utils/customerOnboardingStorage";
 import CustomerView from "./CustomerView";
 import { calculateLoanOutstanding } from "../../utils/loanCalculations";
+import { syncVehiclesWithClosedLoans } from "../../utils/vehicleStatusHelper";
 
 const formatCurrency = (value) => {
   const amount = Math.round(Number(value || 0));
@@ -121,8 +122,8 @@ const Customer = () => {
     const loadCustomer = () => {
       try {
         const savedData = JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]");
-        console.log("Customer page data:", savedData);
-        setCustomerData(savedData);
+        const synced = syncVehiclesWithClosedLoans(savedData);
+        setCustomerData(synced || savedData);
       } catch (error) {
         console.error("Failed to load customer data:", error);
         setCustomerData([]);
@@ -137,7 +138,11 @@ const Customer = () => {
     };
     loadCustomer();
     window.addEventListener("storage", loadCustomer);
-    return () => window.removeEventListener("storage", loadCustomer);
+    window.addEventListener("customersDataUpdated", loadCustomer);
+    return () => {
+      window.removeEventListener("storage", loadCustomer);
+      window.removeEventListener("customersDataUpdated", loadCustomer);
+    };
   }, []);
 
   const hasCustomer = customerData.length > 0;

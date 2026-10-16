@@ -9,17 +9,13 @@ import { calculateRepayment } from '../../components/Loantab';
 import { calculateLoanOutstanding } from '../../utils/loanCalculations';
 import { getPaymentInstallmentLabel } from '../../utils/paymentInstallmentUtils';
 import { getVehicleDisplayImage } from '../../utils/vehicleImageHelper';
+import { getEffectiveVehicleStatus } from '../../utils/vehicleStatusHelper';
 
 export { getPaymentInstallmentLabel };
 
-const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
+import { formatDate, formatDateTime } from '../../utils/dateUtils';
 
-const formatDate = (dateString) => {
-  if (!dateString) return '—';
-  const d = new Date(dateString);
-  if (isNaN(d.getTime())) return dateString;
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-};
+const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
 const FieldValue = ({ label, value }) => (
   <div>
@@ -630,7 +626,21 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                         <span className="font-bold text-slate-900">{loan.loanId}</span>
                         <StatusBadge status={loan.status} />
                       </div>
-                      <p className="text-sm font-medium text-slate-700 mt-1">{loan.vehicle?.brand} {loan.vehicle?.model}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <p className="text-sm font-medium text-slate-700">{loan.vehicle?.brand} {loan.vehicle?.model}</p>
+                        {(() => {
+                          const vStat = getEffectiveVehicleStatus(loan);
+                          const vStyle = vStat === 'Active' ? 'bg-[#2563EB] text-white' :
+                                         vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
+                                         vStat === 'Sold' ? 'bg-[#64748B] text-white' :
+                                         'bg-slate-500 text-white';
+                          return (
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${vStyle}`}>
+                              {vStat}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Car className="h-3 w-3"/> {loan.vehicle?.regNo || 'Unregistered'}</p>
                     </div>
                   </div>
@@ -1015,7 +1025,11 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                       schedule={effectiveCustomerLoanSchedule}
                       loanDetails={{
                         ...selectedLoanData.loan,
-                        loanAmount: selectedLoanData.loanAmount
+                        loanAmount: selectedLoanData.loanAmount,
+                        loanId: activeSelectedLoanId || selectedLoanData.loanId || selectedLoanData.loan?.loanId,
+                        customerId: displayCustomerId,
+                        customerName: primaryCustomer.name,
+                        paymentFrequency: selectedLoanData.loan?.paymentFrequency || selectedLoanData.paymentFrequency || 'Monthly',
                       }}
                     />
                   </div>
@@ -1035,8 +1049,22 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
             <div className="space-y-6">
               
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100 flex items-center gap-2 font-bold text-slate-900">
-                  <Car className="h-5 w-5 text-[#087F5B]" /> Vehicle Information
+                <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100 flex items-center justify-between gap-2 font-bold text-slate-900">
+                  <div className="flex items-center gap-2">
+                    <Car className="h-5 w-5 text-[#087F5B]" /> Vehicle Information
+                  </div>
+                  {(() => {
+                    const vStat = getEffectiveVehicleStatus(selectedLoanData);
+                    const vStyle = vStat === 'Active' ? 'bg-[#2563EB] text-white' :
+                                   vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
+                                   vStat === 'Sold' ? 'bg-[#64748B] text-white' :
+                                   'bg-slate-500 text-white';
+                    return (
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${vStyle}`}>
+                        {vStat}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="p-4 sm:p-5 flex flex-col md:flex-row gap-6 items-start">
                    <div className="shrink-0 w-full md:w-auto flex justify-center md:justify-start">
@@ -1048,6 +1076,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                      />
                    </div>
                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-4 gap-x-4 flex-1 w-full">
+                      <FieldValue label="Vehicle Status" value={getEffectiveVehicleStatus(selectedLoanData)} />
                       <FieldValue label="Brand / Make" value={selectedLoanData.vehicle?.brand} />
                       <FieldValue label="Model" value={selectedLoanData.vehicle?.model} />
                       <FieldValue label="Variant" value={selectedLoanData.vehicle?.variant} />
@@ -1278,7 +1307,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                               {p.receiptNo || p.referenceNo || p.id || `RCP-${idx + 1}`}
                             </td>
                             <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                              {formatDate(p.paymentDate || p.date)}
+                              {formatDateTime(p.paymentDate || p.date, p)}
                             </td>
                             <td className="whitespace-nowrap px-4 py-3 text-slate-700">
                               {installmentLabel === "Not Assigned" ? (
@@ -1372,7 +1401,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                           <p className="text-sm text-slate-500 mt-1">{act.description}</p>
                           <p className="text-xs text-slate-400 mt-2 font-medium flex items-center gap-1.5">
                             <Clock className="h-3 w-3" />
-                            {act.date ? new Date(act.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date not recorded'}
+                            {act.date ? formatDateTime(act.date, act) : 'Date not recorded'}
                           </p>
                         </div>
                       </div>

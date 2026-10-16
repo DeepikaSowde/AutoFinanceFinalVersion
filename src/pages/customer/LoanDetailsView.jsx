@@ -29,47 +29,33 @@ import RepaymentScheduleTable, { generateSchedule, computeEffectiveSchedule, get
 import InstallmentTimeline from "../../components/InstallmentTimeline";
 import MidwayClosureModal from "../../components/MidwayClosureModal";
 import { getVehicleDisplayImage } from "../../utils/vehicleImageHelper";
+import { getEffectiveVehicleStatus } from "../../utils/vehicleStatusHelper";
+import {
+  getPenaltyRecords,
+  getPenaltyTransactions,
+  cancelPenaltyRecord,
+  freezePenaltyRecord,
+  collectPenaltyRecord,
+  collectPenaltyTransaction,
+  getPenaltySettings,
+  checkInstallmentPenaltyEligibility,
+  getOrCalculatePenaltyRecord,
+  getInstallmentPenaltySupportingAmount,
+} from "../../utils/penaltyRules";
 
 const formatCurrency = (value) => {
   if (value === undefined || value === null || isNaN(Number(value))) return "₹0";
   return `₹${Math.round(Number(value)).toLocaleString("en-IN")}`;
 };
 
-const formatDate = (dateString) => {
-  if (!dateString) return "—";
-  const d = new Date(dateString);
-  if (isNaN(d.getTime())) return dateString;
-  return d.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-};
+import { formatDate, formatDateTimeParts, parseToDate } from "../../utils/dateUtils";
 
-const formatDateTime = (dateString) => {
-  if (!dateString) return { date: "—", time: "" };
-  const d = new Date(dateString);
-  if (isNaN(d.getTime())) return { date: dateString, time: "" };
-  const formattedDate = d.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-  const hasTime = typeof dateString === "string" && (dateString.includes("T") || dateString.includes(":"));
-  const formattedTime = hasTime
-    ? d.toLocaleTimeString("en-IN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    })
-    : "";
-  return { date: formattedDate, time: formattedTime };
-};
+const formatDateTime = (dateString, record = null) => formatDateTimeParts(dateString, record);
 
 const parseToDayTimestamp = (dateInput) => {
   if (!dateInput) return null;
-  const d = new Date(dateInput);
-  if (isNaN(d.getTime())) return null;
+  const d = parseToDate(dateInput);
+  if (!d || isNaN(d.getTime())) return null;
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 };
 
@@ -100,6 +86,8 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
   const [selectedInstallmentForHistory, setSelectedInstallmentForHistory] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showMidwayModal, setShowMidwayModal] = useState(false);
+  const [penaltyToCancel, setPenaltyToCancel] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   // Read target IDs from prop, route params (/loans/:loanId), or query string (?loanId=...)
   const selectedLoanId = (propLoanId || params.loanId || searchParams.get("loanId") || "").trim();
@@ -312,6 +300,206 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
     });
   }, [rawSchedule, loanPayments, isMidwayClosed, midwayClosureData]);
 
+  // Combine recorded penalties and active eligible pending penalties for this loan
+  const combinedPenaltyRecords = useMemo(() => {
+    try {
+      const existing = getPenaltyRecords().filter(
+        (p) => (p.loanId && p.loanId === effectiveLoanId) || (p.customerId && p.customerId === effectiveCustomerId)
+      );
+      const settings = getPenaltySettings();
+      const normFreq = loan?.paymentFrequency || loanRecord?.paymentFrequency || "Monthly";
+
+      const recordsMap = new Map();
+      existing.forEach((r) => recordsMap.set(Number(r.installmentNumber), r));
+
+      schedule.forEach((inst) => {
+        const num = Number(inst.installmentNumber);
+        if (!recordsMap.has(num)) {
+          const eligibility = checkInstallmentPenaltyEligibility(inst, normFreq, settings, new Date());
+          if (eligibility.isEligible) {
+            const calculated = getOrCalculatePenaltyRecord(
+              effectiveLoanId,
+              effectiveCustomerId,
+              customer?.name || "Customer",
+              inst,
+              normFreq,
+              existing,
+              settings,
+              new Date()
+            );
+            if (calculated && calculated.status === "Pending") {
+              recordsMap.set(num, calculated);
+            }
+          }
+        }
+      });
+
+      return Array.from(recordsMap.values()).sort(
+        (a, b) => Number(a.installmentNumber) - Number(b.installmentNumber)
+      );
+    } catch (err) {
+      console.error("Error loading loan penalty records:", err);
+      return [];
+    }
+  }, [effectiveLoanId, effectiveCustomerId, schedule, loan, loanRecord, customer, refreshKey]);
+
+  // Penalty Log: One record per penalty collection transaction + active uncollected penalty records
+  const penaltyLogRecords = useMemo(() => {
+    try {
+      if (!effectiveLoanId) return [];
+      const cleanLoanId = effectiveLoanId.trim().toLowerCase();
+
+      // 1. Load penalty collection transactions
+      const txns = getPenaltyTransactions().filter(
+        (t) => t.loanId && t.loanId.trim().toLowerCase() === cleanLoanId
+      );
+
+      const items = [];
+      const coveredInstallmentNums = new Set();
+
+      // Add actual collection transactions
+      txns.forEach((tx) => {
+        const rawInst = tx.installmentDisplay || (Array.isArray(tx.installmentNumbers) ? tx.installmentNumbers.join(", ") : String(tx.installmentNumber || "1"));
+        const instDisplay = String(rawInst).replace(/#/g, "");
+        const calculatedAmt = Number(
+          tx.calculatedPenaltyAmount !== undefined
+            ? tx.calculatedPenaltyAmount
+            : (tx.actualPenaltyAmount !== undefined ? tx.actualPenaltyAmount : (tx.collectedAmount || 0))
+        );
+        const collectedAmt = Number(tx.collectedAmount || 0);
+
+        if (Array.isArray(tx.installmentNumbers)) {
+          tx.installmentNumbers.forEach((n) => coveredInstallmentNums.add(Number(n)));
+        }
+
+        items.push({
+          id: tx.id || `tx-${tx.transactionRef || Math.random()}`,
+          date: tx.date || tx.createdAt,
+          installmentDisplay: instDisplay,
+          actualPenaltyAmount: calculatedAmt,
+          calculatedPenaltyAmount: calculatedAmt,
+          collectedAmount: collectedAmt,
+          status: tx.status || "Collected",
+          sortDate: new Date(tx.date || tx.createdAt || 0).getTime(),
+          isTransaction: true,
+        });
+      });
+
+      // 2. Load active uncollected penalty records (Pending, Frozen, Cancelled)
+      const existing = getPenaltyRecords().filter(
+        (p) => p.loanId && p.loanId.trim().toLowerCase() === cleanLoanId
+      );
+      const settings = getPenaltySettings();
+      const normFreq = loan?.paymentFrequency || loanRecord?.paymentFrequency || "Monthly";
+
+      const recordsMap = new Map();
+      existing.forEach((r) => {
+        recordsMap.set(Number(r.installmentNumber), r);
+      });
+
+      // Also identify active eligible overdue installments from schedule if not already recorded
+      schedule.forEach((inst) => {
+        const num = Number(inst.installmentNumber);
+        if (!coveredInstallmentNums.has(num) && !recordsMap.has(num)) {
+          const eligibility = checkInstallmentPenaltyEligibility(inst, normFreq, settings, new Date());
+          if (eligibility.isEligible) {
+            const calculated = getOrCalculatePenaltyRecord(
+              effectiveLoanId,
+              effectiveCustomerId,
+              customer?.name || "Customer",
+              inst,
+              normFreq,
+              existing,
+              settings,
+              new Date()
+            );
+            if (calculated && calculated.status === "Pending") {
+              recordsMap.set(num, calculated);
+            }
+          }
+        }
+      });
+
+      Array.from(recordsMap.values()).forEach((r) => {
+        const num = Number(r.installmentNumber);
+        if (coveredInstallmentNums.has(num)) {
+          // Already settled in a penalty collection transaction
+          return;
+        }
+
+        let finalStatus = r.status || "Pending";
+        if (finalStatus === "Unfrozen" || finalStatus === "UNFROZEN") {
+          finalStatus = "Pending";
+        }
+
+        // If status is Collected:
+        if (finalStatus === "Collected") {
+          if (txns.length > 0) {
+            // Already represented by collection transaction records
+            return;
+          }
+          // Fallback only if no transaction records exist at all
+          items.push({
+            id: r.id || `PEN-${effectiveLoanId}-${r.installmentNumber}`,
+            date: r.collectionDate || r.updatedAt || r.createdAt || r.dueDate,
+            installmentDisplay: String(r.installmentNumber).replace(/#/g, ""),
+            actualPenaltyAmount: Number(r.configuredAmount || r.calculatedAmount || r.actualAmountCollected || 0),
+            calculatedPenaltyAmount: Number(r.configuredAmount || r.calculatedAmount || r.actualAmountCollected || 0),
+            collectedAmount: Number(r.actualAmountCollected || r.calculatedAmount || 0),
+            status: "Collected",
+            sortDate: new Date(r.collectionDate || r.updatedAt || 0).getTime(),
+            isTransaction: false,
+          });
+          return;
+        }
+
+        let relevantDate = r.updatedAt || r.createdAt || r.dueDate;
+        if (finalStatus === "Cancelled" && r.cancellationDate) {
+          relevantDate = r.cancellationDate;
+        }
+
+        const dueAmt = Number(r.calculatedAmount || r.configuredAmount || 0);
+        if (dueAmt > 0 || finalStatus === "Cancelled") {
+          items.push({
+            id: r.id || `PEN-${effectiveLoanId}-${r.installmentNumber}`,
+            date: relevantDate,
+            installmentDisplay: String(r.installmentNumber).replace(/#/g, ""),
+            actualPenaltyAmount: dueAmt,
+            collectedAmount: null,
+            status: finalStatus,
+            sortDate: new Date(relevantDate || 0).getTime(),
+            isTransaction: false,
+          });
+        }
+      });
+
+      return items.sort((a, b) => b.sortDate - a.sortDate);
+    } catch (err) {
+      console.error("Error loading penalty log records:", err);
+      return [];
+    }
+  }, [effectiveLoanId, effectiveCustomerId, schedule, loan, loanRecord, customer, refreshKey]);
+
+  const handleFreezePenaltyItem = (p) => {
+    freezePenaltyRecord(p.id, p.calculatedAmount);
+    setRefreshKey((k) => k + 1);
+    window.dispatchEvent(new Event("storage"));
+  };
+
+  const handleCollectPenaltyItem = (p) => {
+    collectPenaltyTransaction({
+      loanId: effectiveLoanId,
+      customerId: effectiveCustomerId,
+      customerName: customer?.name || "Customer",
+      records: [p],
+      collectedAmount: Number(p.calculatedAmount || 0),
+      collectionDate: new Date().toISOString(),
+      paymentMode: "Cash",
+    });
+    setRefreshKey((k) => k + 1);
+    window.dispatchEvent(new Event("storage"));
+  };
+
   // Financial summary metrics
   const totalCollectedFromPayments = loanPayments.reduce(
     (sum, p) => sum + Number(p.amount || 0),
@@ -328,9 +516,9 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
   const totalPrincipalRepaid = isMidwayClosed
     ? principalAmount
     : schedule.reduce(
-        (sum, s) => sum + Number(s.principalPaid || 0),
-        0
-      );
+      (sum, s) => sum + Number(s.principalPaid || 0),
+      0
+    );
   const totalInterestCollected = schedule.reduce(
     (sum, s) => sum + Number(s.interestPaid || 0),
     0
@@ -479,8 +667,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                   {customerName}
                 </h1>
                 <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border shrink-0 ${
-                    loanStatus === "Active"
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border shrink-0 ${loanStatus === "Active"
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                       : loanStatus === "Midway Closed"
                         ? "bg-amber-50 text-amber-800 border-amber-300"
@@ -489,7 +676,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                           : loanStatus === "Overdue"
                             ? "bg-rose-50 text-rose-700 border-rose-200"
                             : "bg-slate-100 text-slate-600 border-slate-200"
-                  }`}
+                    }`}
                 >
                   {loanStatus}
                 </span>
@@ -547,11 +734,10 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 else alert("Edit Loan initiated for " + effectiveLoanId);
               }}
               title={isMidwayClosed ? "Editing is disabled for midway-closed loans" : "Edit Loan"}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${
-                isMidwayClosed
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${isMidwayClosed
                   ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-60 pointer-events-none"
                   : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer"
-              }`}
+                }`}
             >
               <Edit className={`h-3.5 w-3.5 ${isMidwayClosed ? "text-slate-400" : "text-slate-500"}`} strokeWidth={2} />
               <span>Edit Loan</span>
@@ -566,11 +752,10 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 setShowMidwayModal(true);
               }}
               title={isMidwayClosed ? "This loan is already midway closed" : "Midway Closure"}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${
-                isMidwayClosed
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${isMidwayClosed
                   ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60 pointer-events-none"
                   : "bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
-              }`}
+                }`}
             >
               <Coins className="h-3.5 w-3.5" />
               <span>Midway Closure</span>
@@ -695,8 +880,8 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 {isForeclosed
                   ? "Settled (Foreclosed)"
                   : isMidwayClosed
-                  ? "Settled (Midway Closed)"
-                  : "Balance principal"}
+                    ? "Settled (Midway Closed)"
+                    : "Balance principal"}
               </span>
             </div>
           </div>
@@ -717,15 +902,15 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 {isForeclosed
                   ? "Settled / Waived"
                   : isMidwayClosed
-                  ? "Settled (Midway Closed)"
-                  : "Balance interest"}
+                    ? "Settled (Midway Closed)"
+                    : "Balance interest"}
               </span>
             </div>
           </div>
         </div>
 
         {/* =========================================================
-            4. TAB NAVIGATION (4 TABS)
+            4. TAB NAVIGATION (5 TABS)
         ========================================================= */}
         <div className="border-b border-slate-200 flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar pt-1 w-full max-w-full">
           {[
@@ -733,6 +918,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
             { id: "repaymentSchedule", label: "Repayment Schedule" },
             { id: "collections", label: `Collection History (${loanPayments.length})` },
             { id: "installmentTimeline", label: "Installment Timeline" },
+            { id: "penaltyLog", label: "Penalty Log" },
           ].map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -740,11 +926,10 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 sm:px-6 py-2.5 text-xs sm:text-sm font-semibold whitespace-nowrap transition-all border-b-2 cursor-pointer ${
-                  isActive
+                className={`px-4 sm:px-6 py-2.5 text-xs sm:text-sm font-semibold whitespace-nowrap transition-all border-b-2 cursor-pointer ${isActive
                     ? "border-emerald-700 text-emerald-800 bg-emerald-50/40 rounded-t-lg"
                     : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
@@ -894,7 +1079,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                         <span className="text-slate-500 font-medium shrink-0">Down Payment</span>
                         <span className="font-semibold text-slate-900 text-right break-words">{formatCurrency(downPayment)}</span>
                       </div>
-                      <div className="flex items-center justify-between gap-3 py-1.5">
+                      <div className="flex items-center justify-between gap-3 py-1.5 border-b border-slate-100">
                         <span className="text-slate-500 font-medium shrink-0">Vehicle Model</span>
                         <div className="flex items-center gap-2">
                           {vehicleImageSrc && (
@@ -909,6 +1094,21 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                             {[vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "—"}
                           </span>
                         </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 py-1.5">
+                        <span className="text-slate-500 font-medium shrink-0">Vehicle Status</span>
+                        {(() => {
+                          const vStat = getEffectiveVehicleStatus(loanRecord);
+                          const vStyle = vStat === 'Active' ? 'bg-[#2563EB] text-white' :
+                            vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
+                              vStat === 'Sold' ? 'bg-[#64748B] text-white' :
+                                'bg-slate-500 text-white';
+                          return (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold shadow-2xs ${vStyle}`}>
+                              {vStat}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -981,8 +1181,8 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                       {isForeclosed
                         ? "Settled via Foreclosure (₹0 balance)"
                         : isMidwayClosed
-                        ? "Settled via Midway Closure (₹0 balance)"
-                        : "Remaining payable balance"}
+                          ? "Settled via Midway Closure (₹0 balance)"
+                          : "Remaining payable balance"}
                     </span>
                   </div>
                 </div>
@@ -1046,22 +1246,30 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {schedule.map((row) => {
                       const isMidwaySettled = Boolean(row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed");
+                      const isOverdue = !isMidwaySettled && row.status === "Overdue";
+                      const penaltyAmount = isOverdue
+                        ? getInstallmentPenaltySupportingAmount(row, {
+                          loanId: effectiveLoanId,
+                          frequency: loan?.paymentFrequency || loanRecord?.paymentFrequency || "Monthly",
+                          settings: getPenaltySettings(),
+                          penaltyRecords: getPenaltyRecords(),
+                        })
+                        : null;
+
                       return (
                         <tr
                           key={row.installmentNumber}
                           onClick={() => setSelectedInstallmentForHistory(row)}
-                          className={`transition-colors cursor-pointer group ${
-                            isMidwaySettled
+                          className={`transition-colors cursor-pointer group ${isMidwaySettled
                               ? "bg-amber-50/70 hover:bg-amber-100/60"
                               : "hover:bg-emerald-50/40"
-                          }`}
+                            }`}
                           title="Click to view collection history"
                         >
-                          <td className={`whitespace-nowrap px-3.5 py-3 font-semibold ${
-                            isMidwaySettled
+                          <td className={`whitespace-nowrap px-3.5 py-3 font-semibold ${isMidwaySettled
                               ? "text-amber-950 group-hover:text-amber-900"
                               : "text-slate-700 group-hover:text-emerald-800"
-                          }`}>
+                            }`}>
                             {row.installmentNumber}
                           </td>
                           <td className="whitespace-nowrap px-3.5 py-3 font-semibold text-slate-900">
@@ -1083,21 +1291,27 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                             {formatCurrency(row.balance !== undefined ? row.balance : Math.max(0, row.emi - (row.amountPaid || 0)))}
                           </td>
                           <td className="whitespace-nowrap px-3.5 py-3 text-center">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                isMidwaySettled
-                                  ? "bg-orange-100/90 text-amber-900 border border-amber-300 ring-1 ring-amber-500/20"
-                                  : row.status === "Collected" || row.status === "Paid"
-                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                  : row.status === "Partial"
-                                    ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                    : row.status === "Overdue"
-                                      ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                      : "bg-slate-100 text-slate-700 border border-slate-200"
-                              }`}
-                            >
-                              {isMidwaySettled ? "Paid" : (row.status || "Due")}
-                            </span>
+                            <div className="flex flex-col items-center justify-center gap-0.5">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${isMidwaySettled
+                                    ? "bg-orange-100/90 text-amber-900 border border-amber-300 ring-1 ring-amber-500/20"
+                                    : row.status === "Collected" || row.status === "Paid"
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      : row.status === "Partial"
+                                        ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                        : row.status === "Overdue"
+                                          ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                          : "bg-slate-100 text-slate-700 border border-slate-200"
+                                  }`}
+                              >
+                                {isMidwaySettled ? "Paid" : (row.status || "Due")}
+                              </span>
+                              {isOverdue && penaltyAmount > 0 && (
+                                <span className="text-[10px] font-semibold text-[#006052] whitespace-nowrap leading-tight">
+                                  Penalty: ₹{Number(penaltyAmount).toLocaleString('en-IN')}
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1171,7 +1385,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {loanPayments.map((p) => {
-                      const { date, time } = formatDateTime(p.date);
+                      const { date, time } = formatDateTime(p.date, p);
                       return (
                         <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="whitespace-nowrap px-3.5 py-3 font-semibold text-slate-900">
@@ -1218,18 +1432,104 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
           </div>
         )}
 
-        {/* TAB 4: INSTALLMENT TIMELINE (ZIGZAG DESIGN) */}
+        {/* TAB 4: INSTALLMENT TIMELINE */}
         {activeTab === "installmentTimeline" && (
-          <InstallmentTimeline
-            schedule={schedule}
-            loanPayments={loanPayments}
-            effectiveLoanId={effectiveLoanId}
-            isLoanCompleted={
-              isForeclosed ||
-              (schedule.length > 0 &&
-                schedule.every((s) => s.status === "Paid" || s.status === "Collected" || (s.balance !== undefined && s.balance <= 0.01)))
-            }
-          />
+          <div className="w-full">
+            <InstallmentTimeline
+              schedule={schedule}
+              loanPayments={loanPayments}
+              effectiveLoanId={effectiveLoanId}
+              isMidwayClosed={isMidwayClosed}
+              isLoanCompleted={
+                isForeclosed ||
+                isMidwayClosed ||
+                (schedule.length > 0 &&
+                  schedule.every((s) => s.status === "Paid" || s.status === "Collected" || (s.balance !== undefined && s.balance <= 0.01)))
+              }
+            />
+          </div>
+        )}
+
+        {/* TAB 5: PENALTY LOG */}
+        {activeTab === "penaltyLog" && (
+          <div className="w-full bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-6 shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-50 text-[#006052] border border-teal-200">
+                  <FileText className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Penalty Log</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Penalty summary per installment for {effectiveLoanId}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-1 rounded-full">
+                  {penaltyLogRecords.length} {penaltyLogRecords.length === 1 ? 'Record' : 'Records'}
+                </span>
+              </div>
+            </div>
+
+            {penaltyLogRecords.length === 0 ? (
+              <div className="py-6 text-center text-xs text-slate-400">
+                No penalties recorded for this loan.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200 text-xs sm:text-sm">
+                  <thead className="bg-slate-50/80">
+                    <tr>
+                      <th className="px-4 py-2.5 text-left font-bold text-slate-700">Date</th>
+                      <th className="px-4 py-2.5 text-left font-bold text-slate-700">Installment(s)</th>
+                      <th className="px-4 py-2.5 text-right font-bold text-slate-700">Calculated Penalty Amount</th>
+                      <th className="px-4 py-2.5 text-right font-bold text-slate-700">Collected Amount</th>
+                      <th className="px-4 py-2.5 text-center font-bold text-slate-700">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {penaltyLogRecords.map((r) => (
+                      <tr key={r.id || `pen-${r.installmentDisplay}`} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="px-4 py-2.5 text-slate-700 whitespace-nowrap font-medium">
+                          {formatDate(r.date)}
+                        </td>
+                        <td className="px-4 py-2.5 font-bold text-slate-900 whitespace-nowrap">
+                          {r.installmentDisplay}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-slate-900 whitespace-nowrap">
+                          {formatCurrency(r.calculatedPenaltyAmount || r.actualPenaltyAmount)}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${
+                          r.collectedAmount !== null && r.collectedAmount > 0 ? 'text-emerald-700 font-bold' : 'text-slate-400'
+                        }`}>
+                          {r.collectedAmount !== null && r.collectedAmount !== undefined ? formatCurrency(r.collectedAmount) : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase ${
+                              r.status === 'Collected'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : r.status === 'Frozen'
+                                  ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                                  : r.status === 'Cancelled'
+                                    ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                                    : r.status === 'Partial'
+                                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}
+                          >
+                            {r.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
 
         {/* =========================================================
@@ -1337,7 +1637,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
                               {matchingCollections.map((col) => {
-                                const { date, time } = formatDateTime(col.date);
+                                const { date, time } = formatDateTime(col.date, col);
                                 return (
                                   <tr key={col.id} className="hover:bg-slate-50/70 transition-colors">
                                     <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-900">
@@ -1381,6 +1681,65 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                   className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shadow-2xs"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Penalty Cancellation Confirmation Modal */}
+        {penaltyToCancel && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 animate-scale-in">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 border border-red-200">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Cancel Penalty</h3>
+                  <p className="text-xs text-slate-500">Installment {penaltyToCancel.installmentNumber} · {formatCurrency(penaltyToCancel.calculatedAmount)}</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+                Are you sure you want to cancel this penalty? Once cancelled, it will be <strong>permanently cancelled</strong> and will not be recalculated or collected.
+              </p>
+
+              <div className="mb-5">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Cancellation Reason
+                </label>
+                <input
+                  type="text"
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="e.g. Waived by management"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPenaltyToCancel(null);
+                    setCancelReason("");
+                  }}
+                  className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    cancelPenaltyRecord(penaltyToCancel.id, cancelReason || "Cancelled by Administrator");
+                    setPenaltyToCancel(null);
+                    setCancelReason("");
+                    setRefreshKey((k) => k + 1);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-colors shadow-2xs"
+                >
+                  Confirm Cancellation
                 </button>
               </div>
             </div>

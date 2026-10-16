@@ -17,21 +17,12 @@ import {
   Table
 } from "lucide-react";
 import { generateSchedule, computeEffectiveSchedule } from "./RepaymentScheduleTable";
+import { formatDate } from "../utils/dateUtils";
+import { getInstallmentPenaltySupportingAmount } from "../utils/penaltyRules";
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(Number(val))) return "₹0";
   return `₹${Math.round(Number(val)).toLocaleString("en-IN")}`;
-};
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return "—";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return String(dateStr);
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric"
-  });
 };
 
 /**
@@ -427,15 +418,28 @@ export default function MidwayClosureModal({
     setIsSubmitting(true);
 
     try {
-      const closureTxId = `MIDWAY-${Date.now()}`;
-      const txnRef = `TXN-MID-${Date.now().toString().slice(-6)}`;
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const nowTs = now.getTime();
+      const closureTxId = `MIDWAY-${nowTs}`;
+      const txnRef = `TXN-MID-${nowTs.toString().slice(-6)}`;
       const principalCollected = loanDetails.principalOutstanding;
       const interestCollected = settlement.allocatedInterest;
       const totalCollected = settlement.totalClosureAmount;
 
+      let finalClosureDate = nowIso;
+      if (paymentDate) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(paymentDate.trim())) {
+          const [y, m, d] = paymentDate.trim().split("-").map(Number);
+          finalClosureDate = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds()).toISOString();
+        } else {
+          finalClosureDate = paymentDate;
+        }
+      }
+
       // 1. Prepare closure record object for loan audit/activity tracking
       const closureRecord = {
-        date: paymentDate,
+        date: finalClosureDate,
         amount: totalCollected,
         principal: principalCollected,
         interest: interestCollected,
@@ -444,7 +448,8 @@ export default function MidwayClosureModal({
         mode: paymentMode,
         transactionRef: transactionRefId || txnRef,
         remarks: closureRemarks || "Midway Loan Closure Settlement",
-        closedAt: new Date().toISOString()
+        closedAt: nowIso,
+        timestamp: nowTs
       };
 
       // 2. Build explicit closure allocations across remaining instalments:
@@ -509,6 +514,9 @@ export default function MidwayClosureModal({
       // 3. Update customer record in customers list
       // Preserves historical payments and updates repayment schedule consistently
       const cleanCustomer = { ...currentLoanRecord };
+      const rawVStat = (cleanCustomer.vehicleStatus || cleanCustomer.vehicle?.status || '').toString().trim();
+      const updatedVStat = (rawVStat.toLowerCase() === 'seized' || rawVStat.toLowerCase() === 'sold') ? rawVStat : 'Inactive';
+
       const updatedCustomer = {
         ...cleanCustomer,
         status: "Midway Closed",
@@ -521,6 +529,11 @@ export default function MidwayClosureModal({
         midwayClosure: closureRecord,
         isMidwayClosed: true,
         repaymentSchedule: updatedSchedule,
+        vehicleStatus: updatedVStat,
+        vehicle: {
+          ...(cleanCustomer.vehicle || {}),
+          status: updatedVStat,
+        },
         // Preserve customer status as Active so customer can take future loans
         customerStatus: "Active",
         customer: {
@@ -547,7 +560,10 @@ export default function MidwayClosureModal({
         customerName: loanDetails.customerName,
         loanId: loanDetails.loanId,
         installmentNumber: settlement.rangeText,
-        date: paymentDate,
+        date: finalClosureDate,
+        createdAt: nowIso,
+        closedAt: nowIso,
+        timestamp: nowTs,
         amount: totalCollected,
         principal: principalCollected,
         interest: interestCollected,
@@ -1148,6 +1164,12 @@ export default function MidwayClosureModal({
                       const isPaid = item.status === "Collected" || item.status === "Paid" || Number(item.balance || 0) <= 0.01;
                       const isPartial = !isPaid && item.status === "Partial";
                       const isOverdue = !isPaid && item.status === "Overdue";
+                      const penaltyAmt = isOverdue
+                        ? getInstallmentPenaltySupportingAmount(item, {
+                            loanId: loanDetails.loanId,
+                            frequency: loanDetails.paymentFrequency || 'Monthly',
+                          })
+                        : null;
 
                       return (
                         <tr
@@ -1183,9 +1205,16 @@ export default function MidwayClosureModal({
                                 Partial
                               </span>
                             ) : isOverdue ? (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
-                                Overdue
-                              </span>
+                              <div className="flex flex-col items-center justify-center gap-0.5">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
+                                  Overdue
+                                </span>
+                                {penaltyAmt > 0 && (
+                                  <span className="text-[10px] font-semibold text-[#006052] whitespace-nowrap leading-tight">
+                                    Penalty: ₹{Number(penaltyAmt).toLocaleString('en-IN')}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
                                 Pending

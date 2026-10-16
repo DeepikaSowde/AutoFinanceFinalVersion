@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { calculateLoanOutstanding, calculateTotalPortfolioOutstanding } from '../utils/loanCalculations.js';
 import { calculateVehicleLoanOverdue } from '../utils/vehicleOverdueCalculation.js';
+import { formatDate } from '../utils/dateUtils.js';
 
 export const useDashboardData = () => {
   const [data, setData] = useState({
@@ -32,13 +33,6 @@ export const useDashboardData = () => {
         const today = new Date();
         const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
         const formatMonth = (date) => date.toLocaleString('default', { month: 'short' });
-        const formatDate = (value) => {
-          if (!value) return '—';
-          const date = new Date(value);
-          return Number.isNaN(date.getTime())
-            ? '—'
-            : date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-        };
         const customerKey = (record) =>
           String(record.customerId || record.customer?.customerId || record.customer?.mobile || '').trim().toLowerCase();
         const loanCalculations = customers.map((record) => ({

@@ -21,6 +21,7 @@ import { calculateRepayment } from '../components/Loantab'
 import { CheckCircle2, X } from 'lucide-react'
 import { recordPersonRelationship, syncDocumentChargeIncome } from '../utils/guarantorReferralStorage'
 import { getVehicleModelImage, getVehicleDisplayImage } from '../utils/vehicleImageHelper'
+import { formatDate } from '../utils/dateUtils'
 
 const STEPS = [
   { key: 'customer', labelKey: 'app.steps.customer', titleKey: 'app.titles.customer', subtitleKey: 'app.subtitles.customer' },
@@ -627,7 +628,7 @@ const NewLoan = () => {
               <div className="flex justify-between">
                 <span className="text-slate-500">Next Due Date:</span>
                 <span className="font-semibold text-slate-900">
-                  {submittedLoan.nextDueDate ? new Date(submittedLoan.nextDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                  {submittedLoan.nextDueDate ? formatDate(submittedLoan.nextDueDate) : '—'}
                 </span>
               </div>
             </div>

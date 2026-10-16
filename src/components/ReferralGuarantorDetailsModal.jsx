@@ -16,18 +16,7 @@ import {
   getPersonDetailsSummary,
   UPDATE_EVENT_NAME,
 } from "../utils/guarantorReferralStorage";
-
-// Helper: Format date as DD MMM YYYY
-const formatDate = (dateString) => {
-  if (!dateString) return "—";
-  const d = new Date(dateString);
-  if (isNaN(d.getTime())) return String(dateString);
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-};
+import { formatDate } from "../utils/dateUtils";
 
 const PAGE_SIZE = 5;
 

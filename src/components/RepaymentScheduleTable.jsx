@@ -1,15 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { formatDate } from '../utils/dateUtils';
+import {
+  getPenaltySettings,
+  getPenaltyRecords,
+  getInstallmentPenaltySupportingAmount,
+  PENALTY_UPDATE_EVENT,
+} from '../utils/penaltyRules';
 
 const formatINR = (value) => {
   if (value === undefined || value === null || isNaN(Number(value))) return '₹0';
   return `₹${Math.round(Number(value)).toLocaleString('en-IN')}`;
-};
-
-const formatDate = (dateString) => {
-  if (!dateString) return '';
-  const d = new Date(dateString);
-  if (isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 export const generateSchedule = (loanDetails) => {
@@ -518,7 +518,7 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
   });
 };
 
-const StatusBadge = ({ status, isMidwaySettled = false }) => {
+const StatusBadge = ({ status, isMidwaySettled = false, penaltyAmount = null }) => {
   if (status === 'Paid') {
     if (isMidwaySettled) {
       return (
@@ -537,7 +537,20 @@ const StatusBadge = ({ status, isMidwaySettled = false }) => {
     );
   }
   if (status === 'Partial') return <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 ring-1 ring-inset ring-amber-600/20">Partial</span>;
-  if (status === 'Overdue') return <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 ring-1 ring-inset ring-red-600/10">Overdue</span>;
+  if (status === 'Overdue') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-0.5">
+        <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 ring-1 ring-inset ring-red-600/10">
+          Overdue
+        </span>
+        {penaltyAmount > 0 && (
+          <span className="text-[10px] font-semibold text-[#006052] whitespace-nowrap leading-tight">
+            Penalty: ₹{Number(penaltyAmount).toLocaleString('en-IN')}
+          </span>
+        )}
+      </div>
+    );
+  }
   return <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 ring-1 ring-inset ring-slate-500/20">Due</span>;
 };
 
@@ -550,6 +563,22 @@ export const getRepaymentColumnLabel = (frequency) => {
 };
 
 export default function RepaymentScheduleTable({ loanDetails = {}, schedule: propSchedule }) {
+  const [penaltySettings, setPenaltySettings] = useState(() => getPenaltySettings());
+  const [penaltyRecords, setPenaltyRecords] = useState(() => getPenaltyRecords());
+
+  useEffect(() => {
+    const handlePenaltyUpdate = () => {
+      setPenaltySettings(getPenaltySettings());
+      setPenaltyRecords(getPenaltyRecords());
+    };
+    window.addEventListener(PENALTY_UPDATE_EVENT, handlePenaltyUpdate);
+    window.addEventListener('storage', handlePenaltyUpdate);
+    return () => {
+      window.removeEventListener(PENALTY_UPDATE_EVENT, handlePenaltyUpdate);
+      window.removeEventListener('storage', handlePenaltyUpdate);
+    };
+  }, []);
+
   const generatedSchedule = useMemo(() => generateSchedule(loanDetails), [loanDetails]);
 
   const schedule = useMemo(() => {
@@ -603,6 +632,16 @@ export default function RepaymentScheduleTable({ loanDetails = {}, schedule: pro
         <tbody className="divide-y divide-slate-200 bg-white">
           {schedule.map((row) => {
             const isMidwaySettled = Boolean(row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed");
+            const isOverdue = !isMidwaySettled && row.status === 'Overdue';
+            const penaltyAmount = isOverdue
+              ? getInstallmentPenaltySupportingAmount(row, {
+                  loanId: loanDetails?.loanId || row.loanId,
+                  frequency,
+                  settings: penaltySettings,
+                  penaltyRecords,
+                })
+              : null;
+
             return (
               <tr
                 key={row.installmentNumber}
@@ -622,7 +661,11 @@ export default function RepaymentScheduleTable({ loanDetails = {}, schedule: pro
                 <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-700">{formatINR(row.principalOutstanding)}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{formatINR(row.balance)}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-center">
-                  <StatusBadge status={row.status} isMidwaySettled={isMidwaySettled} />
+                  <StatusBadge
+                    status={row.status}
+                    isMidwaySettled={isMidwaySettled}
+                    penaltyAmount={penaltyAmount}
+                  />
                 </td>
               </tr>
             );

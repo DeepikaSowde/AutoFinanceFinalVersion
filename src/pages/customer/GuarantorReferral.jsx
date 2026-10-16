@@ -54,17 +54,9 @@ const formatAadhaarDisplay = (val) => {
   return clean.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
 };
 
-// Helper: Format Added Date as DD MMM YYYY
-const formatAddedDate = (dateString) => {
-  if (!dateString) return "—";
-  const d = new Date(dateString);
-  if (isNaN(d.getTime())) return String(dateString);
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-};
+import { formatDate } from "../../utils/dateUtils";
+
+const formatAddedDate = (dateString) => formatDate(dateString);
 
 const GuarantorReferral = () => {
   const navigate = useNavigate();

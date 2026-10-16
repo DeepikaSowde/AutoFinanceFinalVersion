@@ -25,6 +25,7 @@ import {
   getChitTransactions,
   saveChitTransaction
 } from '../utils/chitStorage';
+import { formatDate } from '../utils/dateUtils';
 
 const ChitInvestment = () => {
   const [companies, setCompanies] = useState([]);
@@ -604,11 +605,7 @@ const ChitInvestment = () => {
   };
 
   // Format date cell
-  const formatDateCell = (dateStr) => {
-    if (!dateStr) return "—";
-    const d = new Date(dateStr);
-    return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-  };
+  const formatDateCell = (dateStr) => formatDate(dateStr);
 
   return (
     <div className="flex flex-col flex-1 min-h-screen bg-slate-50 px-4 sm:px-6 lg:px-8 py-6 pb-12">

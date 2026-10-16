@@ -18,6 +18,8 @@ import Reminder from './pages/Reminder'
 import GuarantorReferral from './pages/customer/GuarantorReferral'
 import ReferralCommission from './pages/customer/ReferralCommission'
 import ChitInvestment from './pages/ChitInvestment'
+import SettingsOverview from './pages/Settings/SettingsOverview'
+import PenaltyGraceSettings from './pages/Settings/PenaltyGraceSettings'
 
 function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
@@ -46,6 +48,8 @@ function App() {
             <Route path="/collection" element={<Collection />} />
             <Route path="/vehicle" element={<Vehicle />} />
             <Route path="/users" element={<UserManagement />} />
+            <Route path="/settings" element={<SettingsOverview />} />
+            <Route path="/settings/penalty-grace" element={<PenaltyGraceSettings />} />
             <Route path="/reminders" element={<Reminder />} />
             <Route path="/chit-investment" element={<ChitInvestment />} />
             <Route path="*" element={<Navigate to="/newloan" replace />} />

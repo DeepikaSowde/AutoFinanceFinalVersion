@@ -29,30 +29,13 @@ import { calculateLoanOutstanding } from '../../utils/loanCalculations';
 import VehicleStatusHistoryModal, { getChronologicalVehicleHistory } from '../../components/vehicle/VehicleStatusHistoryModal';
 import { useVehicleImage } from '../../utils/vehicleImageHelper';
 import { syncVehicleSaleAccounting } from '../../utils/vehicleSaleAccounting';
+import { getEffectiveVehicleStatus } from '../../utils/vehicleStatusHelper';
+
+import { formatDate, formatDateTime } from '../../utils/dateUtils';
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(Number(val))) return '₹0';
   return `₹${Math.round(Number(val)).toLocaleString('en-IN')}`;
-};
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return 'Not recorded';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-};
-
-const formatDateTime = (dateStr) => {
-  if (!dateStr) return 'Not recorded';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 };
 
 const STATUS_BADGES = {
@@ -61,6 +44,7 @@ const STATUS_BADGES = {
   Seized: 'bg-[#EA580C] text-white',
   Released: 'bg-[#16A34A] text-white',
   Sold: 'bg-[#64748B] text-white',
+  Inactive: 'bg-slate-500 text-white',
 };
 
 const FieldItem = ({ label, value }) => (
@@ -135,8 +119,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
       });
 
       if (found) {
-        const rawStat = (found.vehicleStatus || found.vehicle?.status || prev.vehicleStatus || 'Active').trim();
-        const normStat = rawStat.toLowerCase() === 'released' ? 'Active' : rawStat;
+        const normStat = getEffectiveVehicleStatus(found);
         setRecord((prev) => ({
           ...prev,
           ...found,
@@ -164,8 +147,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
   const customer = record?.customer || {};
   const loan = record?.loan || {};
 
-  const rawCurrentStatus = (record?.vehicleStatus || vehicle?.status || 'Seized').trim();
-  const currentStatus = rawCurrentStatus.toLowerCase() === 'released' ? 'Active' : rawCurrentStatus;
+  const currentStatus = getEffectiveVehicleStatus(record);
   const isSeized = currentStatus.toLowerCase() === 'seized';
 
   const regNo = vehicle.regNo || record?.regNo || 'Unregistered';
@@ -600,7 +582,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
       {/* =========================================================
           2 & 3. SEIZURE DETAILS & OVERDUE SECTION (For Seized Status)
       ========================================================= */}
-      {isSeized ? (
+      {isSeized && (
         <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
           {/* Section Header */}
           <div className="px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3">
@@ -744,26 +726,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
             </div>
           </div>
         </div>
-      ) : (
-        /* Status Info Banner for Active / Sold */
-        <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-bold text-slate-800 mb-1">Status Overview</h2>
-            <p className="text-xs text-slate-600">
-              This vehicle is currently marked as <span className="font-bold text-[#006052]">{currentStatus}</span>.
-              {currentStatus === 'Active' && ' Vehicle is operational and under active customer account.'}
-              {currentStatus === 'Sold' && ' Vehicle repossession has ended with sale liquidation.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setActiveModal('history')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[#006052] text-[#006052] hover:bg-emerald-50 bg-white text-xs sm:text-sm font-bold shadow-2xs transition-colors cursor-pointer w-fit shrink-0"
-          >
-            <History className="h-4 w-4 text-[#006052]" />
-            <span>View Status History</span>
-          </button>
-        </div>
       )}
 
       {/* =========================================================
@@ -834,7 +796,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                           </span>
                         </div>
                         <span className="text-[11px] text-slate-500 font-medium">
-                          {formatDateTime(item.date)}
+                          {formatDateTime(item.date, item)}
                         </span>
                       </div>
 

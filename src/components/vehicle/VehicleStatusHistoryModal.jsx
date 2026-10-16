@@ -16,33 +16,8 @@ import {
   Tag,
   ArrowRight,
 } from 'lucide-react';
-
-/**
- * Format timestamp into human-readable string
- */
-const formatDateTime = (dateStr) => {
-  if (!dateStr) return 'Not recorded';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
-
-const formatDateOnly = (dateStr) => {
-  if (!dateStr) return 'Not recorded';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-};
+import { getEffectiveVehicleStatus } from '../../utils/vehicleStatusHelper';
+import { formatDate, formatDateTime } from '../../utils/dateUtils';
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(Number(val))) return null;
@@ -59,8 +34,7 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
   const customer = vehicleRecord.customer || {};
   const loan = vehicleRecord.loan || {};
 
-  const currentStatusRaw = (vehicleRecord.vehicleStatus || vehicle.status || 'Active').trim();
-  const normalizedCurrentStatus = currentStatusRaw.toLowerCase() === 'released' ? 'Active' : currentStatusRaw;
+  const currentStatus = getEffectiveVehicleStatus(vehicleRecord);
 
   const rawHistory = Array.isArray(vehicleRecord.statusHistory)
     ? vehicleRecord.statusHistory
@@ -132,6 +106,10 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
       title = 'Vehicle Sold';
       statusBadge = 'Sold';
       badgeColor = 'bg-[#64748B] text-white';
+    } else if (eventType === 'closure' || toStatus === 'Inactive') {
+      title = 'Vehicle Inactive (Loan Closed)';
+      statusBadge = 'Inactive';
+      badgeColor = 'bg-slate-500 text-white';
     } else if (eventType === 'initial' || eventType === 'created') {
       title = 'Vehicle Registered & Activated';
       statusBadge = 'Active';
@@ -146,8 +124,8 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
       statusBadge,
       badgeColor,
       title,
-      eventDate: item.seizureDate || item.releaseDate || item.saleDate || item.date,
-      date: item.date || item.seizureDate || item.releaseDate || item.saleDate || new Date().toISOString(),
+      eventDate: item.seizureDate || item.releaseDate || item.saleDate || item.closureDate || item.date,
+      date: item.date || item.seizureDate || item.releaseDate || item.saleDate || item.closureDate || new Date().toISOString(),
       reason: item.reason,
       storageLocation: item.storageLocation,
       condition: item.condition,
@@ -161,6 +139,26 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
       performedBy: item.performedBy || 'Admin',
     });
   });
+
+  // 3. If currently Inactive due to loan closure/midway closure but no explicit Inactive entry in rawHistory
+  if (currentStatus === 'Inactive' && !timeline.some((e) => e.toStatus === 'Inactive')) {
+    const isMidway = vehicleRecord.isMidwayClosed || (vehicleRecord.status || '').toLowerCase() === 'midway closed';
+    const closureDate = vehicleRecord.closureDate || vehicleRecord.midwayClosure?.date || vehicleRecord.midwayClosure?.closedAt || vehicleRecord.updatedAt || new Date().toISOString();
+    timeline.push({
+      id: 'evt-inactive-auto',
+      eventType: 'closure',
+      fromStatus: 'Active',
+      toStatus: 'Inactive',
+      statusBadge: 'Inactive',
+      badgeColor: 'bg-slate-500 text-white',
+      title: isMidway ? 'Vehicle Inactive (Loan Midway Closed)' : 'Vehicle Inactive (Loan Closed)',
+      eventDate: closureDate,
+      date: closureDate,
+      reason: isMidway ? 'Associated loan settled via midway closure' : 'Associated loan fully repaid and closed',
+      notes: 'Vehicle status updated to Inactive',
+      performedBy: 'System',
+    });
+  }
 
   // Sort in chronological order (oldest to newest)
   // Ensure the initial creation event is always first
@@ -201,9 +199,8 @@ const VehicleStatusHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
   const makeModel = [vehicle.brand, vehicle.model].filter(Boolean).join(' ') || 'Unknown Vehicle';
   const customerName = customer.name || 'Not linked';
 
-  // Read actual current status (normalized)
-  const currentStatusRaw = (vehicleRecord?.vehicleStatus || vehicle.status || 'Active').trim();
-  const currentStatus = currentStatusRaw.toLowerCase() === 'released' ? 'Active' : currentStatusRaw;
+  // Read actual current status
+  const currentStatus = getEffectiveVehicleStatus(vehicleRecord);
 
   // Build full timeline
   const timeline = useMemo(() => {
@@ -233,6 +230,12 @@ const VehicleStatusHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
       borderBg: 'border-slate-200 bg-slate-50',
       cardBg: 'bg-slate-700 text-white',
       desc: 'Vehicle was seized, sold, and liquidated.',
+    },
+    Inactive: {
+      badgeBg: 'bg-slate-600 text-white',
+      borderBg: 'border-slate-200 bg-slate-50',
+      cardBg: 'bg-slate-600 text-white',
+      desc: 'Associated loan has been closed or midway closed.',
     },
   }[currentStatus] || {
     badgeBg: 'bg-[#006052] text-white',
@@ -385,7 +388,7 @@ const VehicleStatusHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
                         </div>
 
                         <span className="text-[11px] font-medium text-slate-500">
-                          {formatDateTime(event.date)}
+                          {formatDateTime(event.date, event)}
                         </span>
                       </div>
 
@@ -407,7 +410,7 @@ const VehicleStatusHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
                             {event.eventDate && (
                               <div>
                                 <span className="text-slate-500">Seizure Date:</span>{' '}
-                                <span className="font-semibold text-slate-800">{formatDateOnly(event.eventDate)}</span>
+                                <span className="font-semibold text-slate-800">{formatDate(event.eventDate)}</span>
                               </div>
                             )}
                             {event.reason && (
@@ -437,7 +440,7 @@ const VehicleStatusHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
                             {event.eventDate && (
                               <div>
                                 <span className="text-slate-500">Release Date:</span>{' '}
-                                <span className="font-semibold text-slate-800">{formatDateOnly(event.eventDate)}</span>
+                                <span className="font-semibold text-slate-800">{formatDate(event.eventDate)}</span>
                               </div>
                             )}
                             {event.releasedTo && (
@@ -463,7 +466,7 @@ const VehicleStatusHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
                             {event.eventDate && (
                               <div>
                                 <span className="text-slate-500">Sale Date:</span>{' '}
-                                <span className="font-semibold text-slate-800">{formatDateOnly(event.eventDate)}</span>
+                                <span className="font-semibold text-slate-800">{formatDate(event.eventDate)}</span>
                               </div>
                             )}
                             {event.salePrice && (
@@ -498,7 +501,7 @@ const VehicleStatusHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
                           <>
                             <div>
                               <span className="text-slate-500">Registration Date:</span>{' '}
-                              <span className="font-semibold text-slate-800">{formatDateOnly(event.eventDate)}</span>
+                              <span className="font-semibold text-slate-800">{formatDate(event.eventDate)}</span>
                             </div>
                             <div>
                               <span className="text-slate-500">Initial Status:</span>{' '}

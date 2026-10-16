@@ -19,6 +19,8 @@ import {
 const STORAGE_KEY = "motoLendInvestors_data";
 const FREEZE_KEY = "motoLendInvestors_freeze_info";
 
+import { formatDate } from "../../utils/dateUtils";
+
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
 const Investors = () => {
@@ -716,7 +718,7 @@ const Investors = () => {
                         currentBal += (isDebit ? -t.amount : t.amount);
                         return (
                           <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-5 py-4 text-slate-600">{t.date}</td>
+                            <td className="px-5 py-4 text-slate-600">{formatDate(t.date)}</td>
                             <td className="px-5 py-4">
                               <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
                                 {t.type} {t.type === 'Opening Balance' && <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md ml-2 border border-slate-300">Historical</span>}

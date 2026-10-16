@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Menu,
@@ -18,13 +18,15 @@ import {
   UserRound,
   PanelLeftClose,
   PanelLeftOpen,
-  Car
+  Car,
+  Settings
 } from 'lucide-react'
 
 const Sidebar = ({ onCollapsedChange }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(true)
   const { t } = useTranslation()
+  const location = useLocation()
 
   useEffect(() => {
     const getBreakpoint = (width) => {
@@ -60,6 +62,21 @@ const Sidebar = ({ onCollapsedChange }) => {
       : 'text-[#A8D5C8] font-medium hover:bg-[#005344] hover:text-[#FFFFFF]'
     } ${isCollapsed ? 'justify-center px-2' : 'px-3 gap-3'}`
 
+  const isLinkActive = (item, isActive) => {
+    if (item.path === '/settings') {
+      return location.pathname.startsWith('/settings')
+    }
+    return isActive
+  }
+
+  const getNavLinkClasses = (item) => ({ isActive }) => {
+    const active = isLinkActive(item, isActive)
+    return `group flex items-center rounded-lg py-1.5 xl:py-2 text-[13px] transition-all duration-200 ${active
+      ? 'bg-[#006B52] text-[#FFFFFF] font-semibold shadow-sm'
+      : 'text-[#A8D5C8] font-medium hover:bg-[#005344] hover:text-[#FFFFFF]'
+    } ${isCollapsed ? 'justify-center px-2' : 'px-3 gap-3'}`
+  }
+
   const iconClasses = "h-[18px] w-[18px] shrink-0 transition-colors duration-200"
 
   const renderIcon = (IconComponent, isActive) => (
@@ -90,6 +107,7 @@ const Sidebar = ({ onCollapsedChange }) => {
 
   const userItems = [
     { name: 'User Management', path: '/users', icon: UserCog },
+    { name: 'Settings', path: '/settings', icon: Settings },
   ]
 
   const notificationItems = [
@@ -160,12 +178,12 @@ const Sidebar = ({ onCollapsedChange }) => {
                   key={item.name}
                   to={item.path}
                   onClick={() => setIsOpen(false)}
-                  className={navLinkClasses}
+                  className={getNavLinkClasses(item)}
                   title={isCollapsed ? item.name : undefined}
                 >
                   {({ isActive }) => (
                     <>
-                      {renderIcon(item.icon, isActive)}
+                      {renderIcon(item.icon, isLinkActive(item, isActive))}
                       <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
                     </>
                   )}
@@ -180,12 +198,12 @@ const Sidebar = ({ onCollapsedChange }) => {
                   key={item.name}
                   to={item.path}
                   onClick={() => setIsOpen(false)}
-                  className={navLinkClasses}
+                  className={getNavLinkClasses(item)}
                   title={isCollapsed ? item.name : undefined}
                 >
                   {({ isActive }) => (
                     <>
-                      {renderIcon(item.icon, isActive)}
+                      {renderIcon(item.icon, isLinkActive(item, isActive))}
                       <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
                     </>
                   )}
@@ -203,12 +221,12 @@ const Sidebar = ({ onCollapsedChange }) => {
                   key={item.name}
                   to={item.path}
                   onClick={() => setIsOpen(false)}
-                  className={navLinkClasses}
+                  className={getNavLinkClasses(item)}
                   title={isCollapsed ? item.name : undefined}
                 >
                   {({ isActive }) => (
                     <>
-                      {renderIcon(item.icon, isActive)}
+                      {renderIcon(item.icon, isLinkActive(item, isActive))}
                       <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
                     </>
                   )}
@@ -219,19 +237,19 @@ const Sidebar = ({ onCollapsedChange }) => {
             <div className="mt-1 xl:mt-2 pt-2 xl:pt-3 border-t border-[#145247] flex flex-col gap-2 xl:gap-3">
               <SectionLabel label="USER" />
 
-              {/* User Management Item */}
+              {/* User Management & Settings Items */}
               <div className="-mt-1 space-y-0.5 xl:space-y-1">
                 {userItems.map((item) => (
                   <NavLink
                     key={item.name}
                     to={item.path}
                     onClick={() => setIsOpen(false)}
-                    className={navLinkClasses}
+                    className={getNavLinkClasses(item)}
                     title={isCollapsed ? item.name : undefined}
                   >
                     {({ isActive }) => (
                       <>
-                        {renderIcon(item.icon, isActive)}
+                        {renderIcon(item.icon, isLinkActive(item, isActive))}
                         <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
                       </>
                     )}
