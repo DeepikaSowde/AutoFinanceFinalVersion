@@ -24,13 +24,14 @@ import {
 
 import { isDateInRange, formatDateTimeParts } from "../../utils/dateUtils";
 import DateRangeFilter from "../../components/DateRangeFilter";
+import { calculateTotalInflow } from "../../utils/incomeCalculations";
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
 const Ledger = () => {
   const [filter, setFilter] = useState("Ledger");
   const [search, setSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState("This Month");
+  const [dateFilter, setDateFilter] = useState("All Time");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -230,7 +231,7 @@ const Ledger = () => {
     }
   };
 
-  // Flatten all transactions from investors (skipping debits already in expenseData to prevent double counting)
+  // Flatten all transactions from investors (skipping debits already in expenseData and investments already in incomeData to prevent double counting)
   const rawTransactions = [];
   investors.forEach(inv => {
     if (inv.transactions) {
@@ -240,7 +241,12 @@ const Ledger = () => {
           (tx.expenseId && tx.expenseId === e.id) ||
           (e.category === 'Investor Withdrawal' && e.investorId === inv.id && Number(e.amount) === Number(tx.amount) && e.date === tx.date)
         );
-        if (!isLinkedToExpense) {
+        const isLinkedToIncome = (tx.type === 'New Investment' || tx.type === 'Re-Investment') && incomeData.some(inc =>
+          (inc.transactionId && inc.transactionId === tx.id) ||
+          (tx.incomeId && tx.incomeId === inc.id) ||
+          (inc.type === 'Investment' && inc.investorId === inv.id && Number(inc.amount) === Number(tx.amount) && (inc.date || '').slice(0, 10) === (tx.date || '').slice(0, 10))
+        );
+        if (!isLinkedToExpense && !isLinkedToIncome) {
           rawTransactions.push({
             ...tx,
             source: 'investor',
@@ -447,10 +453,11 @@ const Ledger = () => {
     return sum + Number(openingTx?.amount || 0);
   }, 0);
 
-  const totalMoneyIn = investors.reduce((sum, inv) => {
-    const newInvTxs = inv.transactions?.filter(t => t.type === "New Investment" || t.type === "Re-Investment") || [];
-    return sum + newInvTxs.reduce((s, t) => s + Number(t.amount || 0), 0);
-  }, 0) + payments.reduce((sum, p) => sum + Number(p.amount || 0), 0) + incomeData.reduce((sum, i) => sum + Number(i.amount || 0), 0) + vehicleSales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+  // Money In = the Income page's Total Inflow (collections, recorded income,
+  // investor capital) plus each sold vehicle's net proceeds, which the server
+  // keeps on the sale rather than as an income row.
+  const totalMoneyIn = calculateTotalInflow(incomeData, payments, investors, customers) +
+    vehicleSales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
 
   const regularExpensesTotal = expenseData
     .filter(e => e.category !== 'Investor Withdrawal')
@@ -487,7 +494,7 @@ const Ledger = () => {
   const paginatedTransactions = filteredTransactions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
-    <div className="flex flex-col bg-slate-50 px-4 sm:px-6 lg:px-8 py-6 pb-8">
+    <div className="flex flex-col flex-1 min-h-screen bg-white px-4 sm:px-6 lg:px-8 py-6 pb-8">
 
       {/* PAGE HEADER */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between shrink-0">
@@ -600,42 +607,42 @@ const Ledger = () => {
             />
           </div>
 
-          {/* TRANSACTIONS CARD */}
-          <div className="mt-6 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row gap-4 p-5 border-b border-slate-100 shrink-0">
-              <div className="flex-1">
-                <h2 className="text-lg font-bold text-slate-900 tracking-tight">Transactions</h2>
-                <p className="text-[13px] text-slate-500 mt-0.5 font-medium">{dateFilter}</p>
-              </div>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                <DateRangeFilter
-                  dateFilter={dateFilter}
-                  setDateFilter={(val) => { setDateFilter(val); setCurrentPage(1); }}
-                  customStart={customStart}
-                  setCustomStart={setCustomStart}
-                  customEnd={customEnd}
-                  setCustomEnd={setCustomEnd}
-                />
-                <div className="relative w-full sm:w-[220px]">
-                  <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-                    placeholder="Search..."
-                    className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-4 text-[13px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm"
-                  />
-                </div>
-                <button className="flex h-9 items-center justify-center gap-2 text-[13px] font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-300 px-4 rounded-lg shadow-sm transition-colors hover:bg-slate-50 w-full sm:w-auto">
-                  <Download className="h-4 w-4" /> Export
-                </button>
-              </div>
+          {/* FILTER TOOLBAR */}
+          <div className="mt-5 flex flex-col md:flex-row md:items-center gap-3 w-full min-w-0">
+            {/* Date filter (compact) */}
+            <div className="shrink-0">
+              <DateRangeFilter
+                dateFilter={dateFilter}
+                setDateFilter={(val) => { setDateFilter(val); setCurrentPage(1); }}
+                customStart={customStart}
+                setCustomStart={setCustomStart}
+                customEnd={customEnd}
+                setCustomEnd={setCustomEnd}
+              />
             </div>
 
+            {/* Search bar (flexible width) */}
+            <div className="relative flex-1 min-w-[180px] w-full">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+                placeholder="Search transactions..."
+                className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-4 text-[13px] font-medium text-slate-800 outline-none placeholder:text-slate-400 transition-colors hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm"
+              />
+            </div>
+
+            {/* Export button (compact) */}
+            <button className="flex h-9 shrink-0 items-center justify-center gap-2 text-[13px] font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 px-4 rounded-lg shadow-sm transition-colors hover:bg-slate-50 w-full md:w-auto">
+              <Download className="h-4 w-4" /> Export
+            </button>
+          </div>
+
+          {/* TRANSACTIONS TABLE CARD */}
+          <div className="mt-4 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             {/* Table */}
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto w-full min-w-0" style={{ WebkitOverflowScrolling: 'touch' }}>
               <table className="w-full min-w-[950px] text-left border-collapse">
                 <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 shadow-[0_1px_0_0_#e2e8f0]">
                   <tr>

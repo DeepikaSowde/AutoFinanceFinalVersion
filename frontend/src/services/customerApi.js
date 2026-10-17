@@ -156,7 +156,14 @@ const toGuarantor = (guarantor, hasGuarantor = guarantor.required === 'Yes') => 
   photo: guarantor.photo ? { fileName: guarantor.photo.name || '', fileData: '' } : { fileName: '', fileData: '' },
 })
 
+// The amount lent: the Loan Amount as entered (the Loan tab fills it with
+// vehicle amount less down payment, and the user may edit it), otherwise
+// vehicle amount less down payment.
 export const principalOf = (form) => {
+  const entered = form.loan.loanAmount
+  if (entered !== '' && entered !== null && entered !== undefined && Number.isFinite(Number(entered))) {
+    return Math.max(0, Number(entered))
+  }
   const vehicleAmount =
     form.loan.vehicleAmount !== null && form.loan.vehicleAmount !== '' && form.loan.vehicleAmount !== undefined
       ? Number(form.loan.vehicleAmount)

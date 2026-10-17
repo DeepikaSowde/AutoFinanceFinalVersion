@@ -645,7 +645,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
   // Gracefully handle invalid or missing loan ID
   if (!loanRecord) {
     return (
-      <div className="loan-view-container flex-1 min-h-screen bg-[#F4F6F9] px-3 sm:px-6 py-8 font-sans text-slate-800 w-full min-w-0 max-w-full">
+      <div className="loan-view-container flex-1 min-h-screen bg-white px-3 sm:px-6 py-8 font-sans text-slate-800 w-full min-w-0 max-w-full">
         <div className="max-w-xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-xs">
           <div className="h-14 w-14 rounded-full bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="h-7 w-7" />
@@ -668,7 +668,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
   }
 
   return (
-    <div className="loan-view-container flex-1 min-h-screen bg-[#F4F6F9] px-3 sm:px-6 py-5 sm:py-6 font-sans text-slate-800 w-full min-w-0 max-w-full overflow-x-hidden">
+    <div className="loan-view-container flex-1 min-h-screen bg-white px-3 sm:px-6 py-5 sm:py-6 font-sans text-slate-800 w-full min-w-0 max-w-full overflow-x-hidden">
       <div className="w-full max-w-full space-y-4 sm:space-y-5">
         {loadError && (
           <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

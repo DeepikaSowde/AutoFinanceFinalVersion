@@ -508,7 +508,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
   );
 
   return (
-    <div className="bg-slate-50">
+    <div className="min-h-screen bg-white">
       {loadError && (
         <div role="alert" className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 sm:mx-6 lg:mx-8">
           Could not load this customer: {loadError}

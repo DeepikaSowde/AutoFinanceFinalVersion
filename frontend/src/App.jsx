@@ -50,9 +50,9 @@ function AppShell() {
   const gate = (path, page) => (canOpen(user, path) ? page : <NoAccess />)
 
   return (
-    <div className={`min-h-screen bg-slate-50 transition-all duration-300 ${isSidebarCollapsed ? 'sm:pl-20' : 'sm:pl-64'}`}>
+    <div className={`min-h-screen bg-white transition-all duration-300 ${isSidebarCollapsed ? 'sm:pl-20' : 'sm:pl-64'}`}>
       <Sidebar onCollapsedChange={setIsSidebarCollapsed} />
-      <main className="min-h-screen flex flex-col sm:pl-3">
+      <main className="min-h-screen flex flex-col bg-white">
         <header className="hidden items-center justify-end px-4 sm:px-6">
           <LanguageSwitcher />
         </header>

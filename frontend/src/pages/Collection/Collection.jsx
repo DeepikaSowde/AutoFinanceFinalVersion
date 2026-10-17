@@ -1097,7 +1097,7 @@ const Collection = () => {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-8">
+    <div className="flex flex-col flex-1 min-h-screen w-full max-w-full overflow-x-hidden bg-white px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-8">
       {loadError && (
         <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           Could not load collections: {loadError}

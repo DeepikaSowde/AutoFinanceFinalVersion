@@ -6,7 +6,7 @@ const SettingsOverview = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="flex flex-col flex-1 min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 px-4 sm:px-6 lg:px-8 py-5 sm:py-7">
+    <div className="flex flex-col flex-1 min-h-screen w-full max-w-full overflow-x-hidden bg-white px-4 sm:px-6 lg:px-8 py-5 sm:py-7">
       {/* Page Header */}
       <div className="mb-6 sm:mb-8">
         <div className="flex items-center gap-3">

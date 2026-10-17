@@ -215,7 +215,7 @@ const Investors = () => {
   };
 
   return (
-    <div className="flex flex-col bg-white px-4 sm:px-6 lg:px-8 py-6 pb-8">
+    <div className="flex flex-col flex-1 min-h-screen bg-white px-4 sm:px-6 lg:px-8 py-6 pb-8">
       
       {/* PAGE HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between shrink-0">

@@ -306,20 +306,34 @@ const LoanTab = ({
   ------------------------------------------------------- */
 
   const vehicleAmount =
-  data.vehicleAmount !== "" && data.vehicleAmount != null
-    ? data.vehicleAmount
-    : vehicleAmountFromVehicle ?? ""
+    data.vehicleAmount !== "" && data.vehicleAmount != null
+      ? data.vehicleAmount
+      : vehicleAmountFromVehicle ?? ""
 
+  // Use the edited or entered loan amount if present, otherwise calculate vehicleAmount - downPayment
   const loanAmount =
-    Number(data.loanAmount) ||
-    (Number(vehicleAmount) > 0 ? Math.max(Number(vehicleAmount) - Number(data.downPayment || 0), 0) : 0)
+    data.loanAmount !== "" && data.loanAmount != null
+      ? Number(data.loanAmount)
+      : (Number(vehicleAmount) > 0 ? Math.max(Number(vehicleAmount) - Number(data.downPayment || 0), 0) : 0)
+
+  const [downPaymentError, setDownPaymentError] = useState('')
+
+  // Initialize loanAmount immediately when vehicleAmount becomes available (e.g., from Vehicle step)
+  React.useEffect(() => {
+    const vNum = Number(vehicleAmount || 0)
+    if (vNum > 0 && (data.loanAmount === '' || data.loanAmount == null)) {
+      const dpNum = Number(data.downPayment || 0)
+      const calculated = Math.max(0, vNum - dpNum)
+      onChange({
+        vehicleAmount: data.vehicleAmount || String(vNum),
+        loanAmount: String(calculated),
+      })
+    }
+  }, [vehicleAmount])
 
   /* -------------------------------------------------------
      CONDITIONS
   ------------------------------------------------------- */
-
-  const rulesEnabled =
-    data.customizeRules === true
 
   const reducingBalance =
     data.interestType === 'Reducing Balance'
@@ -376,27 +390,82 @@ const LoanTab = ({
 
   /* -------------------------------------------------------
      CHANGE VEHICLE AMOUNT
+     Loan Amount = Vehicle Amount - Down Payment
   ------------------------------------------------------- */
 
   const handleVehicleAmountChange = (e) => {
-    const value =
-      digits(e.target.value)
+    const rawVal = digits(e.target.value)
+    const vNum = Number(rawVal || 0)
+    const curDownNum = Number(data.downPayment || 0)
 
-    onChange(
-      'vehicleAmount',
-      value
-    )
+    let finalDown = data.downPayment || ''
+    let err = ''
+
+    // Validate that Down Payment cannot exceed Vehicle Amount
+    if (vNum > 0 && curDownNum > vNum) {
+      finalDown = String(vNum)
+      err = `Down payment cannot exceed vehicle amount (₹${vNum.toLocaleString('en-IN')})`
+    } else {
+      err = ''
+    }
+    setDownPaymentError(err)
+
+    const effectiveDown = Number(finalDown || 0)
+    // Loan Amount = Vehicle Amount - Down Payment (prevent negative loan amounts)
+    const newLoanAmount = rawVal !== '' ? String(Math.max(0, vNum - effectiveDown)) : ''
+
+    onChange({
+      vehicleAmount: rawVal,
+      downPayment: finalDown,
+      loanAmount: newLoanAmount,
+    })
   }
 
   /* -------------------------------------------------------
      DOWN PAYMENT
+     Validate cannot exceed Vehicle Amount & recalculate Loan Amount
   ------------------------------------------------------- */
 
   const handleDownPaymentChange = (e) => {
-    onChange(
-      'downPayment',
-      digits(e.target.value)
-    )
+    const rawVal = digits(e.target.value)
+    const vNum = Number(vehicleAmount || 0)
+    let finalDown = rawVal
+    let err = ''
+
+    // Validate that Down Payment cannot exceed Vehicle Amount
+    if (vNum > 0 && rawVal !== '') {
+      const downNum = Number(rawVal)
+      if (downNum > vNum) {
+        finalDown = String(vNum)
+        err = `Down payment cannot exceed vehicle amount (₹${vNum.toLocaleString('en-IN')})`
+      } else {
+        err = ''
+      }
+    } else {
+      err = ''
+    }
+    setDownPaymentError(err)
+
+    const downNum = Number(finalDown || 0)
+    // Loan Amount = Vehicle Amount - Down Payment (prevent negative loan amounts)
+    const newLoanAmount = (vehicleAmount !== '' && vehicleAmount != null)
+      ? String(Math.max(0, vNum - downNum))
+      : ''
+
+    onChange({
+      downPayment: finalDown,
+      loanAmount: newLoanAmount,
+    })
+  }
+
+  /* -------------------------------------------------------
+     MANUAL LOAN AMOUNT CHANGE
+     Keep calculated Loan Amount editable and prevent negative values
+  ------------------------------------------------------- */
+
+  const handleLoanAmountChange = (e) => {
+    const val = digits(e.target.value)
+    onChange('loanAmount', val)
   }
 
   /* -------------------------------------------------------
@@ -419,37 +488,6 @@ const LoanTab = ({
       'tenure',
       digits(e.target.value)
     )
-  }
-
-  /* -------------------------------------------------------
-     RULE TOGGLE
-  ------------------------------------------------------- */
-
-  const toggleRules = () => {
-    const nextValue =
-      !rulesEnabled
-
-    onChange(
-      'customizeRules',
-      nextValue
-    )
-
-    if (!nextValue) {
-      onChange(
-        'gracePeriod',
-        ''
-      )
-
-      onChange(
-        'latePenalty',
-        ''
-      )
-
-      onChange(
-        'penaltyType',
-        ''
-      )
-    }
   }
 
   return (
@@ -526,11 +564,16 @@ const LoanTab = ({
                   <AdornedInput
                     prefix="₹"
                     inputMode="numeric"
-                    value={data.downPayment}
+                    value={data.downPayment ?? ''}
                     onChange={handleDownPaymentChange}
                     placeholder={t('loan.enterDownPayment')}
                     className="h-8 text-xs"
                   />
+                  {downPaymentError && (
+                    <p className="mt-1 text-[11px] font-semibold text-red-600 animate-in fade-in duration-150">
+                      {downPaymentError}
+                    </p>
+                  )}
                 </Field>
 
                 {/* 3. LOAN AMOUNT */}
@@ -538,12 +581,10 @@ const LoanTab = ({
                   <AdornedInput
                     prefix="₹"
                     inputMode="numeric"
-                    value={data.loanAmount || ''}
-                    onChange={(e) =>
-                      onChange('loanAmount', digits(e.target.value))
-                    }
+                    value={data.loanAmount ?? ''}
+                    onChange={handleLoanAmountChange}
                     placeholder={t('loan.enterLoanAmount')}
-                    className="font-semibold text-emerald-950"
+                    className="h-8 text-xs font-semibold text-emerald-950"
                   />
                 </Field>
 
@@ -646,60 +687,6 @@ const LoanTab = ({
                   />
                 </div>
               )}
-
-              {/* Collapsible Grace & Penalty Rules */}
-              <div className="pt-1.5 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={toggleRules}
-                  className="text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 cursor-pointer"
-                >
-                  {rulesEnabled
-                    ? `− ${t('loan.removeCharges')}`
-                    : `+ ${t('loan.addGracePenalty')}`}
-                </button>
-
-                {rulesEnabled && (
-                  <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    <Field label={t('loan.gracePeriod')}>
-                      <AdornedInput
-                        suffix={t('common.days')}
-                        inputMode="numeric"
-                        value={data.gracePeriod}
-                        onChange={(e) =>
-                          onChange('gracePeriod', digits(e.target.value))
-                        }
-                        placeholder={t('loan.enterDays')}
-                        className="h-8 text-xs"
-                      />
-                    </Field>
-
-                    <Field label={t('loan.latePaymentPenalty')}>
-                      <AdornedInput
-                        prefix="₹"
-                        suffix={t('common.amount')}
-                        inputMode="numeric"
-                        value={data.latePenalty}
-                        onChange={(e) =>
-                          onChange('latePenalty', digits(e.target.value))
-                        }
-                        placeholder={t('loan.enterAmount')}
-                        className="h-8 text-xs"
-                      />
-                    </Field>
-
-                    <Field label={t('loan.penaltyType')}>
-                      <Select
-                        options={PENALTY_TYPES}
-                        translationKey="options.penaltyTypes"
-                        value={data.penaltyType}
-                        onChange={(e) => onChange('penaltyType', e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </Field>
-                  </div>
-                )}
-              </div>
             </div>
           </section>
 

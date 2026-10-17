@@ -418,7 +418,7 @@ export default function SmartSearch() {
   };
 
   return (
-    <div className="w-full min-h-screen flex flex-col p-3 sm:p-5 bg-[#F5F5F5] select-text">
+    <div className="w-full flex-1 min-h-screen flex flex-col p-3 sm:p-5 bg-white select-text">
       <div className="w-full flex flex-col gap-3">
         {loadError && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">

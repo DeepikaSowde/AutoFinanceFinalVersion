@@ -1,7 +1,24 @@
 import React, { useState } from 'react';
-import { Search, X, Receipt, Banknote, Users, CalendarCheck, ChevronLeft, ChevronRight, Landmark } from 'lucide-react';
+import { Search, X, Receipt, Banknote, Users, CalendarCheck, ChevronLeft, ChevronRight, Landmark, ArrowDownCircle } from 'lucide-react';
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
+
+const ExpenseSummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "text-slate-900", iconColor, iconBg, extraClass = "bg-white border-slate-200 shadow-sm" }) => (
+  <div className={`rounded-xl border p-4 sm:p-4.5 transition-shadow flex flex-col justify-center h-full min-h-[96px] sm:min-h-[104px] min-w-0 w-full ${extraClass}`}>
+    <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
+      <div className={`flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+        <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${iconColor}`} strokeWidth={2} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[12px] sm:text-[13px] font-semibold text-slate-500 leading-snug truncate" title={title}>{title}</p>
+        <p className={`mt-0.5 sm:mt-1 text-base sm:text-lg lg:text-xl font-bold tracking-tight truncate leading-tight ${valueColor}`} title={value}>
+          {value}
+        </p>
+        {subtext && <p className="text-[11px] sm:text-[12px] font-medium text-slate-400 mt-0.5 leading-snug truncate" title={subtext}>{subtext}</p>}
+      </div>
+    </div>
+  </div>
+);
 
 import { isDateInRange, formatDate, formatDateTime } from '../../utils/dateUtils';
 import DateRangeFilter from '../../components/DateRangeFilter';
@@ -89,6 +106,11 @@ const ExpenseView = ({ onAddExpense, data }) => {
   const hasCommissionData = partyCommissionTotal > 0;
   const hasChitData = chitExpenses.length > 0;
 
+  // Total Debit: exact total of all applicable expense transactions
+  // regularExpenseTotal already includes recorded commissions and chit payments from expenseData.
+  // We add unlinkedCustomerCommissions, investorWithdrawalTotal, and loanAmountTotal without duplicate counting.
+  const totalDebit = regularExpenseTotal + investorWithdrawalTotal + loanAmountTotal + unlinkedCustomerCommissions;
+
   // Pagination
   const PAGE_SIZE = 5;
   const totalPages = Math.max(1, Math.ceil(filteredExpense.length / PAGE_SIZE));
@@ -122,96 +144,72 @@ const ExpenseView = ({ onAddExpense, data }) => {
   }).join(', ') : '';
 
   return (
-    <div className="flex flex-col mt-6 space-y-6">
+    <div className="flex flex-col mt-6 space-y-6 w-full min-w-0 max-w-full">
 
       {/* KPI CARDS */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 sm:gap-4 shrink-0 pb-2">
-        {/* Business Operating Expenses */}
-        <div className="flex flex-col justify-center rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm h-full">
-          <div className="flex items-center sm:items-start gap-3 sm:gap-4">
-            <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
-              <Receipt className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">Business Expenses</p>
-              <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-red-600 whitespace-normal break-words">
-                {regularExpenseTotal > 0 ? formatCurrency(regularExpenseTotal) : 'No data'}
-              </p>
-              <span className="text-[11px] text-slate-400 font-medium">Operating Costs</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Investor Withdrawals Card */}
-        <div className="flex flex-col justify-center rounded-xl border border-purple-200 bg-purple-50/50 p-4 sm:p-5 shadow-sm h-full">
-          <div className="flex items-center sm:items-start gap-3 sm:gap-4">
-            <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-purple-700">
-              <Landmark className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] sm:text-[14px] font-semibold text-purple-900 whitespace-normal break-words leading-tight">Investor Withdrawals</p>
-              <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-purple-700 whitespace-normal break-words">
-                {investorWithdrawalTotal > 0 ? formatCurrency(investorWithdrawalTotal) : '₹0'}
-              </p>
-              <span className="text-[11px] text-purple-600/80 font-medium">Capital Outflow</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Loan Amount */}
-        <div className="flex flex-col justify-center rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm h-full">
-          <div className="flex items-center sm:items-start gap-3 sm:gap-4">
-            <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-              <Banknote className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">Loan Amount</p>
-              <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-slate-900 whitespace-normal break-words">
-                {hasLoanData ? formatCurrency(loanAmountTotal) : 'No data'}
-              </p>
-              <span className="text-[11px] text-slate-400 font-medium">Total Loans Disbursed</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Party Commission */}
-        <div className="flex flex-col justify-center rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm h-full">
-          <div className="flex items-center sm:items-start gap-3 sm:gap-4">
-            <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-              <Users className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">Party Commission</p>
-              <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-slate-900 whitespace-normal break-words">
-                {hasCommissionData ? formatCurrency(partyCommissionTotal) : 'No data'}
-              </p>
-              <span className="text-[11px] text-slate-400 font-medium">Referral Payouts</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Chit Paid (if present) */}
-        {hasChitData && (
-          <div className="flex flex-col justify-center rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 sm:p-5 shadow-sm h-full">
-            <div className="flex items-center sm:items-start gap-3 sm:gap-4">
-              <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-[#e5f0ef] text-[#006052]">
-                <CalendarCheck className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] sm:text-[14px] font-semibold text-slate-500 whitespace-normal break-words leading-tight">Chit Paid</p>
-                <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-[#006052] whitespace-normal break-words">
-                  {formatCurrency(chitPaidTotal)}
-                </p>
-                <span className="text-[11px] text-[#006052]/80 font-medium">Chit Fund Payments</span>
-              </div>
-            </div>
-          </div>
-        )}
+      <div className="grid grid-cols-1 min-[500px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5 sm:gap-4 w-full min-w-0">
+        <ExpenseSummaryCard
+          icon={ArrowDownCircle}
+          title="Total Debit"
+          value={formatCurrency(totalDebit)}
+          subtext="All Outflow & Expenses"
+          valueColor="text-red-600"
+          iconColor="text-red-600"
+          iconBg="bg-red-100"
+          extraClass="bg-red-50/40 border-red-200 shadow-sm"
+        />
+        <ExpenseSummaryCard
+          icon={Receipt}
+          title="Business Expenses"
+          value={regularExpenseTotal > 0 ? formatCurrency(regularExpenseTotal) : '₹0'}
+          subtext="Operating Costs"
+          iconColor="text-slate-600"
+          iconBg="bg-slate-100"
+          extraClass="bg-white border-slate-200 shadow-sm"
+        />
+        <ExpenseSummaryCard
+          icon={Landmark}
+          title="Investor Withdrawals"
+          value={investorWithdrawalTotal > 0 ? formatCurrency(investorWithdrawalTotal) : '₹0'}
+          subtext="Capital Outflow"
+          valueColor="text-purple-700"
+          iconColor="text-purple-700"
+          iconBg="bg-purple-100"
+          extraClass="bg-purple-50/30 border-purple-200 shadow-sm"
+        />
+        <ExpenseSummaryCard
+          icon={Banknote}
+          title="Loan Amount"
+          value={hasLoanData ? formatCurrency(loanAmountTotal) : '₹0'}
+          subtext="Loans Disbursed"
+          iconColor="text-emerald-700"
+          iconBg="bg-emerald-100"
+          extraClass="bg-white border-slate-200 shadow-sm"
+        />
+        <ExpenseSummaryCard
+          icon={Users}
+          title="Party Commission"
+          value={hasCommissionData ? formatCurrency(partyCommissionTotal) : '₹0'}
+          subtext="Referral Payouts"
+          iconColor="text-blue-600"
+          iconBg="bg-blue-100"
+          extraClass="bg-white border-slate-200 shadow-sm"
+        />
+        <ExpenseSummaryCard
+          icon={CalendarCheck}
+          title="Chit Paid"
+          value={formatCurrency(chitPaidTotal)}
+          subtext="Chit Fund Payments"
+          valueColor="text-[#006052]"
+          iconColor="text-[#006052]"
+          iconBg="bg-[#e5f0ef]"
+          extraClass="bg-emerald-50/40 border-emerald-200 shadow-sm"
+        />
       </div>
 
-      {/* FILTER / SEARCH */}
-      <div className="flex flex-col sm:flex-row gap-3 flex-wrap items-center justify-between">
-        <div className="flex items-center gap-3 flex-wrap w-full sm:w-auto">
+      {/* SEARCH AND FILTERS TOOLBAR */}
+      <div className="flex flex-col lg:flex-row lg:items-center gap-2.5 sm:gap-3 w-full min-w-0">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
           <DateRangeFilter
             dateFilter={dateFilter}
             setDateFilter={(val) => { setDateFilter(val); setCurrentPage(1); }}
@@ -230,7 +228,7 @@ const ExpenseView = ({ onAddExpense, data }) => {
               }
               setCurrentPage(1); 
             }}
-            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 shadow-sm outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] transition-all"
+            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 shadow-sm outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] transition-colors shrink-0"
           >
             <option value="All">All Categories</option>
             <option value="Vehicle Expense">Vehicle Expense</option>
@@ -250,7 +248,7 @@ const ExpenseView = ({ onAddExpense, data }) => {
             <select
               value={selectedInvestorId}
               onChange={e => { setSelectedInvestorId(e.target.value); setCurrentPage(1); }}
-              className="h-9 rounded-lg border border-purple-300 bg-purple-50/50 px-3 text-[13px] font-semibold text-purple-900 shadow-sm outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 transition-all"
+              className="h-9 rounded-lg border border-purple-300 bg-purple-50/50 px-3 text-[13px] font-semibold text-purple-900 shadow-sm outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 transition-colors shrink-0 max-w-[180px]"
             >
               <option value="All">All Investors</option>
               {investors.map(inv => (
@@ -260,24 +258,24 @@ const ExpenseView = ({ onAddExpense, data }) => {
           )}
         </div>
 
-        <div className="relative w-full sm:w-[260px]">
-          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <div className="relative flex-1 min-w-[200px] w-full">
+          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <input
             type="text"
             value={search}
             onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
             placeholder="Search category, investor, remarks..."
-            className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-4 text-[13px] text-slate-800 shadow-sm outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] transition-all placeholder:text-slate-400"
+            className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-4 text-[13px] font-medium text-slate-800 shadow-sm outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] transition-colors placeholder:text-slate-400"
           />
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6">
+      <div className="flex flex-col lg:flex-row items-start gap-6 w-full min-w-0">
 
         {/* EXPENSE TRANSACTIONS TABLE CONTAINER */}
-        <div className="lg:w-[60%] flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="overflow-x-auto bg-white scrollbar-thin">
-            <table className="w-full text-left border-collapse table-fixed">
+        <div className="w-full lg:w-[60%] min-w-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="overflow-x-auto w-full min-w-0 bg-white scrollbar-thin">
+            <table className="w-full text-left border-collapse table-fixed min-w-[540px]">
               <thead className="sticky top-0 z-10 bg-slate-50/90 backdrop-blur-sm border-b border-slate-200">
                 <tr>
                   <th className="w-[25%] px-3 sm:px-6 py-4 text-[11px] sm:text-[12px] font-bold uppercase tracking-wider text-[#172033] whitespace-nowrap">Date</th>
@@ -373,40 +371,40 @@ const ExpenseView = ({ onAddExpense, data }) => {
         </div>
 
         {/* EXPENSE OVERVIEW CHART */}
-        <div className="lg:w-[40%] flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-slate-100 shrink-0 bg-white">
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight">Expense Overview</h2>
-            <p className="text-[13px] text-slate-500 mt-1">Expense breakdown for the selected period</p>
+        <div className="w-full lg:w-[40%] min-w-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 shrink-0 bg-white">
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">Expense Overview</h2>
+            <p className="text-[12px] sm:text-[13px] text-slate-500 mt-0.5">Expense breakdown for the selected period</p>
           </div>
 
-          <div className="p-5 bg-white flex flex-col items-center justify-center">
+          <div className="p-4 sm:p-5 bg-white flex flex-col items-center justify-center min-w-0">
             {totalFilteredExpense === 0 ? (
-              <div className="text-center py-10">
-                <p className="text-[15px] font-medium text-slate-800">No expense data for this period</p>
+              <div className="text-center py-8">
+                <p className="text-[14px] font-medium text-slate-800">No expense data for this period</p>
               </div>
             ) : (
-              <div className="flex flex-col md:flex-row items-center md:items-start justify-center md:justify-start w-full gap-6">
+              <div className="flex flex-col sm:flex-row lg:flex-col xl:flex-row items-center justify-center w-full gap-5 min-w-0">
                 {/* Donut Chart SVG Alternative using CSS */}
-                <div className="relative w-[160px] h-[160px] rounded-full shrink-0 shadow-sm mx-auto md:mx-0" style={{ background: `conic-gradient(${conicStops})` }}>
-                  <div className="absolute inset-[18px] rounded-full bg-white flex flex-col items-center justify-center shadow-inner">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Total</span>
-                    <span className="text-[15px] font-extrabold tracking-tight text-red-600 leading-none">{formatCurrency(totalFilteredExpense)}</span>
+                <div className="relative w-[150px] h-[150px] rounded-full shrink-0 shadow-sm" style={{ background: `conic-gradient(${conicStops})` }}>
+                  <div className="absolute inset-[16px] rounded-full bg-white flex flex-col items-center justify-center shadow-inner">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Total</span>
+                    <span className="text-[14px] font-extrabold tracking-tight text-red-600 leading-none">{formatCurrency(totalFilteredExpense)}</span>
                   </div>
                 </div>
 
                 {/* Chart Legend */}
-                <div className="flex flex-col gap-2.5 w-full min-w-0">
+                <div className="flex flex-col gap-2 w-full min-w-0 max-h-[260px] overflow-y-auto pr-1">
                   {chartData.map((d, i) => {
                     const pct = ((d.value / totalFilteredExpense) * 100).toFixed(1);
                     return (
-                      <div key={d.name} className="flex flex-wrap sm:flex-nowrap items-center justify-between w-full gap-2">
+                      <div key={d.name} className="flex items-center justify-between w-full gap-2 text-[12px] sm:text-[13px]">
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getCategoryColor(d.name, i) }}></div>
-                          <p className="text-[13px] font-semibold text-[#374151] truncate">{d.name}</p>
+                          <p className="font-semibold text-slate-700 truncate" title={d.name}>{d.name}</p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <p className="text-[13px] font-bold text-slate-700">{formatCurrency(d.value)}</p>
-                          <p className="text-[11px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-md min-w-[42px] text-center">{pct}%</p>
+                          <p className="font-bold text-slate-800">{formatCurrency(d.value)}</p>
+                          <p className="text-[11px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-md min-w-[40px] text-center">{pct}%</p>
                         </div>
                       </div>
                     );

@@ -5,13 +5,13 @@ import IncomeOverviewChart from './IncomeOverviewChart';
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
 const SummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "text-slate-900", iconColor, iconBg, extraClass = "bg-white border-slate-200 shadow-sm" }) => (
-  <div className={`rounded-xl border p-4 sm:p-5 transition-shadow flex flex-col justify-center h-full min-w-0 w-full ${extraClass}`}>
-    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-      <div className={`flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+  <div className={`rounded-xl border p-4 sm:p-4.5 transition-shadow flex flex-col justify-center h-full min-h-[96px] sm:min-h-[104px] min-w-0 w-full ${extraClass}`}>
+    <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
+      <div className={`flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
         <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${iconColor}`} strokeWidth={2} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[12px] sm:text-[14px] font-semibold text-slate-500 leading-snug truncate" title={title}>{title}</p>
+        <p className="text-[12px] sm:text-[13px] font-semibold text-slate-500 leading-snug truncate" title={title}>{title}</p>
         <p 
           className={`mt-0.5 sm:mt-1 text-base sm:text-lg lg:text-xl font-bold tracking-tight truncate leading-tight ${valueColor}`}
           title={value}
@@ -27,6 +27,7 @@ const SummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "text-sla
 import { isDateInRange, formatDate, formatDateTime } from '../../utils/dateUtils';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import { UPDATE_EVENT_NAME } from '../../utils/guarantorReferralStorage';
+import { getEligibleIncomeTransactions, calculateTotalInflow } from '../../utils/incomeCalculations';
 
 const IncomeView = ({ data }) => {
   const [search, setSearch] = useState('');
@@ -54,86 +55,8 @@ const IncomeView = ({ data }) => {
   // Loaded from the API by the Ledger page.
   const { incomeData: rawIncomeData, payments, customers, investors } = data;
 
-  // 1. Manual Income Records
-  const manualIncomeList = rawIncomeData.map(inc => ({
-    ...inc,
-    source: inc.isCapital || inc.type === 'Investment' ? 'investor' : 'manual',
-    displayDate: (inc.date || '').slice(0, 10),
-    displayAmount: Number(inc.amount || 0),
-    isCapital: inc.isCapital || inc.type === 'Chit Investment' || inc.type === 'Investment',
-  }));
-
-  // 2. Collection Payments with Principal & Interest
-  const collectionList = payments.map(p => {
-    const cust = customers.find(c => c.customerId === p.customerId || c.loanId === p.loanId);
-    const cName = cust?.customer?.name || cust?.name || 'Unknown Customer';
-    const rawAmt = Number(p.amount || 0);
-
-    const hasStoredBreakdown = (p.principal !== undefined && p.principal !== null) || (p.interest !== undefined && p.interest !== null);
-    const principal = hasStoredBreakdown ? Number(p.principal || 0) : null;
-    const interest = hasStoredBreakdown ? Number(p.interest || 0) : null;
-
-    return {
-      id: p.id,
-      date: p.date,
-      displayDate: (p.date || '').slice(0, 10),
-      type: 'Collection',
-      source: 'collection',
-      amount: rawAmt,
-      displayAmount: rawAmt,
-      principal,
-      interest,
-      hasBreakdown: hasStoredBreakdown,
-      mode: p.mode || 'Cash',
-      customerId: p.customerId,
-      customerName: cName,
-      loanId: p.loanId,
-      installmentRef: p.installmentNumber ? `Installment #${p.installmentNumber}` : (p.remarks || 'EMI Collection'),
-      frequency: cust?.loan?.paymentFrequency || cust?.paymentFrequency || '',
-      remarks: p.remarks || 'EMI Collection'
-    };
-  });
-
-  // 3. Eligible Investor Capital Transactions (New Investment, Re-Investment, Opening Balance)
-  const investmentList = [];
-  investors.forEach(inv => {
-    if (inv.transactions && Array.isArray(inv.transactions)) {
-      inv.transactions.forEach(tx => {
-        if (tx.type === 'New Investment' || tx.type === 'Re-Investment' || tx.type === 'Opening Balance') {
-          // Avoid duplicate if already tracked in rawIncomeData with matching ID
-          const alreadyInIncome = rawIncomeData.some(inc => 
-            (inc.transactionId && inc.transactionId === tx.id) ||
-            (tx.incomeId && tx.incomeId === inc.id)
-          );
-          if (!alreadyInIncome) {
-            const txAmount = Number(tx.amount || 0);
-            investmentList.push({
-              id: tx.id || `INV-${inv.id}-${tx.date}`,
-              date: tx.date || new Date().toISOString(),
-              displayDate: (tx.date || '').slice(0, 10),
-              type: 'Investment',
-              source: 'investor',
-              subType: tx.type,
-              amount: txAmount,
-              displayAmount: txAmount,
-              investorId: inv.id,
-              investorName: inv.name,
-              mode: tx.transferMode || tx.paymentMode || 'Bank Transfer',
-              remarks: tx.type === 'Opening Balance' ? 'Opening Balance Capital' : `${tx.type} received from ${inv.name}`,
-              isCapital: true
-            });
-          }
-        }
-      });
-    }
-  });
-
-  // Combine and sort chronologically (newest first)
-  const allIncome = [
-    ...manualIncomeList,
-    ...collectionList,
-    ...investmentList
-  ].sort((a, b) => new Date(b.date) - new Date(a.date));
+  // Retrieve eligible income/inflow transactions (collections, manual/recorded income, and investor capital; excluding opening balance)
+  const allIncome = getEligibleIncomeTransactions(rawIncomeData, payments, investors, customers);
 
   const filteredIncome = allIncome.filter(inc => {
     if (!isDateInRange(inc.date, dateFilter, customStart, customEnd)) return false;
@@ -191,7 +114,7 @@ const IncomeView = ({ data }) => {
     .filter(i => i.type === 'Penalty')
     .reduce((sum, i) => sum + i.displayAmount, 0);
 
-  const totalInflow = filteredIncome.reduce((sum, i) => sum + i.displayAmount, 0);
+  const totalInflow = calculateTotalInflow(rawIncomeData, payments, investors, customers);
 
   // Income Breakdown Chart Data: shows distinct sources without combining capital with interest
   const breakdownMap = filteredIncome.reduce((acc, inc) => {
@@ -267,7 +190,7 @@ const IncomeView = ({ data }) => {
     <div className="flex flex-col mt-6 space-y-6 w-full min-w-0 max-w-full">
 
       {/* KPI GRID */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 shrink-0 pb-2 w-full min-w-0">
+      <div className="grid grid-cols-1 min-[500px]:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 w-full min-w-0">
         <SummaryCard
           icon={Database}
           title="Principal Recovered"
@@ -296,50 +219,42 @@ const IncomeView = ({ data }) => {
           iconBg="bg-purple-100"
           extraClass="bg-white border-slate-200 shadow-sm"
         />
-        {chitInvestmentTotal > 0 && (
-          <SummaryCard
-            icon={PiggyBank}
-            title="Chit Investment"
-            value={formatCurrency(chitInvestmentTotal)}
-            subtext="Chit Fund Capital"
-            iconColor="text-teal-600"
-            iconBg="bg-teal-100"
-            extraClass="bg-white border-slate-200 shadow-sm"
-          />
-        )}
-        {docChargeTotal > 0 && (
-          <SummaryCard
-            icon={FileText}
-            title="Document Charges"
-            value={formatCurrency(docChargeTotal)}
-            subtext="Collected upfront"
-            iconColor="text-amber-600"
-            iconBg="bg-amber-100"
-            extraClass="bg-white border-slate-200 shadow-sm"
-          />
-        )}
-        {vehicleSaleTotal > 0 && (
-          <SummaryCard
-            icon={Car}
-            title="Vehicle Sales"
-            value={formatCurrency(vehicleSaleTotal)}
-            subtext="Vehicle Liquidation"
-            iconColor="text-emerald-700"
-            iconBg="bg-emerald-100"
-            extraClass="bg-white border-slate-200 shadow-sm"
-          />
-        )}
-        {penaltyTotal > 0 && (
-          <SummaryCard
-            icon={Coins}
-            title="Penalty Income"
-            value={formatCurrency(penaltyTotal)}
-            subtext="Overdue Penalties"
-            iconColor="text-amber-700"
-            iconBg="bg-amber-100"
-            extraClass="bg-white border-slate-200 shadow-sm"
-          />
-        )}
+        <SummaryCard
+          icon={PiggyBank}
+          title="Chit Investment"
+          value={formatCurrency(chitInvestmentTotal)}
+          subtext="Chit Fund Capital"
+          iconColor="text-teal-600"
+          iconBg="bg-teal-100"
+          extraClass="bg-white border-slate-200 shadow-sm"
+        />
+        <SummaryCard
+          icon={FileText}
+          title="Document Charges"
+          value={formatCurrency(docChargeTotal)}
+          subtext="Collected upfront"
+          iconColor="text-amber-600"
+          iconBg="bg-amber-100"
+          extraClass="bg-white border-slate-200 shadow-sm"
+        />
+        <SummaryCard
+          icon={Car}
+          title="Vehicle Sales"
+          value={formatCurrency(vehicleSaleTotal)}
+          subtext="Vehicle Liquidation"
+          iconColor="text-emerald-700"
+          iconBg="bg-emerald-100"
+          extraClass="bg-white border-slate-200 shadow-sm"
+        />
+        <SummaryCard
+          icon={Coins}
+          title="Penalty Income"
+          value={formatCurrency(penaltyTotal)}
+          subtext="Overdue Penalties"
+          iconColor="text-amber-700"
+          iconBg="bg-amber-100"
+          extraClass="bg-white border-slate-200 shadow-sm"
+        />
         <SummaryCard
           icon={ArrowUpCircle}
           title="Total Inflow"
@@ -352,9 +267,20 @@ const IncomeView = ({ data }) => {
         />
       </div>
 
-      {/* FILTERS */}
-      <div className="mt-4 flex flex-col md:flex-row gap-3 shrink-0 flex-wrap items-stretch md:items-center justify-between w-full min-w-0">
-        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 w-full md:w-auto min-w-0">
+      {/* SEARCH AND FILTERS TOOLBAR */}
+      <div className="flex flex-col lg:flex-row lg:items-center gap-2.5 sm:gap-3 w-full min-w-0">
+        <div className="relative flex-1 min-w-[200px] w-full">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+            placeholder="Search Customer, Investor, ID, Remarks..."
+            className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-4 text-[13px] font-medium outline-none transition-colors hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm placeholder:text-slate-400"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
           {/* Date Filter (Monthly, Today, All Time, Custom, etc.) */}
           <DateRangeFilter
             dateFilter={dateFilter}
@@ -369,7 +295,7 @@ const IncomeView = ({ data }) => {
           <select
             value={typeFilter}
             onChange={e => { setTypeFilter(e.target.value); setCurrentPage(1); }}
-            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm max-w-full"
+            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm shrink-0"
           >
             <option value="All">All Types</option>
             <option value="Penalty">Penalty Income</option>
@@ -393,7 +319,7 @@ const IncomeView = ({ data }) => {
               setSelectedInvestorId('All');
               setCurrentPage(1);
             }}
-            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm max-w-full"
+            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm shrink-0"
           >
             <option value="All">All Parties</option>
             <option value="Customer">Customer Collections</option>
@@ -405,7 +331,7 @@ const IncomeView = ({ data }) => {
             <select
               value={selectedCustomerId}
               onChange={e => { setSelectedCustomerId(e.target.value); setCurrentPage(1); }}
-              className="h-9 rounded-lg border border-blue-300 bg-blue-50/50 px-3 text-[13px] font-semibold text-blue-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm max-w-full sm:max-w-[200px]"
+              className="h-9 rounded-lg border border-blue-300 bg-blue-50/50 px-3 text-[13px] font-semibold text-blue-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm max-w-full sm:max-w-[180px] shrink-0"
             >
               <option value="All">All Customers</option>
               {customers.map(c => (
@@ -421,7 +347,7 @@ const IncomeView = ({ data }) => {
             <select
               value={selectedInvestorId}
               onChange={e => { setSelectedInvestorId(e.target.value); setCurrentPage(1); }}
-              className="h-9 rounded-lg border border-purple-300 bg-purple-50/50 px-3 text-[13px] font-semibold text-purple-900 outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 shadow-sm max-w-full sm:max-w-[200px]"
+              className="h-9 rounded-lg border border-purple-300 bg-purple-50/50 px-3 text-[13px] font-semibold text-purple-900 outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 shadow-sm max-w-full sm:max-w-[180px] shrink-0"
             >
               <option value="All">All Investors</option>
               {investors.map(inv => (
@@ -431,17 +357,6 @@ const IncomeView = ({ data }) => {
               ))}
             </select>
           )}
-        </div>
-
-        <div className="relative w-full md:w-[260px] min-w-0">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-            placeholder="Search Customer, Investor, ID, Remarks..."
-            className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-4 text-[13px] outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm placeholder:text-slate-400"
-          />
         </div>
       </div>
 

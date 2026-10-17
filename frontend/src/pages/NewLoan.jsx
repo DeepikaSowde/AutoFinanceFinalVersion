@@ -367,6 +367,14 @@ const NewLoan = () => {
         }
       }
 
+      const vehicleAmount = form.loan.vehicleAmount !== null && form.loan.vehicleAmount !== '' && form.loan.vehicleAmount !== undefined
+        ? Number(form.loan.vehicleAmount)
+        : Number(form.vehicle.amount || 0)
+      if (vehicleAmount > 0 && Number(form.loan.downPayment || 0) > vehicleAmount) {
+        alert('Down payment cannot exceed vehicle amount.')
+        return
+      }
+
       // Early, friendly check; the server re-checks inside the transaction
       // that creates and funds the loan.
       const principal = principalOf(form)

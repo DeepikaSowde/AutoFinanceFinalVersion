@@ -20,14 +20,14 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="h-full w-full min-h-[400px] flex items-center justify-center p-6 bg-slate-50">
+      <div className="h-full w-full min-h-[400px] flex items-center justify-center p-6 bg-white">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-700"></div>
       </div>
     );
   }
 
   return (
-    <div className="h-full w-full flex flex-col p-4 sm:p-6 bg-slate-50 overflow-y-auto">
+    <div className="h-full w-full flex-1 min-h-screen flex flex-col p-4 sm:p-6 bg-white overflow-y-auto">
       <div className="w-full">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200">
           <div className="flex w-full sm:w-auto overflow-x-auto -mb-px">
