@@ -116,7 +116,27 @@ const IncomeView = () => {
     .filter(i => i.type === 'Penalty')
     .reduce((sum, i) => sum + i.displayAmount, 0);
 
-  const totalInflow = calculateTotalInflow(rawIncomeData, payments, investors, customers);
+  const totalInflow = filteredIncome.reduce((sum, i) => sum + Number(i.displayAmount || 0), 0);
+
+  const isFilterActive =
+    dateFilter !== 'All Time' ||
+    typeFilter !== 'All' ||
+    entityFilter !== 'All' ||
+    selectedCustomerId !== 'All' ||
+    selectedInvestorId !== 'All' ||
+    search.trim() !== '';
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setDateFilter('All Time');
+    setCustomStart('');
+    setCustomEnd('');
+    setTypeFilter('All');
+    setEntityFilter('All');
+    setSelectedCustomerId('All');
+    setSelectedInvestorId('All');
+    setCurrentPage(1);
+  };
 
   // Income Breakdown Chart Data: shows distinct sources without combining capital with interest
   const breakdownMap = filteredIncome.reduce((acc, inc) => {
@@ -358,6 +378,18 @@ const IncomeView = () => {
                 </option>
               ))}
             </select>
+          )}
+
+          {isFilterActive && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="h-9 px-3 text-[13px] font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-300 hover:border-slate-400 rounded-lg shadow-sm transition-colors flex items-center gap-1.5 shrink-0"
+              title="Reset all filters"
+            >
+              <X className="h-3.5 w-3.5 text-slate-400" />
+              <span>Reset</span>
+            </button>
           )}
         </div>
       </div>

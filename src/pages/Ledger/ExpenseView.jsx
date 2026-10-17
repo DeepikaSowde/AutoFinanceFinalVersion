@@ -93,32 +93,87 @@ const ExpenseView = ({ onAddExpense }) => {
     return true;
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // Separate regular business expenses from investor withdrawals
-  const regularExpenses = expenseData.filter(exp => exp.category !== 'Investor Withdrawal');
+  // Separate regular business expenses from investor withdrawals within filteredExpense
+  const regularExpenses = filteredExpense.filter(exp => exp.category !== 'Investor Withdrawal');
   const regularExpenseTotal = regularExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
 
-  const investorWithdrawals = expenseData.filter(exp => exp.category === 'Investor Withdrawal');
+  const investorWithdrawals = filteredExpense.filter(exp => exp.category === 'Investor Withdrawal');
   const investorWithdrawalTotal = investorWithdrawals.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
 
-  const loanAmountTotal = customersList.reduce((sum, c) => sum + Number(c.loanAmount || 0), 0);
-
-  const commissionExpenses = expenseData.filter(exp => exp.category?.toLowerCase().includes('commission'));
-  const unlinkedCustomerCommissions = customersList
-    .filter(c => !commissionExpenses.some(e => (e.loanId && e.loanId === c.loanId) || (e.customerId && e.customerId === c.customerId)))
-    .reduce((sum, c) => sum + Number(c.referredByCommission || 0), 0);
-  const partyCommissionTotal = commissionExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0) + unlinkedCustomerCommissions;
-
-  const chitExpenses = expenseData.filter(exp => exp.category?.toLowerCase().includes('chit'));
+  const chitExpenses = filteredExpense.filter(exp => exp.category?.toLowerCase().includes('chit'));
   const chitPaidTotal = chitExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
 
-  const hasLoanData = customersList.length > 0 && loanAmountTotal > 0;
+  const commissionExpenses = filteredExpense.filter(exp => exp.category?.toLowerCase().includes('commission') || exp.category === 'Referral Commission');
+  const filteredCommissionTotal = commissionExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
+
+  const shouldIncludeUnlinkedCommissions =
+    (categoryFilter === 'All' || categoryFilter === 'Referral Commission') &&
+    selectedInvestorId === 'All';
+
+  const matchingCustomersForCommission = shouldIncludeUnlinkedCommissions
+    ? customersList.filter(c => {
+        const date = c.customer?.applicationDate || c.date || c.createdAt;
+        if (!isDateInRange(date, dateFilter, customStart, customEnd)) return false;
+        if (search.trim()) {
+          const q = search.toLowerCase();
+          const matches =
+            c.customer?.name?.toLowerCase().includes(q) ||
+            c.name?.toLowerCase().includes(q) ||
+            c.loanId?.toLowerCase().includes(q) ||
+            c.referredByName?.toLowerCase().includes(q);
+          if (!matches) return false;
+        }
+        return true;
+      })
+    : [];
+
+  const unlinkedCustomerCommissions = matchingCustomersForCommission
+    .filter(c => !commissionExpenses.some(e => (e.loanId && e.loanId === c.loanId) || (e.customerId && e.customerId === c.customerId)))
+    .reduce((sum, c) => sum + Number(c.referredByCommission || 0), 0);
+
+  const partyCommissionTotal = filteredCommissionTotal + unlinkedCustomerCommissions;
+
+  const shouldIncludeLoans = categoryFilter === 'All' && selectedInvestorId === 'All';
+
+  const filteredLoans = shouldIncludeLoans
+    ? customersList.filter(c => {
+        const date = c.customer?.applicationDate || c.date || c.createdAt;
+        if (!isDateInRange(date, dateFilter, customStart, customEnd)) return false;
+        if (search.trim()) {
+          const q = search.toLowerCase();
+          const matches =
+            c.customer?.name?.toLowerCase().includes(q) ||
+            c.name?.toLowerCase().includes(q) ||
+            c.loanId?.toLowerCase().includes(q);
+          if (!matches) return false;
+        }
+        return true;
+      })
+    : [];
+
+  const loanAmountTotal = filteredLoans.reduce((sum, c) => sum + Number(c.loanAmount || 0), 0);
+
+  const hasLoanData = loanAmountTotal > 0;
   const hasCommissionData = partyCommissionTotal > 0;
-  const hasChitData = chitExpenses.length > 0;
 
   // Total Debit: exact total of all applicable expense transactions
-  // regularExpenseTotal already includes recorded commissions and chit payments from expenseData.
-  // We add unlinkedCustomerCommissions, investorWithdrawalTotal, and loanAmountTotal without duplicate counting.
   const totalDebit = regularExpenseTotal + investorWithdrawalTotal + loanAmountTotal + unlinkedCustomerCommissions;
+
+  const isFilterActive =
+    dateFilter !== 'All Time' ||
+    categoryFilter !== 'All' ||
+    selectedInvestorId !== 'All' ||
+    search.trim() !== '';
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setDateFilter('All Time');
+    setCustomStart('');
+    setCustomEnd('');
+    setCategoryFilter('All');
+    setSelectedInvestorId('All');
+    setCurrentPage(1);
+  };
 
   // Pagination
   const PAGE_SIZE = 5;
@@ -264,6 +319,18 @@ const ExpenseView = ({ onAddExpense }) => {
                 <option key={inv.id} value={inv.id}>{inv.name}</option>
               ))}
             </select>
+          )}
+
+          {isFilterActive && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="h-9 px-3 text-[13px] font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-300 hover:border-slate-400 rounded-lg shadow-sm transition-colors flex items-center gap-1.5 shrink-0"
+              title="Reset all filters"
+            >
+              <X className="h-3.5 w-3.5 text-slate-400" />
+              <span>Reset</span>
+            </button>
           )}
         </div>
 
