@@ -21,33 +21,7 @@ import {
 } from 'lucide-react';
 import { getChronologicalVehicleHistory } from './VehicleStatusHistoryModal';
 import { useVehicleImage } from '../../utils/vehicleImageHelper';
-
-/**
- * Format date for history timeline
- */
-const formatDateTime = (dateStr) => {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
-
-const formatDateOnly = (dateStr) => {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-};
+import { formatDate, formatDateTime } from '../../utils/dateUtils';
 
 const ActiveVehicleModal = ({ isOpen, onClose, vehicleRecord, onSeizureSuccess }) => {
   // Modal Views: 'details' (main) | 'seize' (seizure form) | 'history' (status history)
@@ -474,7 +448,7 @@ const ActiveVehicleModal = ({ isOpen, onClose, vehicleRecord, onSeizureSuccess }
                               )}
                             </div>
                             <span className="text-[11px] text-slate-500 font-medium">
-                              {formatDateTime(item.date)}
+                              {formatDateTime(item.date, item)}
                             </span>
                           </div>
 

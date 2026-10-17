@@ -22,7 +22,7 @@ import {
   X
 } from "lucide-react";
 
-import { isDateInRange } from "../../utils/dateUtils";
+import { isDateInRange, formatDateTimeParts } from "../../utils/dateUtils";
 import DateRangeFilter from "../../components/DateRangeFilter";
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
@@ -409,9 +409,8 @@ const Ledger = () => {
       name = tx.investorName;
     }
 
-    // Format date nicely
-    const dateObj = new Date(tx.date);
-    const dateStr = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    // Format date and time safely in IST
+    const { date: dateStr, time: timeStr } = formatDateTimeParts(tx.date, tx);
 
     const getLedgerType = (source, type) => {
       if (source === 'investor_withdrawal' || type === 'Investor Withdrawal') return 'INVESTOR';
@@ -429,7 +428,7 @@ const Ledger = () => {
     return {
       id: tx.id || Math.random().toString(),
       date: dateStr,
-      time: "-",
+      time: timeStr || "-",
       description: `${name} – ${typeDesc}`,
       subtext: subDesc,
       in: amountIn,

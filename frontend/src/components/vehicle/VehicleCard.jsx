@@ -1,6 +1,7 @@
 import React from 'react';
 import { User, Phone, Bike, Car } from 'lucide-react';
 import { useVehicleImage } from '../../utils/vehicleImageHelper';
+import { getEffectiveVehicleStatus } from '../../utils/vehicleStatusHelper';
 
 /**
  * Status Badge configuration:
@@ -8,6 +9,7 @@ import { useVehicleImage } from '../../utils/vehicleImageHelper';
  * Seized: orange
  * Released: green
  * Sold: grey
+ * Inactive: slate/gray
  */
 const STATUS_STYLES = {
   Active: 'bg-[#2563EB] text-white',
@@ -15,6 +17,7 @@ const STATUS_STYLES = {
   Seized: 'bg-[#EA580C] text-white',
   Released: 'bg-[#16A34A] text-white',
   Sold: 'bg-[#64748B] text-white',
+  Inactive: 'bg-slate-500 text-white',
 };
 
 const VehicleCard = ({ vehicleRecord, onViewDetails }) => {
@@ -27,7 +30,7 @@ const VehicleCard = ({ vehicleRecord, onViewDetails }) => {
   const customerName = customer.name || 'Customer not linked';
   const customerMobile = customer.mobile || 'Mobile not available';
 
-  const status = vehicleRecord.vehicleStatus || vehicle.status || 'Active';
+  const status = getEffectiveVehicleStatus(vehicleRecord);
   const badgeStyle = STATUS_STYLES[status] || STATUS_STYLES.Active;
 
   // Resolves customer uploaded photo if available, otherwise vehicle-type default image

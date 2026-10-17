@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronRight, ChevronLeft, X, Wallet, ArrowDownCircle, ArrowUpCircle, Database, FileText, Banknote, Landmark, PiggyBank, Briefcase, Car } from 'lucide-react';
+import { Search, ChevronRight, ChevronLeft, X, Wallet, ArrowDownCircle, ArrowUpCircle, Database, FileText, Banknote, Landmark, PiggyBank, Briefcase, Car, Coins, AlertCircle } from 'lucide-react';
 import IncomeOverviewChart from './IncomeOverviewChart';
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
@@ -24,7 +24,7 @@ const SummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "text-sla
   </div>
 );
 
-import { isDateInRange } from '../../utils/dateUtils';
+import { isDateInRange, formatDate, formatDateTime } from '../../utils/dateUtils';
 import DateRangeFilter from '../../components/DateRangeFilter';
 import { UPDATE_EVENT_NAME } from '../../utils/guarantorReferralStorage';
 
@@ -187,6 +187,10 @@ const IncomeView = ({ data }) => {
     .filter(i => i.type === 'Vehicle Sale' || i.isVehicleSale)
     .reduce((sum, i) => sum + i.displayAmount, 0);
 
+  const penaltyTotal = filteredIncome
+    .filter(i => i.type === 'Penalty')
+    .reduce((sum, i) => sum + i.displayAmount, 0);
+
   const totalInflow = filteredIncome.reduce((sum, i) => sum + i.displayAmount, 0);
 
   // Income Breakdown Chart Data: shows distinct sources without combining capital with interest
@@ -194,6 +198,8 @@ const IncomeView = ({ data }) => {
     let key = inc.type || 'Other';
     if (inc.type === 'Investment') {
       key = 'Investor Capital';
+    } else if (inc.type === 'Penalty') {
+      key = 'Penalty Income';
     }
     acc[key] = (acc[key] || 0) + inc.displayAmount;
     return acc;
@@ -211,6 +217,7 @@ const IncomeView = ({ data }) => {
     switch (type) {
       case 'Vehicle Sale': return 'bg-emerald-50 text-emerald-800 border-emerald-200';
       case 'Collection': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'Penalty': return 'bg-amber-50 text-amber-800 border-amber-200';
       case 'Investment': return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'Chit Investment': return 'bg-teal-50 text-teal-700 border-teal-200';
       case 'Document Charge': return 'bg-amber-50 text-amber-700 border-amber-200';
@@ -224,6 +231,7 @@ const IncomeView = ({ data }) => {
     switch (type) {
       case 'Vehicle Sale': return Car;
       case 'Collection': return Wallet;
+      case 'Penalty': return Coins;
       case 'Investment': return Landmark;
       case 'Chit Investment': return PiggyBank;
       case 'Document Charge': return FileText;
@@ -234,6 +242,7 @@ const IncomeView = ({ data }) => {
   const getTypeIconBg = (type) => {
     switch (type) {
       case 'Collection': return 'bg-blue-100';
+      case 'Penalty': return 'bg-amber-100';
       case 'Investment': return 'bg-purple-100';
       case 'Chit Investment': return 'bg-teal-100';
       case 'Document Charge': return 'bg-amber-100';
@@ -244,6 +253,7 @@ const IncomeView = ({ data }) => {
   const getTypeIconColor = (type) => {
     switch (type) {
       case 'Collection': return 'text-blue-600';
+      case 'Penalty': return 'text-amber-700';
       case 'Investment': return 'text-purple-600';
       case 'Chit Investment': return 'text-teal-600';
       case 'Document Charge': return 'text-amber-600';
@@ -319,6 +329,17 @@ const IncomeView = ({ data }) => {
             extraClass="bg-white border-slate-200 shadow-sm"
           />
         )}
+        {penaltyTotal > 0 && (
+          <SummaryCard
+            icon={Coins}
+            title="Penalty Income"
+            value={formatCurrency(penaltyTotal)}
+            subtext="Overdue Penalties"
+            iconColor="text-amber-700"
+            iconBg="bg-amber-100"
+            extraClass="bg-white border-slate-200 shadow-sm"
+          />
+        )}
         <SummaryCard
           icon={ArrowUpCircle}
           title="Total Inflow"
@@ -351,6 +372,7 @@ const IncomeView = ({ data }) => {
             className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 outline-none hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm max-w-full"
           >
             <option value="All">All Types</option>
+            <option value="Penalty">Penalty Income</option>
             <option value="Vehicle Sale">Vehicle Sale</option>
             <option value="Investment">Investor Capital</option>
             <option value="Collection">EMI Collection</option>
@@ -451,7 +473,7 @@ const IncomeView = ({ data }) => {
                     <tr key={inc.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => setViewTransaction(inc)}>
                       <td className="px-3.5 sm:px-5 py-3.5 whitespace-nowrap">
                         <p className="font-semibold text-[13px] sm:text-[14px] text-slate-800">
-                          {new Date(inc.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
+                          {formatDate(inc.date)}
                         </p>
                       </td>
                       <td className="px-3 sm:px-5 py-3.5">
@@ -463,6 +485,8 @@ const IncomeView = ({ data }) => {
                             <p className="font-semibold text-[13px] sm:text-[14px] text-slate-800 truncate" title={
                               inc.type === 'Collection'
                                 ? `${inc.customerName} – EMI Collection`
+                                : inc.type === 'Penalty'
+                                ? `${inc.customerName} – Penalty Income`
                                 : inc.type === 'Investment'
                                 ? `${inc.investorName} – ${inc.subType || 'Capital Deposit'}`
                                 : inc.type === 'Chit Investment'
@@ -473,6 +497,8 @@ const IncomeView = ({ data }) => {
                             }>
                               {inc.type === 'Collection'
                                 ? `${inc.customerName} – EMI Collection`
+                                : inc.type === 'Penalty'
+                                ? `${inc.customerName} – Penalty Income`
                                 : inc.type === 'Investment'
                                 ? `${inc.investorName} – ${inc.subType || 'Capital Deposit'}`
                                 : inc.type === 'Chit Investment'
@@ -602,7 +628,7 @@ const IncomeView = ({ data }) => {
                     <div className="flex justify-between items-center py-1 border-b border-slate-100">
                       <span className="font-medium text-slate-500">Collection Date</span>
                       <span className="font-bold text-slate-900">
-                        {new Date(viewTransaction.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {formatDateTime(viewTransaction.date, viewTransaction)}
                       </span>
                     </div>
                     {viewTransaction.frequency && (
@@ -647,7 +673,7 @@ const IncomeView = ({ data }) => {
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-slate-100">
                     <span className="font-medium text-slate-500">Date</span>
-                    <span className="font-bold text-slate-900">{new Date(viewTransaction.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                    <span className="font-bold text-slate-900">{formatDateTime(viewTransaction.date, viewTransaction)}</span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-slate-100">
                     <span className="font-medium text-slate-500">Payment Mode</span>
@@ -694,7 +720,7 @@ const IncomeView = ({ data }) => {
                   )}
                   <div className="flex justify-between items-center py-1 border-b border-slate-100">
                     <span className="font-medium text-slate-500">Sale Date</span>
-                    <span className="font-bold text-slate-900">{new Date(viewTransaction.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                    <span className="font-bold text-slate-900">{formatDateTime(viewTransaction.date, viewTransaction)}</span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-slate-100">
                     <span className="font-medium text-slate-500">Payment Mode</span>
@@ -703,6 +729,57 @@ const IncomeView = ({ data }) => {
                   <div className="flex justify-between items-center py-1">
                     <span className="font-medium text-slate-500">Description</span>
                     <span className="font-bold text-slate-900">{viewTransaction.remarks || `Vehicle Sale – ${viewTransaction.regNo || ''}`}</span>
+                  </div>
+                </div>
+              ) : viewTransaction.type === 'Penalty' ? (
+                <div className="space-y-3.5 text-[13px]">
+                  <div className="rounded-xl border border-amber-200/70 bg-amber-50/40 p-4 space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Penalty Income Inflow</p>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[13px] font-semibold text-slate-700">Collected Penalty</span>
+                      <span className="text-[16px] font-black text-amber-700">{formatCurrency(viewTransaction.amount)}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">Tracked separately from principal and interest collections.</p>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                    <span className="font-medium text-slate-500">Customer Name</span>
+                    <span className="font-bold text-slate-900">{viewTransaction.customerName}</span>
+                  </div>
+                  {viewTransaction.customerId && (
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                      <span className="font-medium text-slate-500">Customer ID</span>
+                      <span className="font-bold text-slate-900">{viewTransaction.customerId}</span>
+                    </div>
+                  )}
+                  {viewTransaction.loanId && (
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                      <span className="font-medium text-slate-500">Loan ID</span>
+                      <span className="font-mono font-bold text-[#006052]">{viewTransaction.loanId}</span>
+                    </div>
+                  )}
+                  {viewTransaction.installmentNumber && (
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                      <span className="font-medium text-slate-500">Installment Reference</span>
+                      <span className="font-bold text-slate-900">Installment #{viewTransaction.installmentNumber}</span>
+                    </div>
+                  )}
+                  {viewTransaction.penaltyType && (
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                      <span className="font-medium text-slate-500">Penalty Rule</span>
+                      <span className="font-bold text-slate-900">{viewTransaction.penaltyType} ({viewTransaction.gracePeriod ?? 0} grace days)</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                    <span className="font-medium text-slate-500">Collection Date</span>
+                    <span className="font-bold text-slate-900">{formatDateTime(viewTransaction.date, viewTransaction)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                    <span className="font-medium text-slate-500">Payment Mode</span>
+                    <span className="font-bold text-slate-900">{viewTransaction.mode || 'Cash'}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="font-medium text-slate-500">Remarks</span>
+                    <span className="font-bold text-slate-900">{viewTransaction.remarks || 'Penalty Income'}</span>
                   </div>
                 </div>
               ) : (
@@ -720,7 +797,7 @@ const IncomeView = ({ data }) => {
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-slate-100">
                     <span className="font-medium text-slate-500">Date</span>
-                    <span className="font-bold text-slate-900">{new Date(viewTransaction.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                    <span className="font-bold text-slate-900">{formatDateTime(viewTransaction.date, viewTransaction)}</span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-slate-100">
                     <span className="font-medium text-slate-500">Payment Mode</span>

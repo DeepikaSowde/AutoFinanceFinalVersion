@@ -2,20 +2,20 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { DATA_CHANGED_EVENT } from "../../services/api";
 import { loadCustomerEntries } from "../../services/customerApi";
 import { loadPayments, recordCollection } from "../../services/collectionApi";
-import { 
-  Search, 
-  Calendar as CalendarIcon, 
-  CheckCircle2, 
-  X, 
-  Wallet, 
-  AlertCircle, 
-  CheckCircle, 
-  ChevronDown, 
-  CreditCard, 
-  Banknote, 
-  Building2, 
-  Printer, 
-  Clock, 
+import {
+  Search,
+  Calendar as CalendarIcon,
+  CheckCircle2,
+  X,
+  Wallet,
+  AlertCircle,
+  CheckCircle,
+  ChevronDown,
+  CreditCard,
+  Banknote,
+  Building2,
+  Printer,
+  Clock,
   ArrowRight,
   User,
   ShieldCheck,
@@ -31,18 +31,22 @@ import {
   Coins
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { generateSchedule, getRepaymentColumnLabel } from "../../components/RepaymentScheduleTable";
 import MidwayClosureModal from "../../components/MidwayClosureModal";
+import { formatDate, formatDateTime, getLocalDateString, getTransactionTimestamp } from "../../utils/dateUtils";
+import {
+  getPenaltyRecords,
+  getInstallmentPenaltySupportingAmount,
+  freezePenaltyRecords,
+  unfreezePenaltyRecords,
+  cancelPenaltyRecords,
+  collectPenaltyTransaction,
+  getLoanPenaltySummary,
+  usePenaltyData,
+} from "../../utils/penaltyRules";
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return String(dateStr);
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-};
 
 // Formats installment numbers as '1', '2', '3' or consecutive ranges like '1–10' without '#' or long comma-separated lists
 const formatInstallmentDisplay = (txOrAllocations) => {
@@ -111,46 +115,6 @@ const formatInstallmentDisplay = (txOrAllocations) => {
   return ranges.join(", ");
 };
 
-const formatDateTime = (dateStr, fallbackTx = null) => {
-  if (!dateStr && !fallbackTx) return "—";
-
-  let d = null;
-  const isPlainDate = typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim());
-
-  if (isPlainDate && fallbackTx) {
-    // If dateStr is only YYYY-MM-DD without time, try to extract actual creation timestamp from record's unique ID/timestamp properties
-    const recordTimestamp = fallbackTx.timestamp || fallbackTx.createdAt || fallbackTx.paidAt;
-    if (recordTimestamp) {
-      const parsedTs = new Date(recordTimestamp);
-      if (!isNaN(parsedTs.getTime())) d = parsedTs;
-    }
-    if (!d && typeof fallbackTx.id === "string") {
-      const match = fallbackTx.id.match(/(\d{12,13})/);
-      if (match) {
-        const idTs = Number(match[1]);
-        const idDate = new Date(idTs);
-        if (!isNaN(idDate.getTime()) && idDate.getFullYear() >= 2020 && idDate.getFullYear() <= 2035) {
-          d = idDate;
-        }
-      }
-    }
-  }
-
-  if (!d && dateStr) {
-    d = new Date(dateStr);
-  }
-
-  if (!d || isNaN(d.getTime())) return String(dateStr || "—");
-
-  const formattedDate = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-  const hasTime = typeof dateStr === "string" && (dateStr.includes("T") || dateStr.includes(":") || !isPlainDate);
-  const formattedTime = (hasTime || d)
-    ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true })
-    : "";
-
-  return formattedTime ? `${formattedDate}, ${formattedTime}` : formattedDate;
-};
-
 // Helper: Calculate if a date is today, past, or future relative to reference date (timezone-safe)
 const getDayDiff = (targetDateStr, referenceDateStr) => {
   if (!targetDateStr) return 0;
@@ -167,46 +131,6 @@ const getDayDiff = (targetDateStr, referenceDateStr) => {
   target.setHours(0, 0, 0, 0);
 
   return Math.round((target.getTime() - ref.getTime()) / (1000 * 60 * 60 * 24));
-};
-
-// Helper to parse any transaction date format (YYYY-MM-DD, ISO string, timestamp) to local milliseconds
-const getTransactionTimestamp = (d) => {
-  if (!d) return NaN;
-  if (typeof d === "number") return d;
-  if (typeof d === "string") {
-    const trimmed = d.trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      const [y, m, day] = trimmed.split("-").map(Number);
-      return new Date(y, m - 1, day, 12, 0, 0).getTime();
-    }
-    const parsed = new Date(trimmed);
-    if (!isNaN(parsed.getTime())) return parsed.getTime();
-    if (trimmed.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
-      const [y, m, day] = trimmed.slice(0, 10).split("-").map(Number);
-      return new Date(y, m - 1, day, 12, 0, 0).getTime();
-    }
-  }
-  return NaN;
-};
-
-// Helper to get local YYYY-MM-DD string from a Date or ISO/date string in local timezone
-const getLocalDateString = (d = new Date()) => {
-  if (!d) return "";
-  if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d.trim())) {
-    return d.trim();
-  }
-  const ts = getTransactionTimestamp(d);
-  if (isNaN(ts)) {
-    if (typeof d === "string" && d.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(d)) {
-      return d.slice(0, 10);
-    }
-    return "";
-  }
-  const dt = new Date(ts);
-  const year = dt.getFullYear();
-  const month = String(dt.getMonth() + 1).padStart(2, "0");
-  const day = String(dt.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 };
 
 // Helper to compute start & end timestamp boundaries (00:00:00 to 23:59:59) for history date presets in local timezone
@@ -291,6 +215,10 @@ const Collection = () => {
   // Collect Payment Modal states
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [collectAmount, setCollectAmount] = useState("");
+  const [pendingPenaltyRecord, setPendingPenaltyRecord] = useState(null);
+  const [pendingPenaltyRecordsList, setPendingPenaltyRecordsList] = useState([]);
+  const [isPenaltyOnlyMode, setIsPenaltyOnlyMode] = useState(false);
+  const [penaltyAmountInput, setPenaltyAmountInput] = useState("");
   const [paymentDate, setPaymentDate] = useState(getLocalDateString(new Date()));
   const [paymentMode, setPaymentMode] = useState("Cash");
   const [transactionId, setTransactionId] = useState("");
@@ -299,11 +227,16 @@ const Collection = () => {
   const [clientRef, setClientRef] = useState("");
   const [payments, setPayments] = useState([]);
   const [loadError, setLoadError] = useState("");
+  // Penalty rules and records from the server; the lists re-run when they reload.
+  const penaltyVersion = usePenaltyData();
   const [schedulePage, setSchedulePage] = useState(1);
   const submittingRef = useRef(false);
 
   // Collection Details Modal state (Shared between Today and Overdue)
   const [detailsCustomer, setDetailsCustomer] = useState(null);
+
+  // View Schedule Modal state
+  const [scheduleModalCustomer, setScheduleModalCustomer] = useState(null);
 
   // Amount Collected Successfully Modal state
   const [confirmedTransaction, setConfirmedTransaction] = useState(null);
@@ -336,18 +269,18 @@ const Collection = () => {
 
   // Lock background body scroll when any modal is open, and restore when closed
   useEffect(() => {
-    if (selectedCustomer || confirmedTransaction || detailsCustomer || selectedHistoryTx || showMidwayModal) {
+    if (selectedCustomer || confirmedTransaction || detailsCustomer || scheduleModalCustomer || selectedHistoryTx || showMidwayModal) {
       const originalOverflow = document.body.style.overflow;
       document.body.style.overflow = "hidden";
       return () => {
         document.body.style.overflow = originalOverflow;
       };
     }
-  }, [selectedCustomer, confirmedTransaction, detailsCustomer, selectedHistoryTx, showMidwayModal]);
+  }, [selectedCustomer, confirmedTransaction, detailsCustomer, scheduleModalCustomer, selectedHistoryTx, showMidwayModal]);
 
-  // Compute processed customers and schedules
-  const processedCustomers = useMemo(() => {
-    return customers.map((c) => {
+  // Compute processed customer loans and schedules across all records
+  const allProcessedCustomers = useMemo(() => {
+    return customers.map((c, index) => {
       let schedule = c.repaymentSchedule;
       if (!schedule || schedule.length === 0) {
         const P = Number(c.loanAmount || (Number(c.loan?.vehicleAmount) - Number(c.loan?.downPayment || 0)) || 0);
@@ -405,10 +338,46 @@ const Collection = () => {
         } else if (anyPartial) {
           statusText = "Partial";
         }
+      } else if (allUnpaidInstalls.length === 0 && schedule.length > 0) {
+        statusText = "Collected";
+      }
+
+      const customerId =
+        c.customerId ||
+        c.customer?.customerId ||
+        (c.customer?.mobile && c.customer.mobile.trim().length >= 5 && !/^0+$/.test(c.customer.mobile.trim().slice(-5))
+          ? `CUS-${c.customer.mobile.trim().slice(-5)}`
+          : `CUS-${String(index + 1).padStart(3, "0")}`);
+
+      const loanId = c.loanId || c.loan?.loanId || `LN-${String(index + 1).padStart(3, "0")}`;
+
+      // Check for Penalties belonging to this loan using comprehensive summary
+      const penaltySummary = getLoanPenaltySummary(
+        loanId,
+        customerId,
+        c.customer?.name,
+        schedule,
+        c.paymentFrequency || c.loan?.paymentFrequency || "Monthly",
+        date ? new Date(date) : new Date()
+      );
+
+      const hasFrozenPenalty = penaltySummary.frozenPenalties.length > 0;
+      const totalFrozenPenaltyAmount = penaltySummary.totalFrozenPenalty;
+      const hasPendingPenalty = penaltySummary.pendingPenalties.length > 0;
+      const totalPendingPenaltyAmount = penaltySummary.totalPendingPenalty;
+
+      // Dedicated Penalty status:
+      // If loan has a frozen penalty and no regular overdue installments (or active collection is 0)
+      if (hasFrozenPenalty && overdueInstalls.length === 0 && todayInstalls.length === 0) {
+        statusText = "Penalty";
+      } else if (hasPendingPenalty && overdueInstalls.length === 0 && todayInstalls.length === 0) {
+        statusText = "Pending Penalty";
       }
 
       return {
         ...c,
+        customerId,
+        loanId,
         isDueToday,
         isOverdue,
         overdueCount: overdueInstalls.length,
@@ -419,31 +388,57 @@ const Collection = () => {
         originalOverdue,
         currentTotalDue: totalDueToday + totalOverdue,
         statusText,
+        hasFrozenPenalty,
+        totalFrozenPenaltyAmount,
+        frozenPenalties: penaltySummary.frozenPenalties,
+        hasPendingPenalty,
+        totalPendingPenaltyAmount,
+        pendingPenalties: penaltySummary.pendingPenalties,
+        penaltySummary,
         overdueInstalls,
         todayInstalls,
         allUnpaidInstalls,
         fullSchedule: schedule,
       };
-    }).filter((c) => c.isDueToday || c.isOverdue);
-  }, [customers, date]);
+    });
+  }, [customers, date, penaltyVersion]);
 
-  const todayList = processedCustomers.filter((c) => c.isDueToday);
-  const overdueList = processedCustomers.filter((c) => c.isOverdue);
+  const processedCustomers = useMemo(() => {
+    return allProcessedCustomers.filter((c) => c.isDueToday || c.isOverdue || c.hasFrozenPenalty || c.hasPendingPenalty);
+  }, [allProcessedCustomers]);
 
-  // Search and Filter
+  const todayList = useMemo(() => allProcessedCustomers.filter((c) => c.isDueToday), [allProcessedCustomers]);
+  const overdueList = useMemo(
+    () => allProcessedCustomers.filter((c) => c.isOverdue || c.hasFrozenPenalty || c.hasPendingPenalty),
+    [allProcessedCustomers]
+  );
+
+  // Search and Filter:
+  // When a search term is entered, search dynamically across ALL customer and loan records
+  // by customer name, customer ID, or loan ID (including customers with multiple loans).
   const getFilteredList = (list) => {
-    return list.filter((c) => {
-      if (activeTab === "Overdue" && overdueFilter !== "All") {
+    const baseList = search.trim() ? allProcessedCustomers : list;
+
+    return baseList.filter((c) => {
+      if (!search.trim() && activeTab === "Overdue" && overdueFilter !== "All") {
         if (overdueFilter === "1" && c.overdueCount !== 1) return false;
         if (overdueFilter === "2" && c.overdueCount !== 2) return false;
         if (overdueFilter === "3+" && c.overdueCount < 3) return false;
       }
       if (search.trim()) {
-        const q = search.toLowerCase();
-        const name = c.customer?.name?.toLowerCase() || "";
-        const loanId = c.loanId?.toLowerCase() || "";
-        const vehicle = c.vehicle?.regNo?.toLowerCase() || "";
-        if (!name.includes(q) && !loanId.includes(q) && !vehicle.includes(q)) return false;
+        const q = search.trim().toLowerCase();
+        const name = (c.customer?.name || "").toLowerCase();
+        const customerId = (c.customerId || c.customer?.customerId || "").toLowerCase();
+        const loanId = (c.loanId || c.loan?.loanId || "").toLowerCase();
+        const vehicle = (c.vehicle?.regNo || "").toLowerCase();
+        if (
+          !name.includes(q) &&
+          !customerId.includes(q) &&
+          !loanId.includes(q) &&
+          !vehicle.includes(q)
+        ) {
+          return false;
+        }
       }
       return true;
     });
@@ -598,10 +593,16 @@ const Collection = () => {
     return filteredHistoryList.slice(start, start + historyPageSize);
   }, [filteredHistoryList, currentHistoryPage, historyPageSize]);
 
-  const handleCollectClick = (c) => {
+  const handleCollectClick = (c, penaltyOnly = false) => {
     setSelectedCustomer(c);
-    // Prefill with current total due (overdue + today)
-    const initialAmount = c.currentTotalDue > 0 ? c.currentTotalDue : (c.totalUnpaidInstallmentAmount || "");
+    setIsPenaltyOnlyMode(penaltyOnly);
+
+    // In penalty-only mode, initialAmount is strictly 0 (no principal/interest)
+    const initialAmount = penaltyOnly
+      ? "0"
+      : c.currentTotalDue > 0
+        ? c.currentTotalDue
+        : (c.totalUnpaidInstallmentAmount || "");
     setCollectAmount(String(initialAmount || ""));
     setPaymentDate(date);
     setPaymentMode("Cash");
@@ -611,6 +612,144 @@ const Collection = () => {
     setIsSubmitting(false);
     // One reference per payment attempt, so a retry cannot post it twice.
     setClientRef(crypto.randomUUID());
+
+    try {
+      const loanId = c.loanId || c.loan?.loanId;
+      const custId = c.customerId || c.customer?.customerId || "";
+      const custName = c.customer?.name || c.name || "Customer";
+      const schedule = c.fullSchedule || c.repaymentSchedule || [];
+      const normFreq = c.paymentFrequency || c.loan?.paymentFrequency || "Monthly";
+
+      // Use comprehensive summary to get pending and frozen penalties
+      const summary = getLoanPenaltySummary(
+        loanId,
+        custId,
+        custName,
+        schedule,
+        normFreq,
+        date ? new Date(date) : new Date()
+      );
+
+      const existingFrozen = summary.frozenPenalties[0] || null;
+
+      if (penaltyOnly) {
+        // Penalty-only mode: Target eligible pending penalties across all eligible unpaid installments
+        if (summary.pendingPenalties.length > 0) {
+          setPendingPenaltyRecordsList(summary.pendingPenalties);
+          setPendingPenaltyRecord(summary.pendingPenalties[0]);
+          setPenaltyAmountInput(String(summary.totalPendingPenalty));
+        } else if (existingFrozen) {
+          setPendingPenaltyRecordsList(summary.frozenPenalties);
+          setPendingPenaltyRecord(existingFrozen);
+          setPenaltyAmountInput(String(summary.totalFrozenPenalty));
+        } else {
+          setPendingPenaltyRecordsList([]);
+          setPendingPenaltyRecord(null);
+          setPenaltyAmountInput("");
+        }
+      } else {
+        // Normal installment collection mode
+        if (existingFrozen) {
+          // Keep frozen penalty visible in modal as Frozen, but NEVER auto-collect or merge it!
+          setPendingPenaltyRecordsList(summary.frozenPenalties);
+          setPendingPenaltyRecord(existingFrozen);
+          setPenaltyAmountInput(String(summary.totalFrozenPenalty));
+        } else if (summary.pendingPenalties.length > 0) {
+          // Accumulate across all eligible unpaid installments (FIX 3)
+          setPendingPenaltyRecordsList(summary.pendingPenalties);
+          setPendingPenaltyRecord(summary.pendingPenalties[0]);
+          setPenaltyAmountInput(String(summary.totalPendingPenalty));
+        } else {
+          setPendingPenaltyRecordsList([]);
+          setPendingPenaltyRecord(null);
+          setPenaltyAmountInput("");
+        }
+      }
+    } catch (err) {
+      console.error("Error checking loan penalties:", err);
+      setPendingPenaltyRecordsList([]);
+      setPendingPenaltyRecord(null);
+      setPenaltyAmountInput("");
+    }
+  };
+
+  const location = useLocation();
+  const handledCollectLoanIdRef = useRef(null);
+
+  // Auto-open Collect Payment modal when navigated with ?collectLoanId=...
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const collectLoanId = params.get("collectLoanId");
+    if (collectLoanId && allProcessedCustomers.length > 0 && handledCollectLoanIdRef.current !== collectLoanId) {
+      const target = allProcessedCustomers.find(
+        (c) => c.loanId && c.loanId.trim().toLowerCase() === collectLoanId.trim().toLowerCase()
+      );
+      if (target) {
+        handledCollectLoanIdRef.current = collectLoanId;
+        handleCollectClick(target);
+      }
+    }
+  }, [location.search, allProcessedCustomers]);
+
+  // Penalty actions go to the server (which re-checks each amount); the
+  // penalty copy reloads afterwards and the lists re-render.
+  const [penaltyBusy, setPenaltyBusy] = useState(false);
+  const runPenaltyAction = async (work) => {
+    if (penaltyBusy) return null;
+    setPenaltyBusy(true);
+    try {
+      return await work();
+    } catch (err) {
+      alert(err.message || "Could not update the penalty. Please try again.");
+      return null;
+    } finally {
+      setPenaltyBusy(false);
+    }
+  };
+
+  const handleUnfreezeLoanPenalties = (c) => {
+    const loanId = c.loanId || c.loan?.loanId;
+    if (!loanId) return;
+    const frozenList = getPenaltyRecords().filter((r) => r.loanId === loanId && r.status === "Frozen");
+    if (!frozenList.length) return;
+    runPenaltyAction(() => unfreezePenaltyRecords(frozenList));
+  };
+
+  const modalPenaltyRecords = () =>
+    pendingPenaltyRecordsList.length > 0 ? pendingPenaltyRecordsList : [pendingPenaltyRecord];
+
+  const handleUnfreezeModalPenalty = async () => {
+    if (!pendingPenaltyRecord) return;
+    const unfrozenList = await runPenaltyAction(() => unfreezePenaltyRecords(modalPenaltyRecords()));
+    if (unfrozenList?.length) {
+      setPendingPenaltyRecordsList(unfrozenList);
+      setPendingPenaltyRecord(unfrozenList[0]);
+      const totalUnfrozen = unfrozenList.reduce((sum, r) => sum + Number(r.calculatedAmount || 0), 0);
+      setPenaltyAmountInput(String(totalUnfrozen));
+    }
+  };
+
+  const handleFreezePenalty = async () => {
+    if (!pendingPenaltyRecord) return;
+    const frozenList = await runPenaltyAction(() => freezePenaltyRecords(modalPenaltyRecords()));
+    if (frozenList?.length) {
+      setPendingPenaltyRecordsList(frozenList);
+      setPendingPenaltyRecord(frozenList[0]);
+      const totalFrozen = frozenList.reduce((sum, r) => sum + Number(r.calculatedAmount || 0), 0);
+      setPenaltyAmountInput(String(totalFrozen));
+    }
+  };
+
+  const handleCancelPenalty = async () => {
+    if (!pendingPenaltyRecord) return;
+    const cancelled = await runPenaltyAction(() =>
+      cancelPenaltyRecords(modalPenaltyRecords(), "Cancelled via Collect Payment popup")
+    );
+    if (cancelled) {
+      setPendingPenaltyRecord(null);
+      setPendingPenaltyRecordsList([]);
+      setPenaltyAmountInput("0");
+    }
   };
 
   // Live Payment Allocation Preview computation for selected customer
@@ -677,9 +816,17 @@ const Collection = () => {
   const handleConfirmPayment = async () => {
     if (submittingRef.current || isSubmitting) return;
 
-    if (!collectAmount || isNaN(collectAmount) || Number(collectAmount) <= 0) {
-      alert("Please enter a valid payment amount greater than 0.");
-      return;
+    if (isPenaltyOnlyMode) {
+      const penaltyAmt = Number(penaltyAmountInput || 0);
+      if (penaltyAmt <= 0) {
+        alert("Please enter a valid penalty amount greater than 0.");
+        return;
+      }
+    } else {
+      if (!collectAmount || isNaN(collectAmount) || Number(collectAmount) <= 0) {
+        alert("Please enter a valid payment amount greater than 0.");
+        return;
+      }
     }
 
     if (!selectedCustomer) return;
@@ -688,6 +835,72 @@ const Collection = () => {
     setIsSubmitting(true);
 
     try {
+      // Handle Penalty-Only Collection Mode (FIX 2)
+      if (isPenaltyOnlyMode) {
+        const now = new Date();
+        let finalDateTimeStr = now.toISOString();
+        if (paymentDate) {
+          const isPlainDate = /^\d{4}-\d{2}-\d{2}$/.test(paymentDate.trim());
+          if (isPlainDate) {
+            const [y, m, d] = paymentDate.trim().split("-").map(Number);
+            const customDt = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+            finalDateTimeStr = customDt.toISOString();
+          } else {
+            finalDateTimeStr = paymentDate;
+          }
+        }
+        const recordsToCollect = pendingPenaltyRecordsList.length > 0
+          ? pendingPenaltyRecordsList.filter((r) => r.status === "Pending")
+          : (pendingPenaltyRecord && pendingPenaltyRecord.status === "Pending" ? [pendingPenaltyRecord] : []);
+
+        const totalEntered = Number(penaltyAmountInput || 0);
+
+        if (!recordsToCollect.length) {
+          throw new Error("There is no pending penalty to collect (a frozen penalty must be unfrozen first).");
+        }
+
+        // One penalty-only payment; the server books it as Penalty income
+        // and gives it a TX-PEN reference when none was entered.
+        const result = await collectPenaltyTransaction({
+          loanId: selectedCustomer.loanId,
+          records: recordsToCollect,
+          collectedAmount: totalEntered,
+          collectionDate: finalDateTimeStr,
+          paymentMode,
+          transactionRef: transactionId && transactionId.trim() !== "" ? transactionId.trim() : null,
+          clientRef,
+        });
+        const txnRef = result?.transaction?.transactionRef || transactionId;
+
+        const accumulatedCollected = result?.transaction?.collectedAmount || totalEntered;
+        const instDisplay = result?.transaction?.installmentDisplay || (recordsToCollect.length === 1
+          ? String(recordsToCollect[0].installmentNumber)
+          : (recordsToCollect.map((r) => r.installmentNumber).join(", ") || "1"));
+
+        // Set confirmed transaction popup for penalty-only
+        setConfirmedTransaction({
+          isPenaltyOnly: true,
+          amount: accumulatedCollected,
+          customerName: selectedCustomer.customer?.name || "Customer",
+          customerId: selectedCustomer.customerId,
+          loanId: selectedCustomer.loanId,
+          installmentNumber: instDisplay,
+          date: finalDateTimeStr,
+          mode: paymentMode,
+          transactionId: txnRef,
+          totalPrincipalOutstanding: selectedCustomer.totalPrincipalOutstanding || 0,
+          totalInterestOutstanding: selectedCustomer.totalInterestOutstanding || 0,
+          totalLoanOutstanding: selectedCustomer.totalLoanOutstanding || 0,
+        });
+
+        setSelectedCustomer(null);
+        setPendingPenaltyRecord(null);
+        setPendingPenaltyRecordsList([]);
+        setPenaltyAmountInput("");
+        setIsPenaltyOnlyMode(false);
+        return;
+      }
+
       const amt = Number(collectAmount);
       let remainingToAllocate = amt;
       let totalPrincipalRecovered = 0;
@@ -757,20 +970,8 @@ const Collection = () => {
       );
       const totalLoanOutstanding = totalPrincipalOutstanding + totalInterestOutstanding;
 
-      const saved = await recordCollection({
-        entry: selectedCustomer,
-        amount: amt,
-        paymentMode,
-        remarks: remarks || "Collection Payment",
-        dueAmount: selectedCustomer.currentTotalDue,
-        clientRef,
-        collectedDate: paymentDate,
-        transactionId: paymentMode !== "Cash" ? transactionId : "",
-      });
-
-      // The server has recorded and applied the payment (recordCollection
-      // above). Time-stamp it for the success popup: the chosen payment date
-      // with the current time of day.
+      // Time-stamp for the success popup: the chosen payment date with the
+      // current time of day.
       const now = new Date();
       let finalDateTimeStr = now.toISOString();
       if (paymentDate) {
@@ -782,6 +983,55 @@ const Collection = () => {
         } else {
           finalDateTimeStr = paymentDate;
         }
+      }
+
+      // Penalty collection: Strictly separate financial record.
+      // Frozen penalties are NEVER collected as part of normal installment collection.
+      const recordsToCollectInNormal = pendingPenaltyRecordsList.length > 0
+        ? pendingPenaltyRecordsList.filter((r) => r.status === "Pending")
+        : (pendingPenaltyRecord && pendingPenaltyRecord.status === "Pending" ? [pendingPenaltyRecord] : []);
+
+      const penaltyCollectedAmt =
+        recordsToCollectInNormal.length > 0 && penaltyAmountInput !== "" && !isNaN(Number(penaltyAmountInput))
+          ? Math.max(0, Number(penaltyAmountInput))
+          : 0;
+
+      // The penalty is its own payment (booked as Penalty income) and is
+      // collected first: once the instalments are paid they are no longer
+      // overdue, so the server would no longer treat the penalty as due. If
+      // it fails nothing has been saved yet.
+      let penaltyCollected = false;
+      if (penaltyCollectedAmt > 0 && recordsToCollectInNormal.length > 0) {
+        await collectPenaltyTransaction({
+          loanId: selectedCustomer.loanId,
+          records: recordsToCollectInNormal,
+          collectedAmount: penaltyCollectedAmt,
+          collectionDate: finalDateTimeStr,
+          paymentMode,
+          transactionRef: paymentMode !== "Cash" && transactionId ? transactionId.trim() : null,
+          clientRef: `${clientRef}-penalty`,
+        });
+        penaltyCollected = true;
+      }
+
+      // The server records and applies the instalment payment.
+      let saved;
+      try {
+        saved = await recordCollection({
+          entry: selectedCustomer,
+          amount: amt,
+          paymentMode,
+          remarks: remarks || "Collection Payment",
+          dueAmount: selectedCustomer.currentTotalDue,
+          clientRef,
+          collectedDate: paymentDate,
+          transactionId: paymentMode !== "Cash" ? transactionId : "",
+        });
+      } catch (paymentError) {
+        if (penaltyCollected) {
+          throw new Error(`The penalty was collected, but the instalment payment failed: ${paymentError.message}`);
+        }
+        throw paymentError;
       }
 
       const paymentRecord = {
@@ -797,17 +1047,26 @@ const Collection = () => {
         date: finalDateTimeStr,
         createdAt: now.toISOString(),
         timestamp: now.getTime(),
-        amount: amt,
+        amount: amt, // Strict rule: Penalty and normal loan collection are separate financial records!
         principal: totalPrincipalRecovered,
         interest: totalInterestEarned,
+        penaltyAmount: 0,
         advance: unappliedAdvance,
         mode: paymentMode,
         transactionId: paymentMode !== "Cash" ? (transactionId ? transactionId.trim() : "") : "",
         remarks: remarks || "Collection Payment",
+        allocations: appliedAllocations,
+        totalPrincipalOutstandingAfter: totalPrincipalOutstanding,
+        totalInterestOutstandingAfter: totalInterestOutstanding,
+        totalLoanOutstandingAfter: totalLoanOutstanding,
       };
 
       // 4. Close collect modal and display Amount Collected Successfully popup
       setSelectedCustomer(null);
+      setPendingPenaltyRecord(null);
+      setPendingPenaltyRecordsList([]);
+      setIsPenaltyOnlyMode(false);
+      setPenaltyAmountInput("");
       setConfirmedTransaction({
         ...paymentRecord,
         customerName: selectedCustomer.customer?.name || "Customer",
@@ -851,7 +1110,7 @@ const Collection = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full md:w-auto">
-          <div className="relative w-full sm:w-[240px] md:w-[260px]">
+          <div className="relative w-full sm:w-[280px] md:w-[320px] lg:w-[360px]">
             <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -860,18 +1119,8 @@ const Collection = () => {
                 setSearch(e.target.value);
                 setHistoryPage(1);
               }}
-              placeholder="Search Customer / Vehicle..."
+              placeholder="Search Customer Name, Customer ID, Loan ID..."
               className="h-10 sm:h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-4 text-xs sm:text-[14px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-2xs transition-all"
-            />
-          </div>
-
-          <div className="relative w-full sm:w-[160px]">
-            <CalendarIcon className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-10 sm:h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 sm:pr-4 text-xs sm:text-[14px] font-medium text-slate-700 shadow-2xs outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] transition-all cursor-pointer"
             />
           </div>
 
@@ -892,34 +1141,30 @@ const Collection = () => {
         <div className="flex w-full sm:w-auto bg-slate-100 p-1 rounded-xl shadow-2xs border border-slate-200 shrink-0 overflow-x-auto">
           <button
             onClick={() => setActiveTab("Today")}
-            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${
-              activeTab === "Today"
+            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${activeTab === "Today"
                 ? "bg-[#006052] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
-            }`}
+              }`}
           >
             <span className="truncate">Today's Collection</span>
             <span
-              className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] sm:text-[12px] font-semibold shrink-0 ${
-                activeTab === "Today" ? "bg-white/20 text-white" : "bg-white text-slate-500 shadow-2xs"
-              }`}
+              className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] sm:text-[12px] font-semibold shrink-0 ${activeTab === "Today" ? "bg-white/20 text-white" : "bg-white text-slate-500 shadow-2xs"
+                }`}
             >
               {todayList.length}
             </span>
           </button>
           <button
             onClick={() => setActiveTab("Overdue")}
-            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${
-              activeTab === "Overdue"
+            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${activeTab === "Overdue"
                 ? "bg-[#006052] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
-            }`}
+              }`}
           >
             <span className="truncate">Overdue Collection</span>
             <span
-              className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] sm:text-[12px] font-semibold shrink-0 ${
-                activeTab === "Overdue" ? "bg-white/20 text-white" : "bg-white text-slate-500 shadow-2xs"
-              }`}
+              className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] sm:text-[12px] font-semibold shrink-0 ${activeTab === "Overdue" ? "bg-white/20 text-white" : "bg-white text-slate-500 shadow-2xs"
+                }`}
             >
               {overdueList.length}
             </span>
@@ -929,17 +1174,15 @@ const Collection = () => {
               setActiveTab("History");
               setHistoryPage(1);
             }}
-            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${
-              activeTab === "History"
+            className={`flex-1 sm:flex-none flex justify-center items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 text-xs sm:text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${activeTab === "History"
                 ? "bg-[#006052] text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
-            }`}
+              }`}
           >
             <span className="truncate">Collection History</span>
             <span
-              className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] sm:text-[12px] font-semibold shrink-0 ${
-                activeTab === "History" ? "bg-white/20 text-white" : "bg-white text-slate-500 shadow-2xs"
-              }`}
+              className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] sm:text-[12px] font-semibold shrink-0 ${activeTab === "History" ? "bg-white/20 text-white" : "bg-white text-slate-500 shadow-2xs"
+                }`}
             >
               {filteredHistoryList.length}
             </span>
@@ -952,11 +1195,10 @@ const Collection = () => {
               <button
                 key={f}
                 onClick={() => setOverdueFilter(f)}
-                className={`flex-1 sm:flex-none px-3 sm:px-4 py-1.5 text-xs sm:text-[13px] font-semibold rounded-full transition-all border text-center ${
-                  overdueFilter === f
+                className={`flex-1 sm:flex-none px-3 sm:px-4 py-1.5 text-xs sm:text-[13px] font-semibold rounded-full transition-all border text-center ${overdueFilter === f
                     ? "bg-slate-800 border-slate-800 text-white shadow-2xs"
                     : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                }`}
+                  }`}
               >
                 {f === "All" ? "All" : `${f} Overdue`}
               </button>
@@ -1042,11 +1284,10 @@ const Collection = () => {
                     setHistoryDateFilter(filter.key);
                     setHistoryPage(1);
                   }}
-                  className={`px-3 py-1.5 text-xs sm:text-[13px] font-bold rounded-lg transition-all border ${
-                    historyDateFilter === filter.key
+                  className={`px-3 py-1.5 text-xs sm:text-[13px] font-bold rounded-lg transition-all border ${historyDateFilter === filter.key
                       ? "bg-slate-900 border-slate-900 text-white shadow-2xs"
                       : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                  }`}
+                    }`}
                 >
                   {filter.label}
                 </button>
@@ -1330,11 +1571,10 @@ const Collection = () => {
                         key={item}
                         type="button"
                         onClick={() => setHistoryPage(item)}
-                        className={`h-7 min-w-[28px] px-2 text-xs font-bold rounded-lg transition-colors border ${
-                          currentHistoryPage === item
+                        className={`h-7 min-w-[28px] px-2 text-xs font-bold rounded-lg transition-colors border ${currentHistoryPage === item
                             ? "bg-[#006052] border-[#006052] text-white shadow-2xs"
                             : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                        }`}
+                          }`}
                       >
                         {item}
                       </button>
@@ -1361,18 +1601,24 @@ const Collection = () => {
             {currentDisplayList.length === 0 ? (
               <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 text-center shadow-2xs">
                 <div className="flex flex-col items-center justify-center text-slate-400">
-                  <p className="text-sm font-semibold text-slate-600">No collections for this date</p>
-                  <p className="text-xs mt-1">There are no pending collections for the selected date.</p>
+                  <p className="text-sm font-semibold text-slate-600">
+                    {search.trim() ? "No matching records found" : (activeTab === "Today" ? "No collections due today" : "No overdue collections")}
+                  </p>
+                  <p className="text-xs mt-1">
+                    {search.trim() ? `No customer or loan matches "${search}".` : (activeTab === "Today" ? "There are no pending collections due today." : "There are no overdue collections at this time.")}
+                  </p>
                 </div>
               </div>
             ) : (
               currentDisplayList.map((c) => {
                 const dueAmt = c.statusText === "Collected"
-                  ? (activeTab === "Today" ? c.originalDueToday : c.originalOverdue)
-                  : (activeTab === "Today" ? c.totalDueToday : c.totalOverdue);
+                  ? (activeTab === "Today" ? (c.originalDueToday || c.totalUnpaidInstallmentAmount) : (c.originalOverdue || c.totalUnpaidInstallmentAmount))
+                  : (activeTab === "Today"
+                    ? (c.totalDueToday || c.totalOverdue || (c.allUnpaidInstalls?.[0]?.emi ?? 0))
+                    : (c.totalOverdue || c.totalDueToday || (c.allUnpaidInstalls?.[0]?.emi ?? 0)));
 
                 return (
-                  <div key={c.loanId} className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 transition-shadow hover:shadow-xs">
+                  <div key={`${c.customerId}-${c.loanId}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 transition-shadow hover:shadow-xs">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <h3 className="font-bold text-slate-900 text-sm sm:text-base truncate">{c.customer?.name}</h3>
@@ -1388,20 +1634,38 @@ const Collection = () => {
                           )}
                         </div>
                       </div>
-                      <div className="shrink-0">
-                        {c.statusText === "Pending" && (
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        {c.statusText === "Penalty" ? (
+                          <span className="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-700 ring-1 ring-inset ring-sky-600/20">
+                            Frozen
+                          </span>
+                        ) : c.statusText === "Pending Penalty" ? (
+                          <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                            Pending
+                          </span>
+                        ) : c.hasFrozenPenalty ? (
+                          <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                            Penalty
+                          </span>
+                        ) : null}
+                        {c.statusText === "Pending" && !c.hasFrozenPenalty && (
                           <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-500/20">
                             Pending
                           </span>
                         )}
-                        {c.statusText === "Collected" && (
+                        {c.statusText === "Collected" && !c.hasFrozenPenalty && (
                           <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
                             Collected
                           </span>
                         )}
-                        {c.statusText === "Partial" && (
+                        {c.statusText === "Partial" && !c.hasFrozenPenalty && (
                           <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
                             Partial
+                          </span>
+                        )}
+                        {c.statusText === "Overdue" && (
+                          <span className="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-xs font-bold text-red-700 ring-1 ring-inset ring-red-600/20">
+                            Overdue
                           </span>
                         )}
                       </div>
@@ -1409,27 +1673,48 @@ const Collection = () => {
 
                     <div className="rounded-lg bg-slate-50 p-2.5 flex items-center justify-between border border-slate-100">
                       <span className="text-xs font-semibold text-slate-500">
-                        {activeTab === "Today" ? "Due Amount" : "Overdue Amount"}
+                        {c.statusText === "Penalty" || c.statusText === "Pending Penalty" ? "Penalty Amount" : activeTab === "Today" ? "Due Amount" : "Overdue Amount"}
                       </span>
-                      <span className="text-base font-bold text-slate-900">
-                        {formatCurrency(dueAmt)}
-                      </span>
+                      <div className="text-right">
+                        <span className="text-base font-bold text-slate-900">
+                          {formatCurrency(c.statusText === "Penalty" ? c.totalFrozenPenaltyAmount : c.statusText === "Pending Penalty" ? c.totalPendingPenaltyAmount : dueAmt)}
+                        </span>
+                        {c.hasFrozenPenalty && c.statusText !== "Penalty" && (
+                          <span className="block text-[11px] font-semibold text-amber-700">
+                            Penalty: {formatCurrency(c.totalFrozenPenaltyAmount)}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 pt-1">
-                      {c.statusText !== "Collected" && (
+                      {c.statusText === "Penalty" ? (
+                        <button
+                          onClick={() => handleUnfreezeLoanPenalties(c)}
+                          className="flex-1 rounded-lg bg-sky-600 py-2 px-3 text-xs font-bold text-white shadow-2xs hover:bg-sky-700 transition-colors text-center cursor-pointer"
+                        >
+                          Unfreeze
+                        </button>
+                      ) : c.statusText === "Pending Penalty" ? (
+                        <button
+                          onClick={() => handleCollectClick(c, true)}
+                          className="flex-1 rounded-lg bg-emerald-700 py-2 px-3 text-xs font-bold text-white shadow-2xs hover:bg-emerald-800 transition-colors text-center cursor-pointer"
+                        >
+                          Collect Penalty
+                        </button>
+                      ) : (
                         <button
                           onClick={() => handleCollectClick(c)}
-                          className="flex-1 rounded-lg bg-[#006052] py-2 px-3 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors text-center"
+                          className="flex-1 rounded-lg bg-[#006052] py-2 px-3 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors text-center cursor-pointer"
                         >
                           Collect Payment
                         </button>
                       )}
                       <button
-                        onClick={() => handleView(c, activeTab)}
-                        className="flex-1 rounded-lg bg-white border border-slate-300 py-2 px-3 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors text-center"
+                        onClick={() => setScheduleModalCustomer(c)}
+                        className="flex-1 rounded-lg bg-white border border-slate-300 py-2 px-3 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors text-center cursor-pointer"
                       >
-                        View Details
+                        View Schedule
                       </button>
                     </div>
                   </div>
@@ -1445,7 +1730,7 @@ const Collection = () => {
                 <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
                   <tr>
                     <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
-                      Customer ID
+                      Customer ID / Loan ID
                     </th>
                     <th className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200">
                       Customer
@@ -1466,59 +1751,113 @@ const Collection = () => {
                     <tr>
                       <td colSpan={5} className="py-12 text-center">
                         <div className="flex flex-col items-center justify-center text-slate-400">
-                          <p className="text-[15px] font-semibold text-slate-600">No collections for this date</p>
-                          <p className="text-[13px] mt-1">There are no pending collections for the selected date.</p>
+                          <p className="text-[15px] font-semibold text-slate-600">
+                            {search.trim() ? "No matching records found" : (activeTab === "Today" ? "No collections due today" : "No overdue collections")}
+                          </p>
+                          <p className="text-[13px] mt-1">
+                            {search.trim() ? `No customer or loan matches "${search}".` : (activeTab === "Today" ? "There are no pending collections due today." : "There are no overdue collections at this time.")}
+                          </p>
                         </div>
                       </td>
                     </tr>
                   ) : (
                     currentDisplayList.map((c) => (
-                      <tr key={c.loanId} className="hover:bg-slate-50/50 transition-colors">
+                      <tr key={`${c.customerId}-${c.loanId}`} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="text-[14px] text-slate-600 font-bold">{c.customerId}</p>
+                          <p className="text-[14px] text-slate-700 font-bold">{c.customerId}</p>
+                          <p className="text-[12px] text-slate-400 font-mono font-medium">{c.loanId}</p>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <p className="font-bold text-[14px] text-slate-900">{c.customer?.name}</p>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <p className="font-bold text-[14px] text-slate-900">
-                            {c.statusText === "Collected"
-                              ? `${formatCurrency(activeTab === "Today" ? c.originalDueToday : c.originalOverdue)}`
-                              : formatCurrency(activeTab === "Today" ? c.totalDueToday : c.totalOverdue)}
+                            {c.statusText === "Penalty"
+                              ? formatCurrency(c.totalFrozenPenaltyAmount)
+                              : c.statusText === "Pending Penalty"
+                                ? formatCurrency(c.totalPendingPenaltyAmount)
+                                : c.statusText === "Collected"
+                                  ? `${formatCurrency(activeTab === "Today" ? (c.originalDueToday || c.totalUnpaidInstallmentAmount) : (c.originalOverdue || c.totalUnpaidInstallmentAmount))}`
+                                  : formatCurrency(
+                                    activeTab === "Today"
+                                      ? (c.totalDueToday || c.totalOverdue || (c.allUnpaidInstalls?.[0]?.emi ?? 0))
+                                      : (c.totalOverdue || c.totalDueToday || (c.allUnpaidInstalls?.[0]?.emi ?? 0))
+                                  )}
                           </p>
+                          {c.hasFrozenPenalty && c.statusText !== "Penalty" && (
+                            <span className="block text-[11px] font-semibold text-amber-700">
+                              Penalty: {formatCurrency(c.totalFrozenPenaltyAmount)}
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          {c.statusText === "Pending" && (
-                            <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[12px] font-bold text-slate-700 ring-1 ring-inset ring-slate-500/20">
-                              Pending
-                            </span>
-                          )}
-                          {c.statusText === "Collected" && (
-                            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-1 text-[12px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-                              Collected
-                            </span>
-                          )}
-                          {c.statusText === "Partial" && (
-                            <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-[12px] font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                              Partial
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {c.statusText === "Penalty" ? (
+                              <span className="inline-flex items-center rounded-md bg-sky-50 px-2.5 py-1 text-[12px] font-bold text-sky-700 ring-1 ring-inset ring-sky-600/20">
+                                Frozen
+                              </span>
+                            ) : c.statusText === "Pending Penalty" ? (
+                              <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-[12px] font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                                Pending
+                              </span>
+                            ) : c.hasFrozenPenalty ? (
+                              <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-[12px] font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                                Penalty
+                              </span>
+                            ) : null}
+                            {c.statusText === "Pending" && !c.hasFrozenPenalty && (
+                              <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-[12px] font-bold text-slate-700 ring-1 ring-inset ring-slate-500/20">
+                                Pending
+                              </span>
+                            )}
+                            {c.statusText === "Collected" && !c.hasFrozenPenalty && (
+                              <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-1 text-[12px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                                Collected
+                              </span>
+                            )}
+                            {c.statusText === "Partial" && !c.hasFrozenPenalty && (
+                              <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-[12px] font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                                Partial
+                              </span>
+                            )}
+                            {c.statusText === "Overdue" && (
+                              <span className="inline-flex items-center rounded-md bg-red-50 px-2.5 py-1 text-[12px] font-bold text-red-700 ring-1 ring-inset ring-red-600/20">
+                                Overdue
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-right whitespace-nowrap">
                           <div className="flex justify-end gap-2">
-                            {c.statusText !== "Collected" && (
+                            {c.statusText === "Penalty" ? (
+                              <button
+                                onClick={() => handleUnfreezeLoanPenalties(c)}
+                                className="rounded-md bg-sky-600 px-5 py-2.5 text-[13px] font-bold text-white shadow-sm hover:bg-sky-700 transition-colors cursor-pointer"
+                                title="Unfreeze this penalty"
+                              >
+                                Unfreeze
+                              </button>
+                            ) : c.statusText === "Pending Penalty" ? (
+                              <button
+                                onClick={() => handleCollectClick(c, true)}
+                                className="rounded-md bg-emerald-700 px-5 py-2.5 text-[13px] font-bold text-white shadow-sm hover:bg-emerald-800 transition-colors cursor-pointer"
+                                title="Collect penalty"
+                              >
+                                Collect Penalty
+                              </button>
+                            ) : (
                               <button
                                 onClick={() => handleCollectClick(c)}
-                                className="rounded-md bg-[#006052] px-5 py-2.5 text-[13px] font-bold text-white shadow-sm hover:bg-[#004d43] transition-colors"
+                                className="rounded-md bg-[#006052] px-5 py-2.5 text-[13px] font-bold text-white shadow-sm hover:bg-[#004d43] transition-colors cursor-pointer"
                               >
                                 Collect Payment
                               </button>
                             )}
                             <button
-                              onClick={() => handleView(c, activeTab)}
-                              className="rounded-md bg-white border border-slate-300 px-5 py-2.5 text-[13px] font-bold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                              onClick={() => setScheduleModalCustomer(c)}
+                              className="rounded-md bg-white border border-slate-300 px-5 py-2.5 text-[13px] font-bold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
                             >
-                              View Details
+                              View Schedule
                             </button>
                           </div>
                         </td>
@@ -1537,9 +1876,15 @@ const Collection = () => {
       ========================================================================= */}
       {selectedCustomer && (() => {
         const amountReceived = Number(collectAmount) || 0;
+        const isPenaltyFrozen = pendingPenaltyRecord && pendingPenaltyRecord.status === "Frozen";
+        const enteredPenaltyAmt =
+          pendingPenaltyRecord && !isPenaltyFrozen && penaltyAmountInput !== "" && !isNaN(Number(penaltyAmountInput))
+            ? Math.max(0, Number(penaltyAmountInput))
+            : 0;
+        const totalAmountToCollect = amountReceived + (isPenaltyFrozen ? 0 : enteredPenaltyAmt);
         const unpaidSchedule = selectedCustomer.allUnpaidInstalls || [];
         const fullSchedule = selectedCustomer.fullSchedule || [];
-        
+
         // Pagination for Repayment Schedule (4 rows per page matching reference image)
         const pageSize = 4;
         const totalPages = Math.max(1, Math.ceil(fullSchedule.length / pageSize));
@@ -1594,220 +1939,224 @@ const Collection = () => {
 
               {/* Main Body (Scrollable with momentum touch scrolling on mobile) */}
               <div className="px-3 sm:px-5 py-3 sm:py-3.5 space-y-3 overflow-y-auto flex-1 overscroll-contain [webkit-overflow-scrolling:touch]">
-                {/* 1. KPI Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-2.5">
-                  {/* Card 1: TOTAL OUTSTANDING */}
-                  <div className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3 flex items-start gap-2.5 shadow-2xs">
-                    <div className="p-1.5 sm:p-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 shrink-0 mt-0.5">
-                      <CreditCard className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
+                {/* 1. KPI Cards (Hidden in penalty-only mode) */}
+                {!isPenaltyOnlyMode && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-2.5">
+                    {/* Card 1: TOTAL OUTSTANDING */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3 flex items-start gap-2.5 shadow-2xs">
+                      <div className="p-1.5 sm:p-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 shrink-0 mt-0.5">
+                        <CreditCard className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          TOTAL OUTSTANDING
+                        </p>
+                        <p className="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">
+                          {formatCurrency(totalOutstanding)}
+                        </p>
+                        <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">
+                          {unpaidCount} Unpaid {unpaidCount === 1 ? "Installment" : "Installments"}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        TOTAL OUTSTANDING
-                      </p>
-                      <p className="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">
-                        {formatCurrency(totalOutstanding)}
-                      </p>
-                      <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">
-                        {unpaidCount} Unpaid {unpaidCount === 1 ? "Installment" : "Installments"}
-                      </p>
+
+                    {/* Card 2: OVERDUE */}
+                    <div className="rounded-xl border border-red-200/80 bg-red-50/30 p-2.5 sm:p-3 flex items-start gap-2.5 shadow-2xs">
+                      <div className="p-1.5 sm:p-2 rounded-lg bg-red-50 text-red-600 shrink-0 mt-0.5">
+                        <Clock className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-red-600">
+                          OVERDUE
+                        </p>
+                        <p className="text-lg sm:text-xl font-bold text-red-600 mt-0.5">
+                          {formatCurrency(overdueAmount)}
+                        </p>
+                        <p className="text-[10px] sm:text-[11px] text-red-500 mt-0.5 truncate">
+                          {overdueCount} Overdue {overdueCount === 1 ? "Installment" : "Installments"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Card 3: DUE TODAY */}
+                    <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/30 p-2.5 sm:p-3 flex items-start gap-2.5 shadow-2xs">
+                      <div className="p-1.5 sm:p-2 rounded-lg bg-emerald-50 text-emerald-700 shrink-0 mt-0.5">
+                        <CalendarIcon className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                          DUE TODAY
+                        </p>
+                        <p className="text-lg sm:text-xl font-bold text-emerald-700 mt-0.5">
+                          {formatCurrency(dueTodayAmount)}
+                        </p>
+                        <p className="text-[10px] sm:text-[11px] text-emerald-600 mt-0.5 truncate">
+                          {selectedCustomer.todayInstalls?.length > 0 ? "Due Today" : "None Due Today"}
+                        </p>
+                      </div>
                     </div>
                   </div>
+                )}
 
-                  {/* Card 2: OVERDUE */}
-                  <div className="rounded-xl border border-red-200/80 bg-red-50/30 p-2.5 sm:p-3 flex items-start gap-2.5 shadow-2xs">
-                    <div className="p-1.5 sm:p-2 rounded-lg bg-red-50 text-red-600 shrink-0 mt-0.5">
-                      <Clock className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
+                {/* 2. Payment Amount and Dynamic Quick Actions (Hidden in penalty-only mode) */}
+                {!isPenaltyOnlyMode && (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 sm:gap-3 items-end">
+                    {/* Amount Input (approx 4 cols) */}
+                    <div className="lg:col-span-4">
+                      <label className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                        PAYMENT AMOUNT <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">₹</span>
+                        <input
+                          type="number"
+                          value={collectAmount}
+                          onChange={(e) => setCollectAmount(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-2 pl-7 sm:pl-8 pr-3 text-sm sm:text-base font-bold text-slate-900 outline-none transition-colors focus:border-[#006052] focus:bg-white focus:ring-1 focus:ring-[#006052]"
+                        />
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-red-600">
-                        OVERDUE
-                      </p>
-                      <p className="text-lg sm:text-xl font-bold text-red-600 mt-0.5">
-                        {formatCurrency(overdueAmount)}
-                      </p>
-                      <p className="text-[10px] sm:text-[11px] text-red-500 mt-0.5 truncate">
-                        {overdueCount} Overdue {overdueCount === 1 ? "Installment" : "Installments"}
-                      </p>
-                    </div>
-                  </div>
 
-                  {/* Card 3: DUE TODAY */}
-                  <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/30 p-2.5 sm:p-3 flex items-start gap-2.5 shadow-2xs">
-                    <div className="p-1.5 sm:p-2 rounded-lg bg-emerald-50 text-emerald-700 shrink-0 mt-0.5">
-                      <CalendarIcon className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
-                        DUE TODAY
-                      </p>
-                      <p className="text-lg sm:text-xl font-bold text-emerald-700 mt-0.5">
-                        {formatCurrency(dueTodayAmount)}
-                      </p>
-                      <p className="text-[10px] sm:text-[11px] text-emerald-600 mt-0.5 truncate">
-                        {selectedCustomer.todayInstalls?.length > 0 ? "Due Today" : "None Due Today"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                    {/* Quick Action Buttons (approx 8 cols) */}
+                    <div className="lg:col-span-8">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 items-center">
+                        {/* Scenario A: Overdue and current dues exist -> Pay Overdue, Pay Current, Pay Total, Pay All */}
+                        {hasOverdue && hasDueToday && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setCollectAmount(String(dueTodayAmount))}
+                              className="rounded-lg border border-teal-200 bg-teal-50/70 hover:bg-teal-100/70 text-teal-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
+                            >
+                              <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-teal-700">
+                                <CreditCard className="h-3 w-3 shrink-0" />
+                                <span className="truncate">Pay Current</span>
+                              </div>
+                              <div className="text-xs font-bold text-teal-900 mt-0.5 truncate">{formatCurrency(dueTodayAmount)}</div>
+                            </button>
 
-                {/* 2. Payment Amount and Dynamic Quick Actions */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 sm:gap-3 items-end">
-                  {/* Amount Input (approx 4 cols) */}
-                  <div className="lg:col-span-4">
-                    <label className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                      PAYMENT AMOUNT <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">₹</span>
-                      <input
-                        type="number"
-                        value={collectAmount}
-                        onChange={(e) => setCollectAmount(e.target.value)}
-                        placeholder="0.00"
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-2 pl-7 sm:pl-8 pr-3 text-sm sm:text-base font-bold text-slate-900 outline-none transition-colors focus:border-[#006052] focus:bg-white focus:ring-1 focus:ring-[#006052]"
-                      />
-                    </div>
-                  </div>
+                            <button
+                              type="button"
+                              onClick={() => setCollectAmount(String(overdueAmount))}
+                              className="rounded-lg border border-amber-200 bg-amber-50/70 hover:bg-amber-100/70 text-amber-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
+                            >
+                              <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-amber-700">
+                                <Clock className="h-3 w-3 shrink-0" />
+                                <span className="truncate">Pay Overdue</span>
+                              </div>
+                              <div className="text-xs font-bold text-amber-900 mt-0.5 truncate">{formatCurrency(overdueAmount)}</div>
+                            </button>
 
-                  {/* Quick Action Buttons (approx 8 cols) */}
-                  <div className="lg:col-span-8">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 items-center">
-                      {/* Scenario A: Overdue and current dues exist -> Pay Overdue, Pay Current, Pay Total, Pay All */}
-                      {hasOverdue && hasDueToday && (
-                        <>
+                            <button
+                              type="button"
+                              onClick={() => setCollectAmount(String(currentTotalDue))}
+                              className="rounded-lg border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70 text-emerald-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
+                            >
+                              <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-emerald-700">
+                                <Layers className="h-3 w-3 shrink-0" />
+                                <span className="truncate">Pay Total</span>
+                              </div>
+                              <div className="text-xs font-bold text-emerald-900 mt-0.5 truncate">{formatCurrency(currentTotalDue)}</div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setCollectAmount(String(totalOutstanding))}
+                              className="rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
+                            >
+                              <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-600">
+                                <Users className="h-3 w-3 shrink-0" />
+                                <span className="truncate">Pay All</span>
+                              </div>
+                              <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
+                            </button>
+                          </>
+                        )}
+
+                        {/* Scenario B: Only Overdue exists -> Pay Overdue, Pay All */}
+                        {hasOverdue && !hasDueToday && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setCollectAmount(String(overdueAmount))}
+                              className="rounded-lg border border-amber-200 bg-amber-50/70 hover:bg-amber-100/70 text-amber-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
+                            >
+                              <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-amber-700">
+                                <Clock className="h-3 w-3 shrink-0" />
+                                <span className="truncate">Pay Overdue</span>
+                              </div>
+                              <div className="text-xs font-bold text-amber-900 mt-0.5 truncate">{formatCurrency(overdueAmount)}</div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setCollectAmount(String(totalOutstanding))}
+                              className="rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
+                            >
+                              <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-600">
+                                <Users className="h-3 w-3 shrink-0" />
+                                <span className="truncate">Pay All</span>
+                              </div>
+                              <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
+                            </button>
+                          </>
+                        )}
+
+                        {/* Scenario C: Only Current (Due Today) exists -> Pay Current, Pay All */}
+                        {!hasOverdue && hasDueToday && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setCollectAmount(String(dueTodayAmount))}
+                              className="rounded-lg border border-teal-200 bg-teal-50/70 hover:bg-teal-100/70 text-teal-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
+                            >
+                              <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-teal-700">
+                                <CreditCard className="h-3 w-3 shrink-0" />
+                                <span className="truncate">Pay Current</span>
+                              </div>
+                              <div className="text-xs font-bold text-teal-900 mt-0.5 truncate">{formatCurrency(dueTodayAmount)}</div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setCollectAmount(String(totalOutstanding))}
+                              className="rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
+                            >
+                              <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-600">
+                                <Users className="h-3 w-3 shrink-0" />
+                                <span className="truncate">Pay All</span>
+                              </div>
+                              <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
+                            </button>
+                          </>
+                        )}
+
+                        {/* Scenario D: Neither overdue nor current dues exist -> Pay All if unpaid future remain */}
+                        {hasUnpaidFutureOnly && (
                           <button
                             type="button"
-                            onClick={() => setCollectAmount(String(dueTodayAmount))}
-                            className="rounded-lg border border-teal-200 bg-teal-50/70 hover:bg-teal-100/70 text-teal-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
+                            onClick={() => setCollectAmount(String(totalOutstanding))}
+                            className="rounded-lg border border-teal-200 bg-teal-50/70 hover:bg-teal-100/70 text-teal-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs col-span-2 sm:col-span-1"
                           >
                             <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-teal-700">
-                              <CreditCard className="h-3 w-3 shrink-0" />
-                              <span className="truncate">Pay Current</span>
-                            </div>
-                            <div className="text-xs font-bold text-teal-900 mt-0.5 truncate">{formatCurrency(dueTodayAmount)}</div>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setCollectAmount(String(overdueAmount))}
-                            className="rounded-lg border border-amber-200 bg-amber-50/70 hover:bg-amber-100/70 text-amber-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
-                          >
-                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-amber-700">
-                              <Clock className="h-3 w-3 shrink-0" />
-                              <span className="truncate">Pay Overdue</span>
-                            </div>
-                            <div className="text-xs font-bold text-amber-900 mt-0.5 truncate">{formatCurrency(overdueAmount)}</div>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setCollectAmount(String(currentTotalDue))}
-                            className="rounded-lg border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70 text-emerald-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
-                          >
-                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-emerald-700">
-                              <Layers className="h-3 w-3 shrink-0" />
-                              <span className="truncate">Pay Total</span>
-                            </div>
-                            <div className="text-xs font-bold text-emerald-900 mt-0.5 truncate">{formatCurrency(currentTotalDue)}</div>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setCollectAmount(String(totalOutstanding))}
-                            className="rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
-                          >
-                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-600">
                               <Users className="h-3 w-3 shrink-0" />
                               <span className="truncate">Pay All</span>
                             </div>
-                            <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
+                            <div className="text-xs font-bold text-teal-900 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
                           </button>
-                        </>
-                      )}
+                        )}
 
-                      {/* Scenario B: Only Overdue exists -> Pay Overdue, Pay All */}
-                      {hasOverdue && !hasDueToday && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => setCollectAmount(String(overdueAmount))}
-                            className="rounded-lg border border-amber-200 bg-amber-50/70 hover:bg-amber-100/70 text-amber-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
-                          >
-                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-amber-700">
-                              <Clock className="h-3 w-3 shrink-0" />
-                              <span className="truncate">Pay Overdue</span>
-                            </div>
-                            <div className="text-xs font-bold text-amber-900 mt-0.5 truncate">{formatCurrency(overdueAmount)}</div>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setCollectAmount(String(totalOutstanding))}
-                            className="rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
-                          >
-                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-600">
-                              <Users className="h-3 w-3 shrink-0" />
-                              <span className="truncate">Pay All</span>
-                            </div>
-                            <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
-                          </button>
-                        </>
-                      )}
-
-                      {/* Scenario C: Only Current (Due Today) exists -> Pay Current, Pay All */}
-                      {!hasOverdue && hasDueToday && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => setCollectAmount(String(dueTodayAmount))}
-                            className="rounded-lg border border-teal-200 bg-teal-50/70 hover:bg-teal-100/70 text-teal-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
-                          >
-                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-teal-700">
-                              <CreditCard className="h-3 w-3 shrink-0" />
-                              <span className="truncate">Pay Current</span>
-                            </div>
-                            <div className="text-xs font-bold text-teal-900 mt-0.5 truncate">{formatCurrency(dueTodayAmount)}</div>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setCollectAmount(String(totalOutstanding))}
-                            className="rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs"
-                          >
-                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-600">
-                              <Users className="h-3 w-3 shrink-0" />
-                              <span className="truncate">Pay All</span>
-                            </div>
-                            <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
-                          </button>
-                        </>
-                      )}
-
-                      {/* Scenario D: Neither overdue nor current dues exist -> Pay All if unpaid future remain */}
-                      {hasUnpaidFutureOnly && (
-                        <button
-                          type="button"
-                          onClick={() => setCollectAmount(String(totalOutstanding))}
-                          className="rounded-lg border border-teal-200 bg-teal-50/70 hover:bg-teal-100/70 text-teal-800 px-2 py-1.5 text-center transition-all active:scale-[0.98] shadow-2xs col-span-2 sm:col-span-1"
-                        >
-                          <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-teal-700">
-                            <Users className="h-3 w-3 shrink-0" />
-                            <span className="truncate">Pay All</span>
+                        {/* If fully paid */}
+                        {!hasAnyCurrentOrOverdue && !hasUnpaidFutureOnly && (
+                          <div className="col-span-2 sm:col-span-4 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500 font-medium text-center">
+                            No pending dues for this loan.
                           </div>
-                          <div className="text-xs font-bold text-teal-900 mt-0.5 truncate">{formatCurrency(totalOutstanding)}</div>
-                        </button>
-                      )}
-
-                      {/* If fully paid */}
-                      {!hasAnyCurrentOrOverdue && !hasUnpaidFutureOnly && (
-                        <div className="col-span-2 sm:col-span-4 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500 font-medium text-center">
-                          No pending dues for this loan.
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* 3. Payment Date, Payment Method, Transaction ID */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 sm:gap-3 items-start">
@@ -1837,11 +2186,10 @@ const Collection = () => {
                       <button
                         type="button"
                         onClick={() => setPaymentMode("Cash")}
-                        className={`rounded-xl border py-1.5 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                          paymentMode === "Cash"
+                        className={`rounded-xl border py-1.5 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${paymentMode === "Cash"
                             ? "bg-[#006052] border-[#006052] text-white shadow-xs"
                             : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                        }`}
+                          }`}
                       >
                         <Banknote className="h-3.5 w-3.5 shrink-0" />
                         <span>Cash</span>
@@ -1851,11 +2199,10 @@ const Collection = () => {
                       <button
                         type="button"
                         onClick={() => setPaymentMode("UPI")}
-                        className={`rounded-xl border py-1.5 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                          paymentMode === "UPI"
+                        className={`rounded-xl border py-1.5 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${paymentMode === "UPI"
                             ? "bg-[#006052] border-[#006052] text-white shadow-xs"
                             : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                        }`}
+                          }`}
                       >
                         <ArrowRight className="h-3.5 w-3.5 shrink-0 -rotate-45" />
                         <span>UPI</span>
@@ -1865,11 +2212,10 @@ const Collection = () => {
                       <button
                         type="button"
                         onClick={() => setPaymentMode("Bank Transfer")}
-                        className={`rounded-xl border py-1.5 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                          paymentMode === "Bank Transfer"
+                        className={`rounded-xl border py-1.5 px-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${paymentMode === "Bank Transfer"
                             ? "bg-[#006052] border-[#006052] text-white shadow-xs"
                             : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                        }`}
+                          }`}
                       >
                         <Building2 className="h-3.5 w-3.5 shrink-0" />
                         <span className="truncate">Bank Transfer</span>
@@ -1896,37 +2242,111 @@ const Collection = () => {
                             ? "Not applicable for Cash"
                             : "Enter transaction ID"
                         }
-                        className={`w-full rounded-xl border py-1.5 text-xs outline-none transition-all ${
-                          paymentMode === "Cash"
+                        className={`w-full rounded-xl border py-1.5 text-xs outline-none transition-all ${paymentMode === "Cash"
                             ? "border-slate-200 bg-slate-50/70 text-slate-400 pl-8 pr-3 cursor-not-allowed placeholder:text-slate-400"
                             : "border-slate-200 bg-white text-slate-800 px-3 placeholder:text-slate-400 focus:border-[#006052] focus:ring-1 focus:ring-[#006052]"
-                        }`}
+                          }`}
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* 4. Remarks */}
-                <div>
-                  <label className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    REMARKS
-                  </label>
-                  <div className="relative">
-                    <FileText className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                      placeholder="Add remarks (optional)"
-                      className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#006052] focus:bg-white focus:ring-1 focus:ring-[#006052]"
-                    />
-                  </div>
-                </div>
+                {/* Penalty Section (Compact, No Remarks, No '#', Action Buttons) */}
+                {pendingPenaltyRecord && (
+                  <div className="rounded-xl border border-amber-200/90 bg-amber-50/50 p-2.5 sm:p-3 shadow-2xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <label className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-amber-900">
+                            {pendingPenaltyRecordsList.length > 1
+                              ? `Penalty Amount — ${pendingPenaltyRecordsList.length} Overdue Installments`
+                              : `Penalty Amount ${pendingPenaltyRecord.installmentNumber ? `— Installment ${pendingPenaltyRecord.installmentNumber}` : ''}`}
+                          </label>
+                          {pendingPenaltyRecord.status === "Frozen" ? (
+                            <span className="inline-flex items-center rounded-md bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800 border border-sky-300">
+                              Frozen
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-300">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+                      </div>
 
-                {/* 5. Repayment Schedule (Mandatory, with compact pagination, Live Payment Allocation Preview) */}
-                <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-                  {/* Schedule Header */}
-                  <div className="flex items-center justify-between px-3.5 sm:px-4 py-2 bg-white border-b border-slate-100">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="relative w-32 sm:w-36">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-800">₹</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={penaltyAmountInput}
+                            disabled={pendingPenaltyRecord.status === "Frozen"}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === "" || Number(val) >= 0) {
+                                setPenaltyAmountInput(val);
+                              }
+                            }}
+                            placeholder="0.00"
+                            className={`w-full rounded-lg border py-1.5 pl-6 pr-2.5 text-xs font-bold outline-none ${pendingPenaltyRecord.status === "Frozen"
+                                ? "border-sky-200 bg-sky-50/60 text-sky-900 cursor-not-allowed"
+                                : "border-amber-300 bg-white text-slate-900 focus:border-[#006052] focus:ring-1 focus:ring-[#006052]"
+                              }`}
+                          />
+                        </div>
+
+                        {/* Penalty Actions */}
+                        {pendingPenaltyRecord.status === "Frozen" ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleUnfreezeModalPenalty}
+                              className="rounded-lg bg-sky-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-sky-700 transition-colors cursor-pointer shrink-0"
+                              title="Unfreeze this penalty to make it collectible or pending"
+                            >
+                              Unfreeze
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelPenalty}
+                              className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-700 hover:bg-red-100 transition-colors cursor-pointer shrink-0"
+                              title="Cancel this penalty permanently"
+                            >
+                              Cancel Penalty
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleFreezePenalty}
+                              className="rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-[11px] font-bold text-sky-800 hover:bg-sky-100 transition-colors cursor-pointer shrink-0"
+                              title="Freeze this penalty (preserve exact amount without increasing)"
+                            >
+                              Freeze Penalty
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelPenalty}
+                              className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-700 hover:bg-red-100 transition-colors cursor-pointer shrink-0"
+                              title="Cancel this penalty permanently"
+                            >
+                              Cancel Penalty
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. Repayment Schedule (Hidden in penalty-only mode) */}
+                {!isPenaltyOnlyMode && (
+                  <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                    {/* Schedule Header */}
+                    <div className="flex items-center justify-between px-3.5 sm:px-4 py-2 bg-white border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <div className="p-1 rounded-md bg-emerald-50 text-emerald-700">
                         <CalendarIcon className="h-4 w-4" />
@@ -1943,7 +2363,7 @@ const Collection = () => {
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-slate-400 font-medium">
                       <span>
-                        {fullSchedule.length > 0 
+                        {fullSchedule.length > 0
                           ? `${startIndex + 1} - ${endIndex} of ${fullSchedule.length} installments`
                           : "0 of 0 installments"}
                       </span>
@@ -2007,14 +2427,21 @@ const Collection = () => {
                             const displayedRemainingDue = isAffected ? preview.balanceAfter : actualRemainingDue;
                             const displayedStatus = isAffected ? preview.statusAfter : null;
 
+                            const penaltyAmt = (!isAffected && actualIsOverdue)
+                              ? getInstallmentPenaltySupportingAmount(s, {
+                                loanId: selectedCustomer?.loanId || selectedCustomer?.loan?.loanId,
+                                frequency: selectedCustomer?.paymentFrequency || selectedCustomer?.loan?.paymentFrequency || "Monthly",
+                                referenceDate: date ? new Date(date) : new Date(),
+                              })
+                              : null;
+
                             return (
-                              <tr 
-                                key={s.installmentNumber} 
-                                className={`transition-all duration-150 ${
-                                  isAffected 
-                                    ? "bg-[#F3E8FF] shadow-xs text-purple-950 font-medium" 
+                              <tr
+                                key={s.installmentNumber}
+                                className={`transition-all duration-150 ${isAffected
+                                    ? "bg-[#F3E8FF] shadow-xs text-purple-950 font-medium"
                                     : "hover:bg-slate-50/60 text-slate-800"
-                                }`}
+                                  }`}
                                 style={isAffected ? { outline: "2px solid #7E22CE", outlineOffset: "-1px" } : {}}
                               >
                                 <td className="px-4 py-2.5 font-medium">
@@ -2072,10 +2499,17 @@ const Collection = () => {
                                       Paid
                                     </span>
                                   ) : actualIsOverdue ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-[10px] font-bold text-red-700 ring-1 ring-red-600/20">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-red-500"></span>
-                                      Overdue
-                                    </span>
+                                    <div className="flex flex-col items-center justify-center gap-0.5">
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-[10px] font-bold text-red-700 ring-1 ring-red-600/20">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+                                        Overdue
+                                      </span>
+                                      {penaltyAmt > 0 && (
+                                        <span className="text-[10px] font-semibold text-[#006052] whitespace-nowrap leading-tight">
+                                          Penalty: ₹{Number(penaltyAmt).toLocaleString('en-IN')}
+                                        </span>
+                                      )}
+                                    </div>
                                   ) : actualIsToday ? (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-600/20">
                                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
@@ -2127,14 +2561,21 @@ const Collection = () => {
                         const displayedRemainingDue = isAffected ? preview.balanceAfter : actualRemainingDue;
                         const displayedStatus = isAffected ? preview.statusAfter : null;
 
+                        const penaltyAmt = (!isAffected && actualIsOverdue)
+                          ? getInstallmentPenaltySupportingAmount(s, {
+                            loanId: selectedCustomer?.loanId || selectedCustomer?.loan?.loanId,
+                            frequency: selectedCustomer?.paymentFrequency || selectedCustomer?.loan?.paymentFrequency || "Monthly",
+                            referenceDate: date ? new Date(date) : new Date(),
+                          })
+                          : null;
+
                         return (
                           <div
                             key={s.installmentNumber}
-                            className={`p-3 space-y-2 transition-all ${
-                              isAffected
+                            className={`p-3 space-y-2 transition-all ${isAffected
                                 ? "bg-[#F3E8FF] border-l-4 border-l-[#7E22CE]"
                                 : "hover:bg-slate-50/60"
-                            }`}
+                              }`}
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5">
@@ -2165,9 +2606,16 @@ const Collection = () => {
                                     Paid
                                   </span>
                                 ) : actualIsOverdue ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700 ring-1 ring-red-600/20">
-                                    Overdue
-                                  </span>
+                                  <div className="flex flex-col items-end gap-0.5">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700 ring-1 ring-red-600/20">
+                                      Overdue
+                                    </span>
+                                    {penaltyAmt > 0 && (
+                                      <span className="text-[10px] font-semibold text-[#006052] whitespace-nowrap leading-tight">
+                                        Penalty: ₹{Number(penaltyAmt).toLocaleString('en-IN')}
+                                      </span>
+                                    )}
+                                  </div>
                                 ) : actualIsToday ? (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-600/20">
                                     Due Today
@@ -2219,18 +2667,33 @@ const Collection = () => {
                     )}
                   </div>
 
-                  {/* Excess Advance Notice (if amount exceeds all installments) */}
-                  {allocationPreview.unappliedAdvance > 0 && (
-                    <div className="px-4 py-2 bg-blue-50/80 border-t border-blue-200/60 flex items-center justify-between text-xs text-blue-900 font-semibold">
-                      <span>Unapplied Advance (exceeds all remaining installments):</span>
-                      <span className="font-bold text-blue-800">{formatCurrency(allocationPreview.unappliedAdvance)}</span>
-                    </div>
-                  )}
-                </div>
+                    {/* Excess Advance Notice (if amount exceeds all installments) */}
+                    {allocationPreview.unappliedAdvance > 0 && (
+                      <div className="px-4 py-2 bg-blue-50/80 border-t border-blue-200/60 flex items-center justify-between text-xs text-blue-900 font-semibold">
+                        <span>Unapplied Advance (exceeds all remaining installments):</span>
+                        <span className="font-bold text-blue-800">{formatCurrency(allocationPreview.unappliedAdvance)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Footer (Sticky bottom so Confirm Collection is always reachable) */}
               <div className="flex items-center justify-end gap-2.5 sm:gap-3 px-4 sm:px-6 py-3 sm:py-3.5 bg-white border-t border-slate-100 sticky bottom-0 z-20 shrink-0">
+                {isPenaltyOnlyMode ? (
+                  <div className="mr-auto text-xs text-slate-600 hidden sm:flex items-center gap-1.5">
+                    <span>Penalty Collection Only:</span>
+                    <strong className="text-amber-800 font-extrabold text-sm">{formatCurrency(enteredPenaltyAmt)}</strong>
+                  </div>
+                ) : enteredPenaltyAmt > 0 && (
+                  <div className="mr-auto text-xs text-slate-600 hidden sm:flex items-center gap-1.5">
+                    <span>Due: <strong className="text-slate-800">{formatCurrency(amountReceived)}</strong></span>
+                    <span>+</span>
+                    <span>Penalty: <strong className="text-amber-800">{formatCurrency(enteredPenaltyAmt)}</strong></span>
+                    <span>=</span>
+                    <span>Total: <strong className="text-[#006052] font-extrabold">{formatCurrency(totalAmountToCollect)}</strong></span>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => setSelectedCustomer(null)}
@@ -2242,10 +2705,16 @@ const Collection = () => {
                 <button
                   type="button"
                   onClick={handleConfirmPayment}
-                  disabled={amountReceived <= 0 || isSubmitting}
+                  disabled={(isPenaltyOnlyMode ? (enteredPenaltyAmt <= 0 || isPenaltyFrozen) : totalAmountToCollect <= 0) || isSubmitting}
                   className="rounded-xl bg-[#006052] px-5 sm:px-6 py-2 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  {isSubmitting ? "Processing Payment..." : "Confirm Collection"}
+                  {isSubmitting
+                    ? "Processing Payment..."
+                    : isPenaltyOnlyMode
+                      ? `Confirm Penalty Collection (${formatCurrency(enteredPenaltyAmt)})`
+                      : totalAmountToCollect > 0
+                        ? `Confirm Collection (${formatCurrency(totalAmountToCollect)})`
+                        : "Confirm Collection"}
                 </button>
               </div>
             </div>
@@ -2268,9 +2737,13 @@ const Collection = () => {
                   <CheckCircle2 className="h-6 w-6 sm:h-7 sm:w-7" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">Amount Collected Successfully</h3>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
+                    {confirmedTransaction.isPenaltyOnly ? "Penalty Collected Successfully" : "Amount Collected Successfully"}
+                  </h3>
                   <p className="text-[11px] sm:text-xs text-slate-500 font-medium mt-0.5">
-                    Transaction recorded and synchronized across Ledger, Loan, and Dashboard
+                    {confirmedTransaction.isPenaltyOnly
+                      ? "Penalty recorded as separate Penalty Income and synchronized with Penalty Log"
+                      : "Transaction recorded and synchronized across Ledger, Loan, and Dashboard"}
                   </p>
                 </div>
               </div>
@@ -2446,138 +2919,164 @@ const Collection = () => {
                 </div>
               </div>
 
-              {/* 3. INSTALLMENT PAYMENT BREAKDOWN */}
-              <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
-                {/* Section Header */}
-                <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-slate-500" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                      INSTALLMENT PAYMENT BREAKDOWN
-                    </h4>
+              {/* 3. INSTALLMENT PAYMENT BREAKDOWN / PENALTY BREAKDOWN */}
+              {confirmedTransaction.isPenaltyOnly ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 shadow-2xs">
+                  <div className="flex items-center gap-2 mb-2 text-amber-900 font-bold text-xs uppercase tracking-wider">
+                    <FileText className="h-4 w-4" />
+                    <span>Penalty Collection Breakdown</span>
                   </div>
-                  <span className="text-[11px] text-slate-400 font-medium">
-                    {confirmedTransaction.allocations?.length || 0} Installment(s) applied
-                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase">Installment</span>
+                      <span className="font-bold text-slate-900">Installment {confirmedTransaction.installmentNumber}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase">Amount Collected</span>
+                      <span className="font-bold text-emerald-700">{formatCurrency(confirmedTransaction.amount)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase">Accounting Type</span>
+                      <span className="font-bold text-amber-800">Separate Penalty Income</span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-[11px] text-slate-500 italic">
+                    Strict Financial Separation: Loan principal outstanding and interest outstanding remain unchanged.
+                  </p>
                 </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
+                  {/* Section Header */}
+                  <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-slate-500" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                        INSTALLMENT PAYMENT BREAKDOWN
+                      </h4>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      {confirmedTransaction.allocations?.length || 0} Installment(s) applied
+                    </span>
+                  </div>
 
-                {/* Table for Tablet / Desktop */}
-                <div className="hidden sm:block overflow-x-auto">
-                  <table className="w-full text-xs text-left min-w-[580px]">
-                    <thead className="bg-slate-50/70 border-b border-slate-100 text-slate-600 font-semibold text-[11px]">
-                      <tr>
-                        <th className="px-4 py-2">Installment</th>
-                        <th className="px-4 py-2">Due Date</th>
-                        <th className="px-4 py-2 text-right">Remaining Due</th>
-                        <th className="px-4 py-2 text-right">Amount Received</th>
-                        <th className="px-4 py-2 text-right">Interest / Principal Paid</th>
-                        <th className="px-4 py-2 text-right">Remaining Balance</th>
-                        <th className="px-4 py-2 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {confirmedTransaction.allocations?.map((al) => {
-                        const preRemainingDue = al.previousRemainingDue !== undefined 
-                          ? al.previousRemainingDue 
-                          : al.allocated + (al.balanceAfter || 0);
+                  {/* Table for Tablet / Desktop */}
+                  <div className="hidden sm:block overflow-x-auto">
+                    <table className="w-full text-xs text-left min-w-[580px]">
+                      <thead className="bg-slate-50/70 border-b border-slate-100 text-slate-600 font-semibold text-[11px]">
+                        <tr>
+                          <th className="px-4 py-2">Installment</th>
+                          <th className="px-4 py-2">Due Date</th>
+                          <th className="px-4 py-2 text-right">Remaining Due</th>
+                          <th className="px-4 py-2 text-right">Amount Received</th>
+                          <th className="px-4 py-2 text-right">Interest / Principal Paid</th>
+                          <th className="px-4 py-2 text-right">Remaining Balance</th>
+                          <th className="px-4 py-2 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {confirmedTransaction.allocations?.map((al) => {
+                          const preRemainingDue = al.previousRemainingDue !== undefined
+                            ? al.previousRemainingDue
+                            : al.allocated + (al.balanceAfter || 0);
 
-                        return (
-                          <tr key={al.installmentNumber} className="hover:bg-slate-50/60">
-                            <td className="px-4 py-2.5 font-bold text-slate-900">{al.installmentNumber}</td>
-                            <td className="px-4 py-2.5 text-slate-600">{formatDate(al.dueDate)}</td>
-                            <td className="px-4 py-2.5 text-right font-medium text-slate-700">
-                              {formatCurrency(preRemainingDue)}
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-bold text-emerald-800">
-                              {formatCurrency(al.allocated)}
-                            </td>
-                            <td className="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">
-                              {formatCurrency(al.interestPaid)} / {formatCurrency(al.principalPaid)}
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-bold text-slate-900">
-                              {formatCurrency(al.balanceAfter)}
-                            </td>
-                            <td className="px-4 py-2.5 text-center">
+                          return (
+                            <tr key={al.installmentNumber} className="hover:bg-slate-50/60">
+                              <td className="px-4 py-2.5 font-bold text-slate-900">{al.installmentNumber}</td>
+                              <td className="px-4 py-2.5 text-slate-600">{formatDate(al.dueDate)}</td>
+                              <td className="px-4 py-2.5 text-right font-medium text-slate-700">
+                                {formatCurrency(preRemainingDue)}
+                              </td>
+                              <td className="px-4 py-2.5 text-right font-bold text-emerald-800">
+                                {formatCurrency(al.allocated)}
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">
+                                {formatCurrency(al.interestPaid)} / {formatCurrency(al.principalPaid)}
+                              </td>
+                              <td className="px-4 py-2.5 text-right font-bold text-slate-900">
+                                {formatCurrency(al.balanceAfter)}
+                              </td>
+                              <td className="px-4 py-2.5 text-center">
+                                {al.statusAfter === "Paid" ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-600/20">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                                    Paid
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-600/20">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                                    Partial
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Card View (shown on xs screens) */}
+                  <div className="block sm:hidden divide-y divide-slate-100 bg-white">
+                    {confirmedTransaction.allocations?.map((al) => {
+                      const preRemainingDue = al.previousRemainingDue !== undefined
+                        ? al.previousRemainingDue
+                        : al.allocated + (al.balanceAfter || 0);
+
+                      return (
+                        <div key={al.installmentNumber} className="p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-900">
+                              Installment {al.installmentNumber}
+                            </span>
+                            <div>
                               {al.statusAfter === "Paid" ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-600/20">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-600/20">
                                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
                                   Paid
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-600/20">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-600/20">
                                   <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
                                   Partial
                                 </span>
                               )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                            </div>
+                          </div>
 
-                {/* Mobile Card View (shown on xs screens) */}
-                <div className="block sm:hidden divide-y divide-slate-100 bg-white">
-                  {confirmedTransaction.allocations?.map((al) => {
-                    const preRemainingDue = al.previousRemainingDue !== undefined 
-                      ? al.previousRemainingDue 
-                      : al.allocated + (al.balanceAfter || 0);
-
-                    return (
-                      <div key={al.installmentNumber} className="p-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-900">
-                            Installment {al.installmentNumber}
-                          </span>
-                          <div>
-                            {al.statusAfter === "Paid" ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-600/20">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                                Paid
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-600/20">
-                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                                Partial
-                              </span>
-                            )}
+                          <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-100">
+                            <div>
+                              <span className="text-slate-400 block text-[10px]">Due Date</span>
+                              <span className="font-medium text-slate-700">{formatDate(al.dueDate)}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-slate-400 block text-[10px]">Remaining Due</span>
+                              <span className="font-medium text-slate-700">{formatCurrency(preRemainingDue)}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block text-[10px]">Amount Received</span>
+                              <span className="font-bold text-emerald-800">{formatCurrency(al.allocated)}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-slate-400 block text-[10px]">Remaining Balance</span>
+                              <span className="font-bold text-slate-900">{formatCurrency(al.balanceAfter)}</span>
+                            </div>
+                            <div className="col-span-2 text-slate-500 text-[10px] pt-0.5">
+                              Interest / Principal Paid: <span className="font-semibold text-slate-700">{formatCurrency(al.interestPaid)} / {formatCurrency(al.principalPaid)}</span>
+                            </div>
                           </div>
                         </div>
-
-                        <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-100">
-                          <div>
-                            <span className="text-slate-400 block text-[10px]">Due Date</span>
-                            <span className="font-medium text-slate-700">{formatDate(al.dueDate)}</span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-slate-400 block text-[10px]">Remaining Due</span>
-                            <span className="font-medium text-slate-700">{formatCurrency(preRemainingDue)}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 block text-[10px]">Amount Received</span>
-                            <span className="font-bold text-emerald-800">{formatCurrency(al.allocated)}</span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-slate-400 block text-[10px]">Remaining Balance</span>
-                            <span className="font-bold text-slate-900">{formatCurrency(al.balanceAfter)}</span>
-                          </div>
-                          <div className="col-span-2 text-slate-500 text-[10px] pt-0.5">
-                            Interest / Principal Paid: <span className="font-semibold text-slate-700">{formatCurrency(al.interestPaid)} / {formatCurrency(al.principalPaid)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {confirmedTransaction.advanceCreated > 0 && (
-                  <div className="px-4 py-2 bg-blue-50/80 border-t border-blue-200/60 flex items-center justify-between text-xs text-blue-900 font-semibold">
-                    <span>Excess Advance Created:</span>
-                    <span className="font-bold text-blue-800">{formatCurrency(confirmedTransaction.advanceCreated)}</span>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
+
+                  {confirmedTransaction.advanceCreated > 0 && (
+                    <div className="px-4 py-2 bg-blue-50/80 border-t border-blue-200/60 flex items-center justify-between text-xs text-blue-900 font-semibold">
+                      <span>Excess Advance Created:</span>
+                      <span className="font-bold text-blue-800">{formatCurrency(confirmedTransaction.advanceCreated)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer Buttons (Sticky bottom) */}
@@ -2603,248 +3102,246 @@ const Collection = () => {
       )}
 
       {/* =========================================================================
-          3. SHARED COLLECTION DETAILS POPUP (FOR TODAY & OVERDUE SECTIONS)
+          3. VIEW SCHEDULE MODAL (FOR SELECTED CUSTOMER LOAN)
       ========================================================================= */}
-      {detailsCustomer && (() => {
-        const c = detailsCustomer.customer;
-        const isToday = detailsCustomer.context === "Today";
+      {scheduleModalCustomer && (() => {
+        const c = scheduleModalCustomer;
+        const schedule = c.fullSchedule || [];
+        const customerName = c.customer?.name || "Customer";
+        const customerId = c.customerId;
+        const loanId = c.loanId;
+        const vehicleReg = c.vehicle?.regNo;
+        const frequency = c.paymentFrequency || c.loan?.paymentFrequency || "Monthly";
 
-        // Relevant Due Amount and scheduled items based on originating section
-        const relevantDueAmount = isToday ? c.totalDueToday : c.totalOverdue;
-        const relevantOriginalScheduled = isToday ? c.originalDueToday : c.originalOverdue;
-        const relevantCollected = Math.max(0, relevantOriginalScheduled - relevantDueAmount);
-        const relevantInstalls = isToday ? (c.todayInstalls || []) : (c.overdueInstalls || []);
-
-        // Dynamic status for the selected context
-        let statusBadge = "Pending";
-        if (relevantDueAmount <= 0.01) {
-          statusBadge = "Paid";
-        } else if (relevantCollected > 0.01) {
-          statusBadge = "Partial";
-        } else if (!isToday) {
-          statusBadge = "Overdue";
-        }
-
-        const canCollect = relevantDueAmount > 0.01 && c.statusText !== "Collected";
+        // Total stats for this loan
+        const totalPrincipal = Number(c.loanAmount || (Number(c.loan?.vehicleAmount) - Number(c.loan?.downPayment || 0)) || 0);
+        const totalPaid = schedule.reduce((sum, s) => sum + Number(s.amountPaid || 0), 0);
+        const totalOutstanding = schedule.reduce(
+          (sum, s) => sum + Math.max(0, Number(s.emi || 0) - Number(s.amountPaid || 0)),
+          0
+        );
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4 md:p-6 backdrop-blur-xs overflow-y-auto overscroll-contain">
-            <div className="w-full max-w-xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] rounded-2xl bg-white shadow-2xl relative flex flex-col border border-slate-200 overflow-hidden my-auto">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 bg-white sticky top-0 z-20 shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                    isToday ? "bg-teal-50 text-[#006052] ring-4 ring-teal-50/50" : "bg-red-50 text-red-700 ring-4 ring-red-50/50"
-                  }`}>
-                    {isToday ? <CalendarIcon className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-2 sm:p-4 md:p-6 backdrop-blur-xs overflow-hidden overscroll-contain">
+            <div className="w-full max-w-4xl max-h-[92vh] sm:max-h-[86vh] rounded-2xl bg-white shadow-2xl relative flex flex-col border border-slate-200 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-white sticky top-0 z-20 shrink-0">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                  <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-[#006052] ring-2 sm:ring-4 ring-teal-50/50">
+                    <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5" />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                        Collection Details
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <h3 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 leading-tight truncate">
+                        Repayment Schedule
                       </h3>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                        isToday ? "bg-teal-50 text-teal-800 border border-teal-200" : "bg-red-50 text-red-800 border border-red-200"
-                      }`}>
-                        {isToday ? "Today Collection" : "Overdue Collection"}
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        {frequency}
                       </span>
                     </div>
-                    <p className="text-[11px] sm:text-xs text-slate-500 font-medium mt-0.5">
-                      {isToday ? "Current installment details scheduled for today" : "Overdue installment status and outstanding breakdown"}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs text-slate-500 font-medium mt-0.5">
+                      <span className="font-bold text-slate-800">{customerName}</span>
+                      <span>•</span>
+                      <span className="font-mono">{customerId}</span>
+                      <span>•</span>
+                      <span className="font-mono font-semibold text-slate-700">{loanId}</span>
+                      {vehicleReg && (
+                        <>
+                          <span className="hidden sm:inline">•</span>
+                          <span className="hidden sm:inline">{vehicleReg}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
+
                 <button
                   type="button"
-                  onClick={() => setDetailsCustomer(null)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors shrink-0"
+                  onClick={() => setScheduleModalCustomer(null)}
+                  className="rounded-lg p-1.5 sm:p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors shrink-0 cursor-pointer"
+                  aria-label="Close modal"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              {/* Scrollable Content */}
-              <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
-                {/* A. Customer Information Card */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2.5">
-                    Customer Information
+              {/* Summary KPIs Banner */}
+              <div className="grid grid-cols-3 gap-2 px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-100 text-xs shrink-0">
+                <div className="min-w-0">
+                  <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">
+                    Loan Amount
                   </span>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div>
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Customer Name</span>
-                      <p className="text-xs sm:text-sm font-bold text-slate-900 truncate mt-0.5">{c.customer?.name || "Customer"}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Customer ID</span>
-                      <p className="text-xs sm:text-sm font-bold text-slate-700 font-mono mt-0.5">{c.customerId}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Loan ID</span>
-                      <p className="text-xs sm:text-sm font-bold text-slate-700 font-mono mt-0.5">{c.loanId}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Loan Status</span>
-                      <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20 mt-0.5">
-                        {c.loanStatus || (c.totalUnpaidInstallmentAmount > 0 ? "Active" : "Closed")}
-                      </span>
-                    </div>
-                  </div>
+                  <p className="text-xs sm:text-sm font-bold text-slate-900 truncate mt-0.5">
+                    {formatCurrency(totalPrincipal)}
+                  </p>
                 </div>
-
-                {/* B. Outstanding Summary Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                      Total Loan Outstanding
-                    </span>
-                    <p className="text-lg sm:text-xl font-bold text-slate-900">
-                      {formatCurrency(c.totalUnpaidInstallmentAmount || c.outstandingAmount || 0)}
-                    </p>
-                    <span className="text-[11px] text-slate-400 mt-0.5 block">
-                      Remaining principal & interest across all installments
-                    </span>
-                  </div>
-
-                  <div className={`rounded-xl border p-3.5 shadow-2xs ${
-                    isToday ? "bg-teal-50/50 border-teal-200" : "bg-red-50/50 border-red-200"
-                  }`}>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${
-                      isToday ? "text-teal-800" : "text-red-800"
-                    }`}>
-                      {isToday ? "Today's Due Amount" : "Applicable Overdue Amount"}
-                    </span>
-                    <p className={`text-lg sm:text-xl font-bold ${
-                      isToday ? "text-[#006052]" : "text-red-700"
-                    }`}>
-                      {formatCurrency(relevantDueAmount)}
-                    </p>
-                    <span className={`text-[11px] mt-0.5 block ${
-                      isToday ? "text-teal-700/80" : "text-red-600/80"
-                    }`}>
-                      {isToday ? "Amount payable for today's installment" : `${c.overdueCount || relevantInstalls.length} installment(s) overdue`}
-                    </span>
-                  </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">
+                    Total Paid
+                  </span>
+                  <p className="text-xs sm:text-sm font-bold text-emerald-700 truncate mt-0.5">
+                    {formatCurrency(totalPaid)}
+                  </p>
                 </div>
-
-                {/* C. Collection Summary Section */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                      {isToday ? "Today's Installment Breakdown" : "Overdue Installments Breakdown"}
-                    </span>
-                    <div>
-                      {statusBadge === "Paid" && (
-                        <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-                          Paid
-                        </span>
-                      )}
-                      {statusBadge === "Partial" && (
-                        <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                          Partial
-                        </span>
-                      )}
-                      {statusBadge === "Overdue" && (
-                        <span className="inline-flex items-center rounded-md bg-red-50 px-2.5 py-0.5 text-xs font-bold text-red-700 ring-1 ring-inset ring-red-600/20">
-                          Overdue
-                        </span>
-                      )}
-                      {statusBadge === "Pending" && (
-                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700 ring-1 ring-inset ring-slate-500/20">
-                          Pending
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2.5 text-center py-1">
-                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Scheduled
-                      </span>
-                      <p className="text-sm font-bold text-slate-800 mt-1">
-                        {formatCurrency(relevantOriginalScheduled)}
-                      </p>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-100">
-                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
-                        Collected
-                      </span>
-                      <p className="text-sm font-bold text-emerald-800 mt-1">
-                        {formatCurrency(relevantCollected)}
-                      </p>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-amber-50/60 border border-amber-100">
-                      <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">
-                        Remaining Due
-                      </span>
-                      <p className="text-sm font-bold text-amber-900 mt-1">
-                        {formatCurrency(relevantDueAmount)}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Installments List */}
-                  {relevantInstalls.length > 0 && (
-                    <div className="pt-2 border-t border-slate-100">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
-                        Installment Details
-                      </span>
-                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                        {relevantInstalls.map((inst, idx) => {
-                          const instDue = Math.max(0, inst.emi - (inst.amountPaid || 0));
-                          const isInstPartial = (inst.amountPaid || 0) > 0 && instDue > 0;
-                          return (
-                            <div
-                              key={inst.installmentNumber || idx}
-                              className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50/80 border border-slate-100"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-slate-800 font-mono">
-                                  Installment {inst.installmentNumber}
-                                </span>
-                                <span className="text-slate-400">•</span>
-                                <span className="text-slate-500 text-[11px]">
-                                  Due: {formatDate(inst.dueDate)}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 text-right">
-                                {isInstPartial && (
-                                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                    Paid: {formatCurrency(inst.amountPaid)}
-                                  </span>
-                                )}
-                                <span className="font-bold text-slate-900">
-                                  Due: {formatCurrency(instDue)}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                <div className="min-w-0">
+                  <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider block truncate">
+                    Outstanding
+                  </span>
+                  <p className="text-xs sm:text-sm font-bold text-amber-700 truncate mt-0.5">
+                    {formatCurrency(totalOutstanding)}
+                  </p>
                 </div>
               </div>
 
-              {/* D. Footer Actions */}
-              <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-3.5 bg-white border-t border-slate-100 sticky bottom-0 z-20 shrink-0">
+              {/* Compact Scrollable Schedule Table Container */}
+              <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0 p-3 sm:p-5">
+                {schedule.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <p className="text-sm font-semibold text-slate-600">No schedule available</p>
+                    <p className="text-xs mt-1">Repayment schedule has not been generated for this loan.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-50/95 sticky top-0 z-10 border-b border-slate-200">
+                        <tr>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px]">
+                            Instalment #
+                          </th>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px]">
+                            Due Date
+                          </th>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px] text-right">
+                            Amount
+                          </th>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px] text-right">
+                            Paid Amount
+                          </th>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px] text-right">
+                            Outstanding Amount
+                          </th>
+                          <th className="px-3.5 py-2.5 font-bold uppercase tracking-wider text-slate-600 text-[11px] text-center">
+                            Status
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {schedule.map((row) => {
+                          const emi = Number(row.emi || 0);
+                          const paid = Number(row.amountPaid || 0);
+                          const outstanding = Math.max(0, Math.round((emi - paid) * 100) / 100);
+                          const isMidwaySettled = Boolean(
+                            row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed"
+                          );
+
+                          let rowStatus = "Due";
+                          if (isMidwaySettled) {
+                            rowStatus = "Paid";
+                          } else if (outstanding <= 0.01 && emi > 0) {
+                            rowStatus = "Paid";
+                          } else if (paid > 0.01) {
+                            rowStatus = "Partial";
+                          } else {
+                            const d = new Date(row.dueDate);
+                            d.setHours(0, 0, 0, 0);
+                            const t = new Date(date);
+                            t.setHours(0, 0, 0, 0);
+                            if (!isNaN(d.getTime()) && d.getTime() < t.getTime()) {
+                              rowStatus = "Overdue";
+                            } else {
+                              rowStatus = "Due";
+                            }
+                          }
+
+                          const penaltyAmt = (!isMidwaySettled && rowStatus === "Overdue")
+                            ? getInstallmentPenaltySupportingAmount(row, {
+                              loanId,
+                              frequency,
+                              referenceDate: date ? new Date(date) : new Date(),
+                            })
+                            : null;
+
+                          return (
+                            <tr
+                              key={row.installmentNumber}
+                              className={`transition-colors ${isMidwaySettled
+                                  ? "bg-amber-50/70 hover:bg-amber-100/60"
+                                  : "hover:bg-slate-50/70"
+                                }`}
+                            >
+                              <td className={`px-3.5 py-2.5 whitespace-nowrap font-medium ${isMidwaySettled ? "text-amber-950 font-semibold" : "text-slate-700"
+                                }`}>
+                                {row.installmentNumber}
+                              </td>
+                              <td className="px-3.5 py-2.5 whitespace-nowrap font-medium text-slate-800">
+                                {formatDate(row.dueDate)}
+                              </td>
+                              <td className="px-3.5 py-2.5 whitespace-nowrap text-right font-medium text-slate-700">
+                                {formatCurrency(emi)}
+                              </td>
+                              <td className="px-3.5 py-2.5 whitespace-nowrap text-right font-semibold text-emerald-700">
+                                {formatCurrency(paid)}
+                              </td>
+                              <td className="px-3.5 py-2.5 whitespace-nowrap text-right font-semibold text-slate-900">
+                                {formatCurrency(outstanding)}
+                              </td>
+                              <td className="px-3.5 py-2.5 whitespace-nowrap text-center">
+                                {isMidwaySettled ? (
+                                  <span className="inline-flex items-center rounded-full bg-orange-100/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-900 border border-amber-300 ring-1 ring-amber-500/20">
+                                    Paid
+                                  </span>
+                                ) : rowStatus === "Paid" ? (
+                                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                                    Paid
+                                  </span>
+                                ) : rowStatus === "Partial" ? (
+                                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                                    Partial
+                                  </span>
+                                ) : rowStatus === "Overdue" ? (
+                                  <div className="flex flex-col items-center justify-center gap-0.5">
+                                    <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700 ring-1 ring-inset ring-red-600/10">
+                                      Overdue
+                                    </span>
+                                    {penaltyAmt > 0 && (
+                                      <span className="text-[10px] font-semibold text-[#006052] whitespace-nowrap leading-tight">
+                                        Penalty: ₹{Number(penaltyAmt).toLocaleString('en-IN')}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 ring-1 ring-inset ring-slate-500/20">
+                                    Due
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-white border-t border-slate-200 sticky bottom-0 z-20 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setDetailsCustomer(null)}
-                  className="rounded-xl border border-slate-200 bg-white px-5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
+                  onClick={() => setScheduleModalCustomer(null)}
+                  className="rounded-xl border border-slate-300 bg-white px-4 sm:px-5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
                 >
                   Close
                 </button>
-                {canCollect && (
+                {totalOutstanding > 0.01 && (
                   <button
                     type="button"
                     onClick={() => {
-                      const cust = detailsCustomer.customer;
-                      setDetailsCustomer(null);
+                      const cust = scheduleModalCustomer;
+                      setScheduleModalCustomer(null);
                       handleCollectClick(cust);
                     }}
-                    className="rounded-xl bg-[#006052] px-6 sm:px-7 py-2 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors flex items-center gap-2"
+                    className="rounded-xl bg-[#006052] px-5 sm:px-6 py-2 text-xs font-bold text-white shadow-2xs hover:bg-[#004d43] transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <span>Collect Payment</span>
                     <ArrowRight className="h-3.5 w-3.5" />
@@ -2886,7 +3383,7 @@ const Collection = () => {
         );
 
         return (
-          <div 
+          <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-4 md:p-6 backdrop-blur-xs overflow-y-auto overscroll-contain"
             onClick={(e) => {
               if (e.target === e.currentTarget) setSelectedHistoryTx(null);

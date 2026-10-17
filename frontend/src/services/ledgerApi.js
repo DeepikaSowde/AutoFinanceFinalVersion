@@ -19,6 +19,12 @@ const toIncome = (income) => ({
   customerId: income.customerId || '',
   customerName: income.customerName || income.receivedFrom || '',
   isDocumentCharge: Boolean(income.isDocumentCharge),
+  // Set on penalty income (category "Penalty"), booked by a penalty payment.
+  installmentNumber: income.installmentNumber || '',
+  installmentNumbers: income.installmentNumbers || [],
+  penaltyType: income.penaltyType || '',
+  gracePeriod: income.gracePeriod ?? '',
+  transactionRef: income.reference || '',
 })
 
 const toExpense = (expense) => ({

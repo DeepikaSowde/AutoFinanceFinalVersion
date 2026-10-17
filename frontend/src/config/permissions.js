@@ -47,6 +47,10 @@ export const PAGE_ACCESS = {
   '/vehicle': ['vehicles.view'],
   '/reminders': ['reminders.view'],
   '/users': [],
+  // Smart Search looks across customers, loans and payments.
+  '/smart-search': ['customers.view'],
+  // Company-wide penalty and grace settings: admin-only.
+  '/settings': [],
 }
 
 export const canOpen = (user, path) => {

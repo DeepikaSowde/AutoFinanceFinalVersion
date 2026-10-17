@@ -17,6 +17,10 @@ import Vehicle from './pages/Vehicle/Vehicle'
 import Dashboard from './pages/Dashboard'
 import UserManagement from './pages/UserManagement'
 import Reminder from './pages/Reminder'
+import SettingsOverview from './pages/Settings/SettingsOverview'
+import PenaltyGraceSettings from './pages/Settings/PenaltyGraceSettings'
+import SmartSearch from './pages/SmartSearch'
+import SmartSearchFloatingButton from './components/SmartSearchFloatingButton'
 import Login from './pages/auth/Login'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import { getSessionUser } from './services/api'
@@ -57,6 +61,7 @@ function AppShell() {
           <Route path="/loans" element={gate('/loans', <Loans />)} />
           <Route path="/loans/:loanId" element={gate('/loans', <Loans />)} />
           <Route path="/dashboard" element={gate('/dashboard', <Dashboard />)} />
+          <Route path="/smart-search" element={gate('/smart-search', <SmartSearch />)} />
           <Route path="/newloan" element={gate('/newloan', <NewLoan />)} />
           <Route path="/customers" element={gate('/customers', <Customer />)} />
           <Route path="/guarantor-referral" element={gate('/guarantor-referral', <GuarantorReferral />)} />
@@ -71,8 +76,11 @@ function AppShell() {
           <Route path="/vehicle" element={gate('/vehicle', <Vehicle />)} />
           <Route path="/users" element={gate('/users', <UserManagement />)} />
           <Route path="/reminders" element={gate('/reminders', <Reminder />)} />
+          <Route path="/settings" element={gate('/settings', <SettingsOverview />)} />
+          <Route path="/settings/penalty-grace" element={gate('/settings', <PenaltyGraceSettings />)} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        {canOpen(user, '/smart-search') && <SmartSearchFloatingButton />}
       </main>
     </div>
   )

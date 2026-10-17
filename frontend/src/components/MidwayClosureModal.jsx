@@ -20,21 +20,12 @@ import { generateSchedule, computeEffectiveSchedule } from "./RepaymentScheduleT
 import { DATA_CHANGED_EVENT } from "../services/api";
 import { loadCustomerEntries } from "../services/customerApi";
 import { closeLoanMidway, loadPayments } from "../services/collectionApi";
+import { formatDate } from "../utils/dateUtils";
+import { getInstallmentPenaltySupportingAmount, usePenaltyData } from "../utils/penaltyRules";
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(Number(val))) return "₹0";
   return `₹${Math.round(Number(val)).toLocaleString("en-IN")}`;
-};
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return "—";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return String(dateStr);
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric"
-  });
 };
 
 /**
@@ -68,6 +59,7 @@ export default function MidwayClosureModal({
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [closureSuccessData, setClosureSuccessData] = useState(null);
+  usePenaltyData();
   // Sent with the closure; a repeated submit with the same one is not re-posted.
   const [closureClientRef, setClosureClientRef] = useState("");
 
@@ -1054,6 +1046,12 @@ export default function MidwayClosureModal({
                       const isPaid = item.status === "Collected" || item.status === "Paid" || Number(item.balance || 0) <= 0.01;
                       const isPartial = !isPaid && item.status === "Partial";
                       const isOverdue = !isPaid && item.status === "Overdue";
+                      const penaltyAmt = isOverdue
+                        ? getInstallmentPenaltySupportingAmount(item, {
+                            loanId: loanDetails.loanId,
+                            frequency: loanDetails.paymentFrequency || 'Monthly',
+                          })
+                        : null;
 
                       return (
                         <tr
@@ -1089,9 +1087,16 @@ export default function MidwayClosureModal({
                                 Partial
                               </span>
                             ) : isOverdue ? (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
-                                Overdue
-                              </span>
+                              <div className="flex flex-col items-center justify-center gap-0.5">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
+                                  Overdue
+                                </span>
+                                {penaltyAmt > 0 && (
+                                  <span className="text-[10px] font-semibold text-[#006052] whitespace-nowrap leading-tight">
+                                    Penalty: ₹{Number(penaltyAmt).toLocaleString('en-IN')}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
                                 Pending

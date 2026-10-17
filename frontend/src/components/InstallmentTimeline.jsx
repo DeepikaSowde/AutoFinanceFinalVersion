@@ -36,6 +36,7 @@ export default function InstallmentTimeline({
   loanPayments = [],
   effectiveLoanId = "LN-001",
   isLoanCompleted = false,
+  isMidwayClosed = false,
 }) {
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(900);
@@ -219,7 +220,8 @@ export default function InstallmentTimeline({
       if (
         markerPoints[i].status === "Paid" ||
         markerPoints[i].status === "Collected" ||
-        markerPoints[i].completionPct === 100
+        markerPoints[i].completionPct === 100 ||
+        (isMidwayClosed && (markerPoints[i].isMidwayClosed || markerPoints[i].status === "Midway Closed"))
       ) {
         paidUpToIdx = i;
       } else {
@@ -233,7 +235,7 @@ export default function InstallmentTimeline({
     }
 
     return { fullPathD: fullD, paidPathD: paidD };
-  }, [markerPoints]);
+  }, [markerPoints, isMidwayClosed]);
 
   if (!schedule || schedule.length === 0) {
     return (
@@ -289,20 +291,20 @@ export default function InstallmentTimeline({
               />
             )}
 
-            {/* 2. Paid Connecting Path (Emerald Green completed segment) */}
+            {/* 2. Paid Connecting Path (Emerald Green completed segment, or Orange/Amber if Midway Closed) */}
             {paidPathD && (
               <path
                 d={paidPathD}
                 fill="none"
-                stroke="#047857"
+                stroke={isMidwayClosed ? "#EA580C" : "#047857"}
                 strokeWidth={colsPerRow <= 3 ? 5 : 6}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
             )}
 
-            {/* 3. Partial Progress Segment (Amber dashed line) */}
-            {(() => {
+            {/* 3. Partial Progress Segment (Amber dashed line, suppressed for Midway Closed loans) */}
+            {!isMidwayClosed && (() => {
               const partialPoint = markerPoints.find((m) => m.status === "Partial" || (m.completionPct > 0 && m.completionPct < 100));
               if (!partialPoint) return null;
               const prevPoint = partialPoint.index > 0 ? markerPoints[partialPoint.index - 1] : null;
@@ -348,9 +350,10 @@ export default function InstallmentTimeline({
 
             {/* 5. Render Installment Markers with Inline Completion Percentage */}
             {markerPoints.map((item) => {
-              const isPaid = item.status === "Paid" || item.status === "Collected" || item.completionPct === 100;
-              const isPartial = !isPaid && (item.status === "Partial" || item.completionPct > 0);
-              const isOverdue = !isPaid && !isPartial && item.status === "Overdue";
+              const isMidwayItem = isMidwayClosed && (item.isMidwayClosed || item.status === "Midway Closed");
+              const isPaid = !isMidwayItem && (item.status === "Paid" || item.status === "Collected" || item.completionPct === 100);
+              const isPartial = !isPaid && !isMidwayItem && (item.status === "Partial" || item.completionPct > 0);
+              const isOverdue = !isPaid && !isPartial && !isMidwayItem && item.status === "Overdue";
 
               let circleFill = "#FFFFFF";
               let circleStroke = "#CBD5E1";
@@ -358,7 +361,13 @@ export default function InstallmentTimeline({
               let badgeBg = "#F1F5F9";
               let badgeText = "#64748B";
 
-              if (isPaid) {
+              if (isMidwayItem) {
+                circleFill = "#FFF7ED";
+                circleStroke = "#EA580C";
+                numberColor = "#C2410C";
+                badgeBg = "#FFEDD5";
+                badgeText = "#C2410C";
+              } else if (isPaid) {
                 circleFill = "#047857";
                 circleStroke = "#065F46";
                 numberColor = "#FFFFFF";
@@ -378,8 +387,8 @@ export default function InstallmentTimeline({
                 badgeText = "#BE123C";
               }
 
-              // Text for completion status: e.g. "100% Completed", "50% Completed", "0% Completed"
-              const completionLabel = `${item.completionPct}% Completed`;
+              // Text for completion status: e.g. "100% Completed", "Midway Closed", "50% Completed"
+              const completionLabel = isMidwayItem ? "Midway Closed" : `${item.completionPct}% Completed`;
 
               return (
                 <g key={`inst-marker-${item.installmentNumber}`}>
@@ -390,12 +399,36 @@ export default function InstallmentTimeline({
                     r={markerRadius}
                     fill={circleFill}
                     stroke={circleStroke}
-                    strokeWidth={isPaid || isPartial || isOverdue ? 3 : 2}
+                    strokeWidth={isPaid || isPartial || isOverdue || isMidwayItem ? 3 : 2}
                     filter="url(#markerShadow)"
                   />
 
                   {/* Marker Center Display: Installment Number clearly displayed */}
-                  {isPaid ? (
+                  {isMidwayItem ? (
+                    <>
+                      <text
+                        x={item.cx}
+                        y={item.cy - 1}
+                        textAnchor="middle"
+                        fill="#C2410C"
+                        fontSize={colsPerRow <= 3 ? "10" : "11"}
+                        fontWeight="800"
+                        fontFamily="inherit"
+                      >
+                        #{item.installmentNumber}
+                      </text>
+                      <text
+                        x={item.cx}
+                        y={item.cy + 10}
+                        textAnchor="middle"
+                        fill="#EA580C"
+                        fontSize="7"
+                        fontWeight="bold"
+                      >
+                        CLOSED
+                      </text>
+                    </>
+                  ) : isPaid ? (
                     <>
                       <text
                         x={item.cx}
@@ -468,7 +501,7 @@ export default function InstallmentTimeline({
                     height="18"
                     rx="9"
                     fill={badgeBg}
-                    stroke={isPaid ? "#A7F3D0" : isPartial ? "#FDE68A" : isOverdue ? "#FECDD3" : "#E2E8F0"}
+                    stroke={isMidwayItem ? "#FED7AA" : isPaid ? "#A7F3D0" : isPartial ? "#FDE68A" : isOverdue ? "#FECDD3" : "#E2E8F0"}
                     strokeWidth="1"
                   />
                   <text
@@ -487,8 +520,8 @@ export default function InstallmentTimeline({
             })}
 
             {/* 6. Money-Based Progress Indicator (Golden Coin with Rupee Icon along zigzag path) */}
-            {/* Displayed cleanly without any text labels or undefined flags */}
-            {!loanJourneyFinished && moneyProgress && (
+            {/* Displayed cleanly without any text labels or undefined flags; Suppressed for Midway Closed loans */}
+            {!isMidwayClosed && !loanJourneyFinished && moneyProgress && (
               <g
                 className="select-none"
                 style={{
@@ -530,17 +563,24 @@ export default function InstallmentTimeline({
         </div>
 
         {/* =========================================================
-            7. LOAN COMPLETION INDICATOR
-            (Appears cleanly at the bottom end of the timeline only when all installments are fully paid)
+            7. LOAN COMPLETION / TERMINAL INDICATOR
+            (Midway Closed displays orange/amber terminal indicator; Finished active loans display green)
         ========================================================= */}
-        {loanJourneyFinished && (
+        {isMidwayClosed ? (
+          <div className="mt-4 pt-3 border-t border-amber-100 flex items-center justify-end">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold shadow-2xs">
+              <CheckCircle2 className="h-4 w-4 text-amber-600" />
+              <span>Midway Closed</span>
+            </div>
+          </div>
+        ) : loanJourneyFinished ? (
           <div className="mt-4 pt-3 border-t border-emerald-100 flex items-center justify-end">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-2xs">
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               <span>Loan Journey Completed</span>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

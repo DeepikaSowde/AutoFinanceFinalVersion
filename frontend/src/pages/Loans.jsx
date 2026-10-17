@@ -19,28 +19,20 @@ import {
 import LoanDetailsView from "./customer/LoanDetailsView";
 import { generateSchedule } from "../components/RepaymentScheduleTable";
 import { calculateLoanOutstanding } from "../utils/loanCalculations";
+import { syncVehiclesWithClosedLoans } from "../utils/vehicleStatusHelper";
+
+import { formatDate, parseToDate } from "../utils/dateUtils";
 
 const formatINR = (value) => {
   const amount = Math.round(Number(value || 0));
   return `₹${amount.toLocaleString("en-IN")}`;
 };
 
-const formatDate = (dateString) => {
-  if (!dateString) return "—";
-  const d = new Date(dateString);
-  if (isNaN(d.getTime())) return dateString;
-  return d.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-};
-
 // Parse a date string into midnight timestamp for reliable day comparisons
 const parseToDayTimestamp = (dateInput) => {
   if (!dateInput) return null;
-  const d = new Date(dateInput);
-  if (isNaN(d.getTime())) return null;
+  const d = parseToDate(dateInput);
+  if (!d || isNaN(d.getTime())) return null;
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 };
 
@@ -113,7 +105,7 @@ export default function Loans() {
       Promise.all([loadCustomerEntries(), loadPayments()])
         .then(([entries, payments]) => {
           if (!active) return;
-          setRawCustomers(entries);
+          setRawCustomers(syncVehiclesWithClosedLoans(entries));
           setAllPayments(payments);
           setLoadError("");
         })

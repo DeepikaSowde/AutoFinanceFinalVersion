@@ -18,6 +18,7 @@ import { loadCustomerEntries } from "../../services/customerApi";
 import { loadPayments } from "../../services/collectionApi";
 import CustomerView from "./CustomerView";
 import { calculateLoanOutstanding } from "../../utils/loanCalculations";
+import { syncVehiclesWithClosedLoans } from "../../utils/vehicleStatusHelper";
 
 const formatCurrency = (value) => {
   const amount = Math.round(Number(value || 0));
@@ -127,7 +128,7 @@ const Customer = () => {
     Promise.all([loadCustomerEntries(), loadPayments()])
       .then(([entries, payments]) => {
         if (!active) return;
-        setCustomerData(entries);
+        setCustomerData(syncVehiclesWithClosedLoans(entries));
         setAllPayments(payments);
         setLoadError("");
       })

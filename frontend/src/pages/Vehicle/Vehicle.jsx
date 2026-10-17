@@ -8,6 +8,7 @@ import VehicleSearchAndFilter from '../../components/vehicle/VehicleSearchAndFil
 import VehicleCardGrid from '../../components/vehicle/VehicleCardGrid';
 import VehicleDetailsView from './VehicleDetailsView';
 import ActiveVehicleModal from '../../components/vehicle/ActiveVehicleModal';
+import { getEffectiveVehicleStatus, syncVehiclesWithClosedLoans } from '../../utils/vehicleStatusHelper';
 
 /**
  * Vehicle Management Page matching visual reference:
@@ -45,7 +46,7 @@ const Vehicle = () => {
       loadCustomerEntries()
         .then((entries) => {
           if (!active) return;
-          setRawRecords(entries);
+          setRawRecords(syncVehiclesWithClosedLoans(entries));
           setLoadError('');
         })
         .catch((error) => active && setLoadError(error.message));
@@ -69,14 +70,8 @@ const Vehicle = () => {
         const vehicle = record.vehicle || {};
         const customer = record.customer || {};
 
-        // Read actual current status (released vehicles are restored to Active)
-        const rawStatus = (record.vehicleStatus || vehicle.status || 'Active').trim();
-        let normalizedStatus = 'Active';
-        const lower = rawStatus.toLowerCase();
-        if (lower === 'seized') normalizedStatus = 'Seized';
-        else if (lower === 'released') normalizedStatus = 'Active';
-        else if (lower === 'sold') normalizedStatus = 'Sold';
-        else normalizedStatus = 'Active';
+        // Authoritative effective status (handles Closed/Midway Closed -> Inactive, preserving Seized/Sold)
+        const normalizedStatus = getEffectiveVehicleStatus(record);
 
         return {
           ...record,
@@ -114,8 +109,10 @@ const Vehicle = () => {
       // - 'all': show all vehicles
       // - 'seized': only seized
       // - 'sold': only sold
+      // - 'inactive': only inactive
       if (activeTab === 'seized' && item.vehicleStatus !== 'Seized') return false;
       if (activeTab === 'sold' && item.vehicleStatus !== 'Sold') return false;
+      if (activeTab === 'inactive' && item.vehicleStatus !== 'Inactive') return false;
 
       // 2. Vehicle Type filter
       if (selectedType && selectedType !== 'All Vehicle Types') {
@@ -151,9 +148,9 @@ const Vehicle = () => {
 
   // Handle View Details click:
   // - For Active vehicles: open the centered ActiveVehicleModal popup without full-page navigation
-  // - For Seized, Released, Sold: retain full-page VehicleDetailsView screen
+  // - For Seized, Released, Sold, Inactive: retain full-page VehicleDetailsView screen
   const handleViewDetails = (rec) => {
-    const status = (rec.vehicleStatus || rec.vehicle?.status || 'Active').trim();
+    const status = getEffectiveVehicleStatus(rec);
     if (status.toLowerCase() === 'active') {
       setActiveVehicleForModal(rec);
     } else {

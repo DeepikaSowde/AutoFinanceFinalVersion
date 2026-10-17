@@ -23,6 +23,7 @@ import { deleteDraft, getDraft, listDrafts, saveDraft } from '../services/draftA
 import { getFundingSummary, hasGuarantorIn, principalOf, submitLoanApplication } from '../services/customerApi'
 import { CheckCircle2, FileText, Trash2, X } from 'lucide-react'
 import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
+import { formatDate } from '../utils/dateUtils'
 
 const STEPS = [
   { key: 'customer', labelKey: 'app.steps.customer', titleKey: 'app.titles.customer', subtitleKey: 'app.subtitles.customer' },
@@ -627,7 +628,7 @@ const NewLoan = () => {
               <div className="flex justify-between">
                 <span className="text-slate-500">Next Due Date:</span>
                 <span className="font-semibold text-slate-900">
-                  {submittedLoan.nextDueDate ? new Date(submittedLoan.nextDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                  {submittedLoan.nextDueDate ? formatDate(submittedLoan.nextDueDate) : '—'}
                 </span>
               </div>
             </div>

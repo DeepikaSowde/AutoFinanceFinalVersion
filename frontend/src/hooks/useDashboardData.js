@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { DATA_CHANGED_EVENT, apiGet } from '../services/api';
 import { loadLedgerData } from '../services/ledgerApi';
-import { calculateLoanOutstanding, calculateTotalPortfolioOutstanding } from '../utils/loanCalculations.js';
+import { calculateLoanOutstanding, calculateTotalPortfolioOutstanding, isEligiblePayment } from '../utils/loanCalculations.js';
 import { calculateVehicleLoanOverdue } from '../utils/vehicleOverdueCalculation.js';
+import { formatDate } from '../utils/dateUtils.js';
 
 export const useDashboardData = () => {
   const [data, setData] = useState({
@@ -33,13 +34,6 @@ export const useDashboardData = () => {
         const today = new Date();
         const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
         const formatMonth = (date) => date.toLocaleString('default', { month: 'short' });
-        const formatDate = (value) => {
-          if (!value) return '—';
-          const date = new Date(value);
-          return Number.isNaN(date.getTime())
-            ? '—'
-            : date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-        };
         const customerKey = (record) =>
           String(record.customerId || record.customer?.customerId || record.customer?.mobile || '').trim().toLowerCase();
         const loanCalculations = customers.map((record) => ({
@@ -276,11 +270,54 @@ export const useDashboardData = () => {
           chitData = null;
         }
 
+        // -------------------------------------------------------------
+        // Calculate Actual Recorded Interest Earned
+        // -------------------------------------------------------------
+        const eligiblePayments = (payments || []).filter(isEligiblePayment);
+
+        // Track customer/loan IDs with payment records to prevent duplicate counting with schedules
+        const loansWithRecordedPayments = new Set();
+        eligiblePayments.forEach((p) => {
+          if (p.loanId) loansWithRecordedPayments.add(String(p.loanId).trim().toLowerCase());
+          if (p.customerId) loansWithRecordedPayments.add(String(p.customerId).trim().toLowerCase());
+        });
+
+        // 1. Accumulate actual recorded interest from eligible collection payments
+        const interestFromPayments = eligiblePayments.reduce((sum, p) => {
+          // Explicit recorded interest component on payment transaction
+          if (p.interest !== undefined && p.interest !== null) {
+            return sum + Number(p.interest || 0);
+          }
+          // Allocations array with per-installment interestPaid
+          if (Array.isArray(p.allocations) && p.allocations.length > 0) {
+            return sum + p.allocations.reduce((aSum, a) => aSum + Number(a.interestPaid || 0), 0);
+          }
+          return sum;
+        }, 0);
+
+        // 2. Fallback for loans without transaction entries in payment history (e.g. seeded loans)
+        let interestFromSchedulesOnly = 0;
+        customers.forEach((cust) => {
+          const lId = String(cust.loanId || '').trim().toLowerCase();
+          const cId = String(cust.customerId || '').trim().toLowerCase();
+          const hasRecordedPayment =
+            (lId && loansWithRecordedPayments.has(lId)) ||
+            (cId && loansWithRecordedPayments.has(cId));
+
+          if (!hasRecordedPayment && Array.isArray(cust.repaymentSchedule)) {
+            cust.repaymentSchedule.forEach((inst) => {
+              interestFromSchedulesOnly += Number(inst.interestPaid || 0);
+            });
+          }
+        });
+
+        const totalInterestEarned = Math.round((interestFromPayments + interestFromSchedulesOnly) * 100) / 100;
+
         setData({
             totalOutstanding,
             totalCredit,
             totalDebit,
-            interestEarned,
+            interestEarned: totalInterestEarned,
             closingBalance,
             monthlyData,
             incomeBreakdown,
@@ -293,7 +330,7 @@ export const useDashboardData = () => {
                 credit: totalCredit,
                 balance: closingBalance
             },
-            repaymentVsInterest: [], // No pure interest data
+            repaymentVsInterest: [],
             operational: {
               keyMetrics: {
                 totalLoans: customers.length,

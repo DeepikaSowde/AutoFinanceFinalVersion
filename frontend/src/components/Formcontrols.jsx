@@ -1,18 +1,15 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { useTranslation } from "react-i18next";
 
+import { formatDate as formatDateUtil } from '../utils/dateUtils'
+
 /* ---------- helpers ---------- */
 export const formatINR = (n) =>
   n === '' || n === null || n === undefined || isNaN(Number(n))
     ? '—'
     : `₹ ${Math.round(Number(n)).toLocaleString('en-IN')}`
 
-export const formatDate = (iso) => {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (isNaN(d)) return '—'
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-}
+export const formatDate = (iso) => formatDateUtil(iso)
 
 /* ---------- icons (inline SVG, no extra dependency) ---------- */
 const Svg = ({ children, className = 'h-4 w-4', ...p }) => (

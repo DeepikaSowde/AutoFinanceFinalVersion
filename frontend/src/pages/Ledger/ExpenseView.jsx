@@ -3,7 +3,7 @@ import { Search, X, Receipt, Banknote, Users, CalendarCheck, ChevronLeft, Chevro
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
-import { isDateInRange } from '../../utils/dateUtils';
+import { isDateInRange, formatDate, formatDateTime } from '../../utils/dateUtils';
 import DateRangeFilter from '../../components/DateRangeFilter';
 
 const ExpenseView = ({ onAddExpense, data }) => {
@@ -297,7 +297,7 @@ const ExpenseView = ({ onAddExpense, data }) => {
                 ) : paginatedExpenses.map(exp => (
                   <tr key={exp.id} className="group hover:bg-slate-50/80 transition-colors">
                     <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-[12px] sm:text-[14px] font-medium text-slate-600">
-                      {new Date(exp.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
+                      {formatDate(exp.date)}
                     </td>
                     <td className="px-3 sm:px-6 py-4">
                       <div className="flex flex-col">
@@ -528,7 +528,7 @@ const ExpenseView = ({ onAddExpense, data }) => {
                 <div>
                   <p className="text-[12px] font-medium text-slate-500 mb-1">Date</p>
                   <p className="text-[14px] font-bold text-slate-900">
-                    {new Date(viewTransaction.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    {formatDateTime(viewTransaction.date, viewTransaction)}
                   </p>
                 </div>
 
