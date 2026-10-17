@@ -1,6 +1,14 @@
-import { Calendar, Bell, Download } from 'lucide-react';
+import { Bell, Download } from 'lucide-react';
+import MonthYearFilter from './MonthYearFilter';
 
-const DashboardHeader = () => {
+const DashboardHeader = ({
+  dateFilter,
+  setDateFilter,
+  selectedMonth = 'All',
+  setSelectedMonth,
+  selectedYear = 'All',
+  setSelectedYear,
+}) => {
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
       <div>
@@ -8,10 +16,14 @@ const DashboardHeader = () => {
       </div>
 
       <div className="flex items-center gap-2.5 sm:gap-3 self-stretch sm:self-auto justify-end flex-wrap">
-        <div className="flex items-center gap-2 bg-white border border-slate-200/80 rounded-lg px-3 py-2 text-xs sm:text-sm text-slate-600 cursor-not-allowed opacity-80 shadow-xs">
-          <Calendar className="h-4 w-4 text-emerald-700" />
-          <span>This Month</span>
-        </div>
+        <MonthYearFilter
+          dateFilter={dateFilter}
+          setDateFilter={setDateFilter}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+          selectedYear={selectedYear}
+          setSelectedYear={setSelectedYear}
+        />
         <button 
           aria-label="Notifications"
           className="bg-white border border-slate-200/80 rounded-lg p-2 text-slate-600 hover:bg-slate-50 cursor-not-allowed opacity-80 shadow-xs"

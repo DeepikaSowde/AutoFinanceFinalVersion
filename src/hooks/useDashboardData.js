@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { calculateLoanOutstanding, calculateTotalPortfolioOutstanding, isEligiblePayment } from '../utils/loanCalculations.js';
 import { calculateVehicleLoanOverdue } from '../utils/vehicleOverdueCalculation.js';
 import { formatDate } from '../utils/dateUtils.js';
+import { matchesDashboardDate } from '../components/dashboard/MonthYearFilter.jsx';
 
-export const useDashboardData = () => {
+export const useDashboardData = (filterParam = { filterType: 'all' }) => {
   const [data, setData] = useState({
     totalOutstanding: 0,
     totalCredit: 0,
@@ -24,33 +25,67 @@ export const useDashboardData = () => {
   useEffect(() => {
     const fetchData = () => {
       try {
+        const dateFilter = filterParam?.filterType ? filterParam : (filterParam?.dateFilter || {
+          filterType: (filterParam?.selectedMonth && filterParam.selectedMonth !== 'All') || (filterParam?.selectedYear && filterParam.selectedYear !== 'All') ? 'month' : 'all',
+          selectedMonth: filterParam?.selectedMonth || 'All',
+          selectedYear: filterParam?.selectedYear || 'All',
+        });
+
         const customers = JSON.parse(window.localStorage.getItem("motoLendCustomersList_data") || "[]");
         const payments = JSON.parse(window.localStorage.getItem("motoLendPaymentHistory") || "[]");
         const investors = JSON.parse(window.localStorage.getItem("motoLendInvestors_data") || "[]");
         const incomeData = JSON.parse(window.localStorage.getItem("motoLendIncome_data") || "[]");
         const expenseData = JSON.parse(window.localStorage.getItem("motoLendExpense_data") || "[]");
 
+        const isFilterActive = dateFilter && dateFilter.filterType !== 'all';
+        const matchesDate = (dateStr) => matchesDashboardDate(dateStr, dateFilter);
+
         const today = new Date();
         const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
         const formatMonth = (date) => date.toLocaleString('default', { month: 'short' });
         const customerKey = (record) =>
           String(record.customerId || record.customer?.customerId || record.customer?.mobile || '').trim().toLowerCase();
-        const loanCalculations = customers.map((record) => ({
+
+        // 1. Filtered or full customers list
+        const disbursedCustomers = customers.filter(cust => {
+          const loanDate = cust.customer?.applicationDate || cust.loan?.applicationDate || cust.createdAt || cust.date;
+          return matchesDate(loanDate);
+        });
+
+        const activeCustomersList = isFilterActive ? disbursedCustomers : customers;
+
+        // 2. Filtered or full payments list
+        const filteredPayments = payments.filter(pay => matchesDate(pay.date || pay.createdAt));
+        const targetPayments = isFilterActive ? filteredPayments : payments;
+
+        // 3. Filtered or full income list
+        const filteredIncome = incomeData.filter(inc => matchesDate(inc.date));
+        const targetIncome = isFilterActive ? filteredIncome : incomeData;
+
+        // 4. Filtered or full expense list
+        const filteredExpenses = expenseData.filter(exp => matchesDate(exp.date));
+        const targetExpenses = isFilterActive ? filteredExpenses : expenseData;
+
+        // Loan calculations
+        const loanCalculations = activeCustomersList.map((record) => ({
           record,
           calculation: calculateLoanOutstanding(record, payments),
           overdue: calculateVehicleLoanOverdue(record, payments),
         }));
+
         const expectedByMonth = {};
         const collectedByMonth = {};
         loanCalculations.forEach(({ calculation }) => {
           calculation.effectiveSchedule.forEach((installment) => {
             const dueDate = new Date(installment.dueDate);
             if (Number.isNaN(dueDate.getTime()) || dueDate.getTime() > dayStart) return;
+            if (isFilterActive && !matchesDate(installment.dueDate)) return;
             const month = `${formatMonth(dueDate)}-${String(dueDate.getFullYear()).slice(-2)}`;
             expectedByMonth[month] = (expectedByMonth[month] || 0) + Number(installment.emi || 0);
             collectedByMonth[month] = (collectedByMonth[month] || 0) + Number(installment.amountPaid || 0);
           });
         });
+
         const collectionTrend = Object.keys(expectedByMonth).map((name) => ({
           name,
           expected: expectedByMonth[name],
@@ -58,7 +93,9 @@ export const useDashboardData = () => {
         }));
         const expectedCollections = collectionTrend.reduce((sum, item) => sum + item.expected, 0);
         const collectedCollections = collectionTrend.reduce((sum, item) => sum + item.collected, 0);
-        const paymentModeTotals = payments.reduce((totals, payment) => {
+
+        // Payment mode totals (based on targetPayments for the filtered period)
+        const paymentModeTotals = targetPayments.reduce((totals, payment) => {
           if (Number(payment.amount || 0) <= 0) return totals;
           const rawMode = payment.paymentMode || payment.mode || payment.transferMode || 'Cash';
           const mode = String(rawMode).toLowerCase();
@@ -66,6 +103,7 @@ export const useDashboardData = () => {
           totals[key] += Number(payment.amount || 0);
           return totals;
         }, { cash: 0, upi: 0, bankTransfer: 0 });
+
         const loanStatuses = loanCalculations.map(({ record, calculation, overdue }) => {
           const rawStatus = String(record.status || record.loan?.status || '').toLowerCase();
           const vehicleStatus = String(record.vehicleStatus || record.vehicle?.status || '').toLowerCase();
@@ -78,6 +116,7 @@ export const useDashboardData = () => {
             : 'Active';
           return { record, calculation, overdue, status, vehicleStatus };
         });
+
         const seenCustomers = new Set();
         let reloanCount = 0;
         loanStatuses.forEach(({ record }) => {
@@ -85,6 +124,7 @@ export const useDashboardData = () => {
           if (key && seenCustomers.has(key)) reloanCount += 1;
           if (key) seenCustomers.add(key);
         });
+
         const overdueLoans = loanStatuses
           .filter(({ overdue }) => overdue.hasOverdue)
           .map(({ record, overdue }) => ({
@@ -96,160 +136,175 @@ export const useDashboardData = () => {
             nextDueDate: overdue.overdueInstallments[0]?.dueDate,
           }))
           .sort((a, b) => b.overdueAmount - a.overdueAmount);
+
         const totalMoneyMovement = paymentModeTotals.cash + paymentModeTotals.upi + paymentModeTotals.bankTransfer;
 
+        // Disbursed & Repaid
         let totalDisbursed = 0;
         let totalRepaid = 0;
 
-        customers.forEach(cust => {
-            totalDisbursed += Number(cust.loanAmount || 0);
+        activeCustomersList.forEach(cust => {
+          totalDisbursed += Number(cust.loanAmount || 0);
         });
 
-        payments.forEach(pay => {
-            totalRepaid += Number(pay.amount || 0);
+        targetPayments.forEach(pay => {
+          totalRepaid += Number(pay.amount || 0);
         });
 
-        // Calculate Total Outstanding across all loans (Remaining Principal + Remaining Interest)
-        const portfolio = calculateTotalPortfolioOutstanding(customers, payments);
+        // Portfolio Outstanding
+        const portfolio = calculateTotalPortfolioOutstanding(activeCustomersList, targetPayments);
         const totalOutstanding = portfolio.totalOutstanding;
 
+        // Total Income & Expense
         let totalIncome = 0;
-        incomeData.forEach(inc => totalIncome += Number(inc.amount || 0));
+        targetIncome.forEach(inc => totalIncome += Number(inc.amount || 0));
 
         let totalExpense = 0;
-        expenseData.forEach(exp => {
-            if (exp.category !== 'Investor Withdrawal') {
-                totalExpense += Number(exp.amount || 0);
-            }
+        targetExpenses.forEach(exp => {
+          if (exp.category !== 'Investor Withdrawal') {
+            totalExpense += Number(exp.amount || 0);
+          }
         });
-        
+
+        // Investor Transactions
         let totalOpeningBalance = 0;
         let investorMoneyIn = 0;
         let investorMoneyOut = 0;
 
         investors.forEach(inv => {
-            const openingTx = inv.transactions?.find(t => t.type === "Opening Balance");
-            totalOpeningBalance += Number(openingTx?.amount || 0);
+          const openingTx = inv.transactions?.find(t => t.type === "Opening Balance");
+          if (openingTx && (!isFilterActive || matchesDate(openingTx.date))) {
+            totalOpeningBalance += Number(openingTx.amount || 0);
+          }
 
-            if (inv.transactions) {
-                inv.transactions.forEach(tx => {
-                    if (tx.type === "New Investment" || tx.type === "Re-Investment") investorMoneyIn += Number(tx.amount || 0);
-                    if (tx.type === "Debit") investorMoneyOut += Number(tx.amount || 0);
-                });
-            }
+          if (inv.transactions) {
+            inv.transactions.forEach(tx => {
+              if (!isFilterActive || matchesDate(tx.date)) {
+                if (tx.type === "New Investment" || tx.type === "Re-Investment") investorMoneyIn += Number(tx.amount || 0);
+                if (tx.type === "Debit") investorMoneyOut += Number(tx.amount || 0);
+              }
+            });
+          }
         });
 
-        // Account for any unlinked investor withdrawals in expenseData
-        expenseData.forEach(exp => {
-            if (exp.category === 'Investor Withdrawal') {
-                const isLinked = investors.some(inv => inv.transactions?.some(t => t.id === exp.transactionId || t.expenseId === exp.id));
-                if (!isLinked) {
-                    investorMoneyOut += Number(exp.amount || 0);
-                }
+        // Account for any unlinked investor withdrawals in targetExpenses
+        targetExpenses.forEach(exp => {
+          if (exp.category === 'Investor Withdrawal') {
+            const isLinked = investors.some(inv => inv.transactions?.some(t => t.id === exp.transactionId || t.expenseId === exp.id));
+            if (!isLinked) {
+              investorMoneyOut += Number(exp.amount || 0);
             }
+          }
         });
 
-        // Credit: Repayments + Manual Income + Investor Capital (New Investment + Re-Investment) + Opening Balance
+        // Total Credit: Repayments + Manual Income + Investor Capital + Opening Balance
         const totalCredit = totalOpeningBalance + investorMoneyIn + totalRepaid + totalIncome;
 
-        // Debit: Disbursed Loans + Manual Expenses + Investor Withdrawals
+        // Total Debit: Disbursed Loans + Manual Expenses + Investor Withdrawals
         const totalDebit = totalDisbursed + totalExpense + investorMoneyOut;
 
         const closingBalance = totalCredit - totalDebit;
 
         // Group Monthly Data
         const monthlyMap = {};
-        
         const processDate = (dateStr, amount, type) => {
-            if (!dateStr) return;
-            const date = new Date(dateStr);
-            if (isNaN(date.getTime())) return;
-            const monthYear = `${date.toLocaleString('default', { month: 'short' })}-${date.getFullYear().toString().slice(-2)}`;
-            if (!monthlyMap[monthYear]) {
-                monthlyMap[monthYear] = { name: monthYear, Debit: 0, Credit: 0 };
-            }
-            if (type === 'credit') monthlyMap[monthYear].Credit += Number(amount);
-            if (type === 'debit') monthlyMap[monthYear].Debit += Number(amount);
+          if (!dateStr) return;
+          if (isFilterActive && !matchesDate(dateStr)) return;
+          const date = new Date(dateStr);
+          if (isNaN(date.getTime())) return;
+          const monthYear = `${date.toLocaleString('default', { month: 'short' })}-${date.getFullYear().toString().slice(-2)}`;
+          if (!monthlyMap[monthYear]) {
+            monthlyMap[monthYear] = {
+              name: monthYear,
+              Debit: 0,
+              Credit: 0,
+              sortTime: new Date(date.getFullYear(), date.getMonth(), 1).getTime()
+            };
+          }
+          if (type === 'credit') monthlyMap[monthYear].Credit += Number(amount);
+          if (type === 'debit') monthlyMap[monthYear].Debit += Number(amount);
         };
 
-        customers.forEach(cust => {
-            const loanAmount = Number(cust.loanAmount || 0);
-            processDate(cust.customer?.applicationDate, loanAmount, 'debit');
+        activeCustomersList.forEach(cust => {
+          const loanAmount = Number(cust.loanAmount || 0);
+          processDate(cust.customer?.applicationDate || cust.loan?.applicationDate || cust.createdAt || cust.date, loanAmount, 'debit');
         });
-        expenseData.forEach(exp => {
-            if (exp.category !== 'Investor Withdrawal') {
-                processDate(exp.date, exp.amount, 'debit');
-            }
+        targetExpenses.forEach(exp => {
+          if (exp.category !== 'Investor Withdrawal') {
+            processDate(exp.date, exp.amount, 'debit');
+          }
         });
-        payments.forEach(pay => processDate(pay.date, pay.amount, 'credit'));
-        incomeData.forEach(inc => processDate(inc.date, inc.amount, 'credit'));
+        targetPayments.forEach(pay => processDate(pay.date, pay.amount, 'credit'));
+        targetIncome.forEach(inc => processDate(inc.date, inc.amount, 'credit'));
         investors.forEach(inv => {
-            if (inv.transactions) {
-                inv.transactions.forEach(tx => {
-                    if (tx.type === 'Opening Balance' || tx.type === "New Investment" || tx.type === "Re-Investment") processDate(tx.date, tx.amount, 'credit');
-                    if (tx.type === 'Debit') processDate(tx.date, tx.amount, 'debit');
-                });
-            }
+          if (inv.transactions) {
+            inv.transactions.forEach(tx => {
+              if (!isFilterActive || matchesDate(tx.date)) {
+                if (tx.type === 'Opening Balance' || tx.type === "New Investment" || tx.type === "Re-Investment") processDate(tx.date, tx.amount, 'credit');
+                if (tx.type === 'Debit') processDate(tx.date, tx.amount, 'debit');
+              }
+            });
+          }
         });
-        // Process any unlinked investor withdrawals for monthly map
-        expenseData.forEach(exp => {
-            if (exp.category === 'Investor Withdrawal') {
-                const isLinked = investors.some(inv => inv.transactions?.some(t => t.id === exp.transactionId || t.expenseId === exp.id));
-                if (!isLinked) {
-                    processDate(exp.date, exp.amount, 'debit');
-                }
+        targetExpenses.forEach(exp => {
+          if (exp.category === 'Investor Withdrawal') {
+            const isLinked = investors.some(inv => inv.transactions?.some(t => t.id === exp.transactionId || t.expenseId === exp.id));
+            if (!isLinked) {
+              processDate(exp.date, exp.amount, 'debit');
             }
+          }
         });
 
-        const monthlyData = Object.values(monthlyMap);
+        const monthlyData = Object.values(monthlyMap).sort((a, b) => a.sortTime - b.sortTime);
 
         // Income Breakdown
         const incomeBreakdownMap = {
-            'Repayment': totalRepaid,
+          'Repayment': totalRepaid,
         };
-        incomeData.forEach(inc => {
-            const type = inc.type || 'Other';
-            incomeBreakdownMap[type] = (incomeBreakdownMap[type] || 0) + Number(inc.amount || 0);
+        targetIncome.forEach(inc => {
+          const type = inc.type || 'Other';
+          incomeBreakdownMap[type] = (incomeBreakdownMap[type] || 0) + Number(inc.amount || 0);
         });
 
         const incomeBreakdown = Object.entries(incomeBreakdownMap)
-            .filter(([, value]) => value > 0)
-            .map(([name, value]) => ({ name, value }));
+          .filter(([, value]) => value > 0)
+          .map(([name, value]) => ({ name, value }));
 
         // Expense Breakdown
         const expenseBreakdownMap = {
-            'Loan Amount Given': totalDisbursed,
+          'Loan Amount Given': totalDisbursed,
         };
-        expenseData.forEach(exp => {
-            const cat = exp.category || 'Other';
-            expenseBreakdownMap[cat] = (expenseBreakdownMap[cat] || 0) + Number(exp.amount || 0);
+        targetExpenses.forEach(exp => {
+          const cat = exp.category || 'Other';
+          expenseBreakdownMap[cat] = (expenseBreakdownMap[cat] || 0) + Number(exp.amount || 0);
         });
 
         const expenseBreakdown = Object.entries(expenseBreakdownMap)
-            .filter(([, value]) => value > 0)
-            .map(([name, value]) => ({ name, value }));
+          .filter(([, value]) => value > 0)
+          .map(([name, value]) => ({ name, value }));
 
         // Capital Position
         const investorCapital = totalOpeningBalance + investorMoneyIn - investorMoneyOut;
         const capitalData = {
-            totalCapital: investorCapital,
-            openingCapital: totalOpeningBalance,
-            deployed: totalDisbursed,
-            available: investorCapital - totalDisbursed > 0 ? investorCapital - totalDisbursed : 0,
-            closingBalance: closingBalance
+          totalCapital: investorCapital,
+          openingCapital: totalOpeningBalance,
+          deployed: totalDisbursed,
+          available: investorCapital - totalDisbursed > 0 ? investorCapital - totalDisbursed : 0,
+          closingBalance: closingBalance
         };
 
         // Chit Data for Dashboard ChitOverviewCard
         let chitData = null;
         try {
-          const chitTxs = JSON.parse(window.localStorage.getItem("motoLendChitTransactions_data") || "[]");
+          const rawChitTxs = JSON.parse(window.localStorage.getItem("motoLendChitTransactions_data") || "[]");
+          const chitTxs = isFilterActive ? rawChitTxs.filter(t => matchesDate(t.date)) : rawChitTxs;
           const chitPaid = chitTxs
             .filter((t) => t.type === "Chit Paid" || t.category === "Expense")
             .reduce((sum, t) => sum + Number(t.amount || 0), 0);
           const chitInward = chitTxs
             .filter((t) => t.type === "Chit Income" || t.category === "Income")
             .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-          
+
           if (chitTxs.length > 0 || chitPaid > 0 || chitInward > 0) {
             chitData = {
               paid: chitPaid,
@@ -262,34 +317,26 @@ export const useDashboardData = () => {
           chitData = null;
         }
 
-        // -------------------------------------------------------------
         // Calculate Actual Recorded Interest Earned
-        // -------------------------------------------------------------
-        const eligiblePayments = (payments || []).filter(isEligiblePayment);
-
-        // Track customer/loan IDs with payment records to prevent duplicate counting with schedules
+        const eligiblePayments = (targetPayments || []).filter(isEligiblePayment);
         const loansWithRecordedPayments = new Set();
         eligiblePayments.forEach((p) => {
           if (p.loanId) loansWithRecordedPayments.add(String(p.loanId).trim().toLowerCase());
           if (p.customerId) loansWithRecordedPayments.add(String(p.customerId).trim().toLowerCase());
         });
 
-        // 1. Accumulate actual recorded interest from eligible collection payments
         const interestFromPayments = eligiblePayments.reduce((sum, p) => {
-          // Explicit recorded interest component on payment transaction
           if (p.interest !== undefined && p.interest !== null) {
             return sum + Number(p.interest || 0);
           }
-          // Allocations array with per-installment interestPaid
           if (Array.isArray(p.allocations) && p.allocations.length > 0) {
             return sum + p.allocations.reduce((aSum, a) => aSum + Number(a.interestPaid || 0), 0);
           }
           return sum;
         }, 0);
 
-        // 2. Fallback for loans without transaction entries in payment history (e.g. seeded loans)
         let interestFromSchedulesOnly = 0;
-        customers.forEach((cust) => {
+        activeCustomersList.forEach((cust) => {
           const lId = String(cust.loanId || '').trim().toLowerCase();
           const cId = String(cust.customerId || '').trim().toLowerCase();
           const hasRecordedPayment =
@@ -298,7 +345,9 @@ export const useDashboardData = () => {
 
           if (!hasRecordedPayment && Array.isArray(cust.repaymentSchedule)) {
             cust.repaymentSchedule.forEach((inst) => {
-              interestFromSchedulesOnly += Number(inst.interestPaid || 0);
+              if (!isFilterActive || matchesDate(inst.dueDate)) {
+                interestFromSchedulesOnly += Number(inst.interestPaid || 0);
+              }
             });
           }
         });
@@ -306,49 +355,49 @@ export const useDashboardData = () => {
         const totalInterestEarned = Math.round((interestFromPayments + interestFromSchedulesOnly) * 100) / 100;
 
         setData({
+          totalOutstanding,
+          totalCredit,
+          totalDebit,
+          interestEarned: totalInterestEarned,
+          closingBalance,
+          monthlyData,
+          incomeBreakdown,
+          expenseBreakdown,
+          capitalData,
+          chitData,
+          outstandingOverview: {
             totalOutstanding,
-            totalCredit,
-            totalDebit,
-            interestEarned: totalInterestEarned,
-            closingBalance,
-            monthlyData,
-            incomeBreakdown,
-            expenseBreakdown,
-            capitalData,
-            chitData,
-            outstandingOverview: {
-                totalOutstanding,
-                debit: totalDebit,
-                credit: totalCredit,
-                balance: closingBalance
+            debit: totalDebit,
+            credit: totalCredit,
+            balance: closingBalance
+          },
+          repaymentVsInterest: [],
+          operational: {
+            keyMetrics: {
+              totalLoans: activeCustomersList.length,
+              activeCustomers: new Set(activeCustomersList.map(customerKey).filter(Boolean)).size,
+              totalOutstanding,
+              overdueAmount: overdueLoans.reduce((sum, loan) => sum + loan.overdueAmount, 0),
             },
-            repaymentVsInterest: [],
-            operational: {
-              keyMetrics: {
-                totalLoans: customers.length,
-                activeCustomers: new Set(customers.map(customerKey).filter(Boolean)).size,
-                totalOutstanding,
-                overdueAmount: overdueLoans.reduce((sum, loan) => sum + loan.overdueAmount, 0),
-              },
-              loanActivity: {
-                newLoans: Math.max(customers.length - reloanCount, 0),
-                reLoans: reloanCount,
-              },
-              collection: {
-                trend: collectionTrend,
-                expected: expectedCollections,
-                collected: collectedCollections,
-                achievement: expectedCollections > 0 ? (collectedCollections / expectedCollections) * 100 : 0,
-              },
-              moneyMovement: { ...paymentModeTotals, total: totalMoneyMovement },
-              portfolio: {
-                active: loanStatuses.filter(({ status }) => status === 'Active').length,
-                overdue: loanStatuses.filter(({ status }) => status === 'Overdue').length,
-                closed: loanStatuses.filter(({ status }) => status === 'Closed').length,
-                seized: loanStatuses.filter(({ vehicleStatus }) => vehicleStatus === 'seized').length,
-              },
-              overdueLoans: overdueLoans.map((loan) => ({ ...loan, nextDueDate: formatDate(loan.nextDueDate) })),
-            }
+            loanActivity: {
+              newLoans: Math.max(activeCustomersList.length - reloanCount, 0),
+              reLoans: reloanCount,
+            },
+            collection: {
+              trend: collectionTrend,
+              expected: expectedCollections,
+              collected: collectedCollections,
+              achievement: expectedCollections > 0 ? (collectedCollections / expectedCollections) * 100 : 0,
+            },
+            moneyMovement: { ...paymentModeTotals, total: totalMoneyMovement },
+            portfolio: {
+              active: loanStatuses.filter(({ status }) => status === 'Active').length,
+              overdue: loanStatuses.filter(({ status }) => status === 'Overdue').length,
+              closed: loanStatuses.filter(({ status }) => status === 'Closed').length,
+              seized: loanStatuses.filter(({ vehicleStatus }) => vehicleStatus === 'seized').length,
+            },
+            overdueLoans: overdueLoans.map((loan) => ({ ...loan, nextDueDate: formatDate(loan.nextDueDate) })),
+          }
         });
 
       } catch (error) {
@@ -367,7 +416,15 @@ export const useDashboardData = () => {
       window.removeEventListener("motoLendStorageUpdate", fetchData);
       window.removeEventListener("customersDataUpdated", fetchData);
     };
-  }, []);
+  }, [
+    filterParam?.filterType,
+    filterParam?.startDate,
+    filterParam?.endDate,
+    filterParam?.selectedMonth,
+    filterParam?.selectedYear,
+    filterParam?.label,
+    filterParam?.dateFilter
+  ]);
 
   return { data, loading };
 };
