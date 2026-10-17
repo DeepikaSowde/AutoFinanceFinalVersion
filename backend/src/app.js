@@ -12,6 +12,7 @@ import { vehiclesRouter } from "./routes/vehicles.js";
 import { collectionsRouter } from "./routes/collections.js";
 import { draftsRouter } from "./routes/drafts.js";
 import { chitsRouter } from "./routes/chits.js";
+import { penaltiesRouter } from "./routes/penalties.js";
 import { guarantorReferralsRouter } from "./routes/guarantorReferrals.js";
 import { superadminRouter } from "./superadmin/routes.js";
 import {
@@ -60,6 +61,7 @@ export const createApp = () => {
   app.use("/api/collections", requireAuth, loadTenant, collectionsRouter);
   app.use("/api/drafts", requireAuth, loadTenant, draftsRouter);
   app.use("/api/chits", requireAuth, loadTenant, chitsRouter);
+  app.use("/api/penalties", requireAuth, loadTenant, penaltiesRouter);
   app.use("/api/guarantor-referrals", requireAuth, loadTenant, guarantorReferralsRouter);
   app.use("/api/investors", requireAuth, loadTenant, investorsRouter);
   app.use("/api/expenses", requireAuth, loadTenant, expensesRouter);
