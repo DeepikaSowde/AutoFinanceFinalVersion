@@ -318,7 +318,7 @@ export default function Loans() {
   };
 
   return (
-    <div className="flex-1 min-h-screen bg-[#F8FAFC] px-3 sm:px-6 py-5 sm:py-6 font-sans">
+    <div className="flex-1 min-h-screen bg-white px-3 sm:px-6 py-5 sm:py-6 font-sans">
       <div className="w-full space-y-5">
         {/* =========================================================
             HEADER ROW

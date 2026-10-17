@@ -160,7 +160,7 @@ const Vehicle = () => {
   // If viewing details of a non-active vehicle (Seized, Released, Sold), render VehicleDetailsView full-page
   if (selectedVehicle) {
     return (
-      <div className="flex-1 min-h-screen bg-[#F8FAFC] px-3 sm:px-6 py-5 sm:py-6 font-sans">
+      <div className="flex-1 min-h-screen bg-white px-3 sm:px-6 py-5 sm:py-6 font-sans">
         <div className="w-full max-w-7xl mx-auto">
           <VehicleDetailsView
             vehicleRecord={selectedVehicle}
@@ -180,7 +180,7 @@ const Vehicle = () => {
   }
 
   return (
-    <div className="flex-1 min-h-screen bg-[#F8FAFC] px-3 sm:px-6 py-5 sm:py-6 font-sans">
+    <div className="flex-1 min-h-screen bg-white px-3 sm:px-6 py-5 sm:py-6 font-sans">
       <div className="w-full max-w-7xl mx-auto space-y-5">
         {/* =========================================================
             1. PAGE HEADER (Clean, left-aligned, no admin/bell controls)

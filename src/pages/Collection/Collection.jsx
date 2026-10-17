@@ -1194,7 +1194,7 @@ const Collection = () => {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-8">
+    <div className="flex flex-col flex-1 min-h-screen w-full max-w-full overflow-x-hidden bg-white px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-8">
       {/* HEADER + SEARCH + DATE ROW */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between shrink-0 mb-5 sm:mb-6 gap-3.5 sm:gap-4">
         <div>

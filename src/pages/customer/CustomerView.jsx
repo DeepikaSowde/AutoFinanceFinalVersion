@@ -521,7 +521,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
   );
 
   return (
-    <div className="bg-slate-50">
+    <div className="min-h-screen bg-white">
       
       <div className="bg-white border-b border-slate-200 px-4 py-4 sm:px-6 lg:px-8">
         <button 

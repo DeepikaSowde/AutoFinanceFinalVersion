@@ -3,7 +3,7 @@ import { UserCog, Construction, ShieldAlert, Users } from 'lucide-react';
 
 const UserManagement = () => {
   return (
-    <div className="h-full w-full flex flex-col p-6 bg-slate-50">
+    <div className="h-full flex-1 min-h-screen w-full flex flex-col p-6 bg-white">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-800">User Management</h1>
       </div>

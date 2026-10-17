@@ -608,7 +608,7 @@ const ChitInvestment = () => {
   const formatDateCell = (dateStr) => formatDate(dateStr);
 
   return (
-    <div className="flex flex-col flex-1 min-h-screen bg-slate-50 px-4 sm:px-6 lg:px-8 py-6 pb-12">
+    <div className="flex flex-col flex-1 min-h-screen bg-white px-4 sm:px-6 lg:px-8 py-6 pb-12">
       {/* =========================================================================
           1. MAIN PAGE HEADER & ACTIONS
       ========================================================================= */}

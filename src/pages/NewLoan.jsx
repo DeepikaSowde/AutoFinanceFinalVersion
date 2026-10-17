@@ -284,7 +284,18 @@ const NewLoan = () => {
 
       // 2. Calculate EMI & Due Date
       const vehicleAmount = form.loan.vehicleAmount !== null && form.loan.vehicleAmount !== '' ? Number(form.loan.vehicleAmount) : Number(form.vehicle.amount || 0)
-      const principal = Math.max(vehicleAmount - Number(form.loan.downPayment || 0), 0)
+      const downPayment = Number(form.loan.downPayment || 0)
+
+      if (vehicleAmount > 0 && downPayment > vehicleAmount) {
+        alert("Down payment cannot exceed vehicle amount.")
+        setIsSubmitting(false)
+        return
+      }
+
+      // Ensure the final edited Loan Amount is correctly saved and used by the existing loan creation logic
+      const principal = (form.loan.loanAmount !== '' && form.loan.loanAmount != null)
+        ? Math.max(0, Number(form.loan.loanAmount))
+        : Math.max(0, vehicleAmount - downPayment)
       
       // Calculate Total Available Pool
       const investors = JSON.parse(localStorage.getItem('motoLendInvestors_data') || "[]")
@@ -325,6 +336,10 @@ const NewLoan = () => {
 
       let newEntry = {
         ...form,
+        loan: {
+          ...form.loan,
+          loanAmount: String(principal),
+        },
         guarantor: {
           ...form.guarantor,
           required:

@@ -67,15 +67,15 @@ const getLoanAmount = (loan, vehicle) => {
 
 const StatusBadge = ({ status }) => {
   const styles = {
-    Active: "bg-emerald-100 text-emerald-700",
-    Closed: "bg-slate-100 text-slate-600",
-    Overdue: "bg-red-100 text-red-600",
+    Active: "bg-emerald-100 text-emerald-800 border border-emerald-200/60",
+    Closed: "bg-slate-100 text-slate-700 border border-slate-200/60",
+    Overdue: "bg-red-100 text-red-700 border border-red-200/60",
   };
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
-        styles[status] || "bg-slate-100 text-slate-600"
+      className={`inline-flex items-center rounded-full px-3 py-1 text-xs sm:text-[13px] font-semibold ${
+        styles[status] || "bg-slate-100 text-slate-700 border border-slate-200/60"
       }`}
     >
       {status}
@@ -85,19 +85,19 @@ const StatusBadge = ({ status }) => {
 
 const SummaryCard = ({ icon: Icon, title, value }) => {
   return (
-    <div className="min-h-[96px] h-full rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm transition-shadow hover:shadow-md min-w-0 w-full">
+    <div className="min-h-[100px] sm:min-h-[108px] h-full rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs transition-shadow hover:shadow-sm min-w-0 w-full">
       <div className="flex h-full items-center gap-3.5 sm:gap-4 min-w-0">
-        <div className="flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
-          <Icon className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-700" strokeWidth={1.8} />
+        <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
+          <Icon className="h-6 w-6 sm:h-7 sm:w-7 text-emerald-700" strokeWidth={1.8} />
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-xs sm:text-sm font-medium text-slate-500 mb-0.5 sm:mb-1 leading-snug break-words">
+          <p className="text-xs sm:text-sm lg:text-[15px] font-medium text-slate-500 mb-0.5 sm:mb-1 leading-snug break-words">
             {title}
           </p>
 
           <p 
-            className="text-base sm:text-lg lg:text-xl font-bold tracking-tight text-slate-900 whitespace-nowrap leading-tight"
+            className="text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-slate-900 whitespace-nowrap leading-tight"
           >
             {value}
           </p>
@@ -117,6 +117,9 @@ const Customer = () => {
   const [statusOpen, setStatusOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [selectedLoanId, setSelectedLoanId] = useState(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
 
   useEffect(() => {
     const loadCustomer = () => {
@@ -195,10 +198,44 @@ const Customer = () => {
     });
   }, [processedCustomers, search, status, hasCustomer]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / ITEMS_PER_PAGE));
+  const validCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  const paginatedCustomers = useMemo(() => {
+    const start = (validCurrentPage - 1) * ITEMS_PER_PAGE;
+    return filteredCustomers.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredCustomers, validCurrentPage]);
+
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (validCurrentPage <= 4) {
+      return [1, 2, 3, 4, 5, "...", totalPages];
+    }
+    if (validCurrentPage >= totalPages - 3) {
+      return [1, "...", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, "...", validCurrentPage - 1, validCurrentPage, validCurrentPage + 1, "...", totalPages];
+  }, [totalPages, validCurrentPage]);
+
+  const handlePageChange = (page) => {
+    if (typeof page === "number" && page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
   const handleReset = () => {
     setSearch("");
     setStatus("All");
     setStatusOpen(false);
+    setCurrentPage(1);
   };
 
   const handleView = (item) => {
@@ -225,48 +262,43 @@ const Customer = () => {
   const totalActiveOutstanding = activeLoans.reduce((sum, item) => sum + item.outstandingAmount, 0);
 
   return (
-    <div className="bg-white px-3 pb-6 sm:px-6 lg:px-8">
+    <div className="w-full min-w-0 flex-1 min-h-screen bg-white px-3.5 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 space-y-5 sm:space-y-6">
 
       {/* =========================
           PAGE HEADER
       ========================== */}
-
-      <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
+          <h1 className="text-2xl font-bold leading-tight tracking-tight text-[#06483f] sm:text-3xl lg:text-[34px]">
             Customers
           </h1>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 self-start sm:self-auto shrink-0">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 self-start sm:self-auto shrink-0 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => navigate("/guarantor-referral")}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#006052] px-3.5 py-2.5 sm:px-4 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer shrink-0"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-lg bg-[#006052] px-4 py-2.5 sm:px-4.5 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer shrink-0"
           >
-            <UserCheck className="h-4 w-4" strokeWidth={2} />
+            <UserCheck className="h-4 w-4 sm:h-4.5 sm:w-4.5" strokeWidth={2} />
             <span>Guarantor / Referral</span>
           </button>
 
           <button
             type="button"
             onClick={() => navigate("/referral-commission")}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#006052] bg-white text-[#006052] hover:bg-emerald-50 active:bg-emerald-100/70 px-3.5 py-2.5 sm:px-4 text-xs sm:text-sm font-semibold shadow-2xs transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer shrink-0"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-lg border border-[#006052] bg-white text-[#006052] hover:bg-emerald-50 active:bg-emerald-100/70 px-4 py-2.5 sm:px-4.5 text-xs sm:text-sm font-semibold shadow-2xs transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer shrink-0"
           >
-            <Coins className="h-4 w-4 text-[#006052]" strokeWidth={2} />
+            <Coins className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-[#006052]" strokeWidth={2} />
             <span>Referral Commission</span>
           </button>
         </div>
-
       </div>
 
       {/* =========================
           SUMMARY CARDS
       ========================== */}
-
-      <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 lg:mt-8">
-
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-5">
         <SummaryCard
           icon={Users}
           title="Total Customers"
@@ -276,294 +308,274 @@ const Customer = () => {
         <SummaryCard
           icon={Database}
           title="Total Active Deployed"
-          value={formatCurrency(
-            totalActiveDeployed
-          )}
+          value={formatCurrency(totalActiveDeployed)}
         />
 
         <SummaryCard
           icon={WalletCards}
           title="Total Active Outstanding"
-          value={formatCurrency(
-            totalActiveOutstanding
-          )}
+          value={formatCurrency(totalActiveOutstanding)}
         />
-
       </div>
 
       {/* =========================
           CUSTOMER TABLE SECTION
       ========================== */}
-
-      <div className="mt-6 rounded-md border border-slate-200 bg-white p-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs space-y-4 sm:space-y-5">
 
         {/* =========================
             FILTER ROW
         ========================== */}
-
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
 
           {/* Search */}
-
           <div className="relative min-w-0 flex-1">
-
             <Search
-              className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500"
+              className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
             />
-
             <input
               type="text"
               value={search}
-              onChange={(e) =>
-                setSearch(e.target.value)
-              }
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search customer name, ID or loan no."
-              className="h-[46px] w-full rounded-lg border border-slate-200 bg-white pl-12 pr-4 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+              className="h-11 sm:h-12 w-full rounded-lg border border-slate-200 bg-white pl-11 pr-4 text-sm sm:text-base text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#006052] focus:ring-2 focus:ring-emerald-100 transition-colors shadow-2xs"
             />
-
           </div>
 
-          {/* Status */}
+          <div className="flex items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
+            {/* Status */}
+            <div className="relative flex-1 sm:w-48 sm:flex-initial">
+              <button
+                type="button"
+                onClick={() => setStatusOpen((value) => !value)}
+                className="flex h-11 sm:h-12 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3.5 sm:px-4 text-sm sm:text-base font-medium text-slate-800 hover:border-slate-300 transition-colors shadow-2xs cursor-pointer"
+              >
+                <span>
+                  <span className="mr-2 text-slate-400 font-normal">Status:</span>
+                  <span className="font-semibold text-slate-900">{status}</span>
+                </span>
+                <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
+              </button>
 
-          <div className="relative w-full shrink-0 md:w-[188px]">
+              {statusOpen && (
+                <div className="absolute left-0 top-[48px] sm:top-[52px] z-30 w-full rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg">
+                  {["All", "Active", "Closed", "Overdue"].map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => {
+                        setStatus(option);
+                        setStatusOpen(false);
+                        setCurrentPage(1);
+                      }}
+                      className={`w-full rounded-md px-3 py-2 text-left text-sm sm:text-base transition-colors cursor-pointer ${
+                        status === option
+                          ? "bg-emerald-50 text-[#006052] font-semibold"
+                          : "text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
+            {/* Reset */}
             <button
               type="button"
-              onClick={() =>
-                setStatusOpen(
-                  (value) => !value
-                )
-              }
-              className="flex h-[46px] w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-4 text-sm text-slate-800"
+              onClick={handleReset}
+              className="flex h-11 sm:h-12 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-white px-4 text-sm sm:text-base font-semibold text-[#006052] transition hover:bg-emerald-50 cursor-pointer shadow-2xs shrink-0"
             >
-
-              <span>
-                <span className="mr-2 text-slate-400">
-                  Status
-                </span>
-
-                {status}
-              </span>
-
-              <ChevronDown className="h-4 w-4 text-slate-500" />
-
+              <RotateCcw className="h-4 w-4 text-[#006052]" />
+              <span>Reset</span>
             </button>
-
-            {statusOpen && (
-              <div className="absolute left-0 top-[52px] z-30 w-full rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
-
-                {[
-                  "All",
-                  "Active",
-                  "Closed",
-                  "Overdue",
-                ].map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => {
-                      setStatus(option);
-                      setStatusOpen(false);
-                    }}
-                    className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-emerald-50"
-                  >
-                    {option}
-                  </button>
-                ))}
-
-              </div>
-            )}
-
           </div>
-
-          {/* Reset */}
-
-          <button
-            type="button"
-            onClick={handleReset}
-            className="flex h-[46px] w-full items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-white text-sm font-medium text-[#006052] transition hover:bg-emerald-50 md:w-[88px]"
-          >
-            <RotateCcw className="h-4 w-4" />
-
-            Reset
-          </button>
-
         </div>
 
         {/* =========================
             TABLE
         ========================== */}
-
-        <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200">
-
-          <table className="w-full min-w-[900px] table-fixed border-collapse">
-
-            {/* Exact column proportions */}
-
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full min-w-[940px] table-fixed border-collapse">
             <colgroup>
-              <col style={{ width: "11%" }} />
-              <col style={{ width: "14%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "16%" }} />
               <col style={{ width: "12%" }} />
               <col style={{ width: "13%" }} />
               <col style={{ width: "15%" }} />
               <col style={{ width: "10%" }} />
               <col style={{ width: "10%" }} />
-              <col style={{ width: "15%" }} />
+              <col style={{ width: "12%" }} />
             </colgroup>
 
-            {/* Header */}
-
             <thead>
-
-              <tr className="h-[54px] bg-slate-50">
-
-                <TableHeader>
-                  Customer ID
-                </TableHeader>
-
-                <TableHeader>
-                  Customer Name
-                </TableHeader>
-
-                <TableHeader>
-                  Loan No.
-                </TableHeader>
-
-                <TableHeader>
-                  Loan Amount
-                </TableHeader>
-
-                <TableHeader>
-                  Outstanding Amount
-                </TableHeader>
-
-                <TableHeader>
-                  Interest Rate
-                </TableHeader>
-
-                <TableHeader>
-                  Status
-                </TableHeader>
-
-                <TableHeader>
-                  Action
-                </TableHeader>
-
+              <tr className="h-12 sm:h-14 bg-slate-50 border-b border-slate-200">
+                <TableHeader>Customer ID</TableHeader>
+                <TableHeader>Customer Name</TableHeader>
+                <TableHeader>Loan No.</TableHeader>
+                <TableHeader>Loan Amount</TableHeader>
+                <TableHeader>Outstanding Amount</TableHeader>
+                <TableHeader>Interest Rate</TableHeader>
+                <TableHeader>Status</TableHeader>
+                <TableHeader>Action</TableHeader>
               </tr>
-
             </thead>
 
-            {/* Body */}
-<tbody>
-  {!hasCustomer ? (
-    <tr>
-      <td
-        colSpan={8}
-        className="px-4 py-12 text-center text-sm text-slate-500"
-      >
-        No customers created yet...
-      </td>
-    </tr>
-  ) : filteredCustomers.length > 0 ? (
-    filteredCustomers.map((item, idx) => (
-      <tr key={idx} className="border-b border-slate-100 bg-white hover:bg-slate-50/50 transition-colors">
-        <td className="px-3 py-3 text-[13px] text-slate-800">
-          {item.customerId}
-        </td>
+            <tbody className="divide-y divide-slate-100">
+              {!hasCustomer ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-4 py-12 text-center text-sm sm:text-base text-slate-500 font-medium"
+                  >
+                    No customers created yet...
+                  </td>
+                </tr>
+              ) : paginatedCustomers.length > 0 ? (
+                paginatedCustomers.map((item, idx) => (
+                  <tr
+                    key={`${item.customerId || "cus"}_${item.loanId || "loan"}_${(validCurrentPage - 1) * ITEMS_PER_PAGE + idx}`}
+                    className="bg-white hover:bg-slate-50/70 transition-colors"
+                  >
+                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-medium text-slate-800 whitespace-nowrap">
+                      {item.customerId}
+                    </td>
 
-        <td className="px-3 py-3 text-[13px] font-semibold text-slate-800">
-          {item.customer?.name}
-        </td>
+                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-bold text-slate-900 whitespace-nowrap">
+                      {item.customer?.name}
+                    </td>
 
-        <td className="px-3 py-3 text-[13px] text-slate-700">
-          {item.loanId}
-        </td>
+                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] text-slate-700 whitespace-nowrap">
+                      {item.loanId}
+                    </td>
 
-        <td className="px-3 py-3 text-[13px] font-medium text-slate-800">
-          {formatCurrency(item.loanAmount)}
-        </td>
+                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-semibold text-slate-900 whitespace-nowrap">
+                      {formatCurrency(item.loanAmount)}
+                    </td>
 
-        <td className="px-3 py-3 text-[13px] font-medium text-slate-800">
-          {formatCurrency(item.outstandingAmount)}
-        </td>
+                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-semibold text-slate-900 whitespace-nowrap">
+                      {formatCurrency(item.outstandingAmount)}
+                    </td>
 
-        <td className="px-3 py-3 text-[13px] text-slate-700">
-          {item.loan?.interestRate
-            ? `${item.loan.interestRate}%`
-            : "—"}
-        </td>
+                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] text-slate-700 whitespace-nowrap">
+                      {item.loan?.interestRate
+                        ? `${item.loan.interestRate}%`
+                        : "—"}
+                    </td>
 
-        <td className="px-3 py-3">
-          <StatusBadge status={item.status} />
-        </td>
+                    <td className="px-3.5 py-3.5 sm:py-4 whitespace-nowrap">
+                      <StatusBadge status={item.status} />
+                    </td>
 
-        <td className="px-3 py-3">
-          <button
-            type="button"
-            onClick={() => handleView(item)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            <Eye className="h-3.5 w-3.5" />
-            View
-          </button>
-        </td>
-      </tr>
-    ))
-  ) : (
-    <tr>
-      <td
-        colSpan={8}
-        className="px-4 py-12 text-center text-sm text-slate-500"
-      >
-        No customers match your search or filter.
-      </td>
-    </tr>
-  )}
-</tbody>
-
+                    <td className="px-3.5 py-3.5 sm:py-4 whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => handleView(item)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
+                      >
+                        <Eye className="h-4 w-4 text-slate-500" />
+                        <span>View</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-4 py-12 text-center text-sm sm:text-base text-slate-500 font-medium"
+                  >
+                    No customers match your search or filter.
+                  </td>
+                </tr>
+              )}
+            </tbody>
           </table>
-
         </div>
 
         {/* =========================
             TABLE FOOTER
         ========================== */}
-
-        <div className="flex items-center justify-between pt-4">
-
-          <p className="text-sm text-slate-500">
-            {filteredCustomers.length === 1
-              ? "Showing 1 customer"
-              : `Showing ${filteredCustomers.length} customers`}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 sm:pt-4 border-t border-slate-100">
+          <p className="text-sm sm:text-[15px] font-medium text-slate-600">
+            {filteredCustomers.length === 0 ? (
+              "Showing 0 customers"
+            ) : filteredCustomers.length === 1 ? (
+              "Showing 1 customer"
+            ) : (
+              <>
+                Showing{" "}
+                <span className="font-bold text-slate-800">
+                  {(validCurrentPage - 1) * ITEMS_PER_PAGE + 1}
+                </span>{" "}
+                to{" "}
+                <span className="font-bold text-slate-800">
+                  {Math.min(validCurrentPage * ITEMS_PER_PAGE, filteredCustomers.length)}
+                </span>{" "}
+                of{" "}
+                <span className="font-bold text-slate-800">
+                  {filteredCustomers.length}
+                </span>{" "}
+                customers
+              </>
+            )}
           </p>
 
-          <div className="flex items-center gap-2">
-
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
-              disabled
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-300"
+              onClick={() => handlePageChange(validCurrentPage - 1)}
+              disabled={validCurrentPage <= 1}
+              className="flex h-9 sm:h-10 items-center justify-center gap-1.5 px-3 sm:px-3.5 rounded-lg border border-slate-200 bg-white text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              aria-label="Previous page"
             >
               <ChevronLeft className="h-4 w-4" />
+              <span>Previous</span>
             </button>
+
+            <div className="flex items-center gap-1 sm:gap-1.5">
+              {pageNumbers.map((page, idx) =>
+                page === "..." ? (
+                  <span
+                    key={`ellipsis-${idx}`}
+                    className="flex h-9 sm:h-10 min-w-[28px] sm:min-w-[32px] items-center justify-center px-1 text-xs sm:text-sm text-slate-400 font-semibold select-none"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => handlePageChange(page)}
+                    className={`flex h-9 sm:h-10 min-w-[36px] sm:min-w-[40px] px-2.5 items-center justify-center rounded-lg text-xs sm:text-sm font-bold transition-colors cursor-pointer ${
+                      validCurrentPage === page
+                        ? "bg-[#006052] border border-[#006052] text-white shadow-2xs"
+                        : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300"
+                    }`}
+                    aria-label={`Page ${page}`}
+                    aria-current={validCurrentPage === page ? "page" : undefined}
+                  >
+                    {page}
+                  </button>
+                )
+              )}
+            </div>
 
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#006052] text-sm font-semibold text-white"
+              onClick={() => handlePageChange(validCurrentPage + 1)}
+              disabled={validCurrentPage >= totalPages || filteredCustomers.length === 0}
+              className="flex h-9 sm:h-10 items-center justify-center gap-1.5 px-3 sm:px-3.5 rounded-lg border border-slate-200 bg-white text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              aria-label="Next page"
             >
-              1
-            </button>
-
-            <button
-              type="button"
-              disabled
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-300"
-            >
+              <span>Next</span>
               <ChevronRight className="h-4 w-4" />
             </button>
-
           </div>
-
         </div>
 
       </div>
@@ -577,13 +589,13 @@ const Customer = () => {
 ========================= */
 
 const TableHeader = ({ children }) => (
-  <th className="whitespace-nowrap px-3 text-left text-[13px] font-semibold text-slate-700">
+  <th className="whitespace-nowrap px-3.5 py-3.5 text-left text-xs sm:text-sm font-bold text-slate-700 tracking-wide">
     {children}
   </th>
 );
 
 const TableCell = ({ children }) => (
-  <td className="overflow-hidden whitespace-nowrap px-3 text-[13px] text-slate-800">
+  <td className="overflow-hidden whitespace-nowrap px-3.5 py-3.5 text-sm sm:text-[15px] text-slate-800">
     {children}
   </td>
 );

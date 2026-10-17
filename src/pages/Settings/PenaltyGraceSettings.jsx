@@ -288,7 +288,7 @@ const PenaltyGraceSettings = () => {
   ];
 
   return (
-    <div className="flex flex-col flex-1 min-h-screen w-full bg-slate-50 px-4 sm:px-6 lg:px-8 py-5 sm:py-7">
+    <div className="flex flex-col flex-1 min-h-screen w-full bg-white px-4 sm:px-6 lg:px-8 py-5 sm:py-7">
       <div className="w-full max-w-6xl mx-auto flex flex-col">
         {/* Breadcrumb Navigation */}
         <nav className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-slate-500 mb-4">

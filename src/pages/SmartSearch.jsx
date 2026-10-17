@@ -421,7 +421,7 @@ export default function SmartSearch() {
   };
 
   return (
-    <div className="w-full min-h-screen flex flex-col p-3 sm:p-5 bg-[#F5F5F5] select-text">
+    <div className="w-full flex-1 min-h-screen flex flex-col p-3 sm:p-5 bg-white select-text">
       <div className="w-full flex flex-col gap-3">
         {/* =========================================================================
             1. HEADING & SUBTITLE WITH CHARCOAL + YELLOW SEARCH ICON ACCENT
