@@ -12,6 +12,8 @@ import {
   normaliseInterestType,
 } from "./loanTerms.js";
 
+// A row's payment is always its rounded principal plus its rounded interest,
+// so paying the payment amount settles both exactly.
 export const roundMoney = (value) => {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 };
@@ -40,6 +42,19 @@ const reconcileFinalRow = (schedule, { loanAmount, totalInterest = null }) => {
 
   last.paymentAmount = roundMoney(last.principal + last.interest);
   last.closingBalance = 0;
+
+  return schedule;
+};
+
+const reconcileReducingInterest = (schedule, totalInterest) => {
+  if (!schedule.length) {
+    return schedule;
+  }
+
+  const posted = schedule.reduce((sum, row) => sum + row.interest, 0);
+  const first = schedule[0];
+  first.interest = roundMoney(first.interest + roundMoney(totalInterest - posted));
+  first.paymentAmount = roundMoney(first.principal + first.interest);
 
   return schedule;
 };
@@ -78,7 +93,7 @@ const generateFlatEMI = ({ principal, rate, tenure, tenureUnit, frequency, first
       openingBalance: roundMoney(remainingBalance + principalAmount),
       principal: roundMoney(principalAmount),
       interest: roundMoney(interestAmount),
-      paymentAmount: roundMoney(amount),
+      paymentAmount: roundMoney(roundMoney(principalAmount) + roundMoney(interestAmount)),
       closingBalance: roundMoney(Math.max(remainingBalance, 0)),
       status: "Pending",
     });
@@ -133,15 +148,17 @@ const generateReducingEMI = ({ principal, rate, tenure, tenureUnit, frequency, f
       openingBalance: roundMoney(openingBalance),
       principal: roundMoney(principalAmount),
       interest: roundMoney(interestAmount),
-      paymentAmount: roundMoney(actualPayment),
+      paymentAmount: roundMoney(roundMoney(principalAmount) + roundMoney(interestAmount)),
       closingBalance: roundMoney(Math.max(remainingBalance, 0)),
       status: "Pending",
     });
   }
 
-  // Rows are rounded to paise; the last one absorbs the drift so the
-  // schedule adds up to the loan's total interest exactly.
-  return reconcileFinalRow(schedule, { loanAmount, totalInterest: roundMoney(totalInterest) });
+  // Rows are rounded to paise. The last row takes the principal drift; the
+  // interest drift goes on the first row, which carries the most interest
+  // on a reducing balance (on the last row it could go below zero on long
+  // daily loans). The schedule then adds up to the loan's total interest.
+  return reconcileReducingInterest(reconcileFinalRow(schedule, { loanAmount }), roundMoney(totalInterest));
 };
 
 const generateFlatPrincipal = ({ principal, rate, tenure, tenureUnit, frequency, firstDueDate }) => {
@@ -178,7 +195,7 @@ const generateFlatPrincipal = ({ principal, rate, tenure, tenureUnit, frequency,
       openingBalance: roundMoney(remainingBalance + principalAmount),
       principal: roundMoney(principalAmount),
       interest: roundMoney(interestAmount),
-      paymentAmount: roundMoney(paymentAmount),
+      paymentAmount: roundMoney(roundMoney(principalAmount) + roundMoney(interestAmount)),
       closingBalance: roundMoney(Math.max(remainingBalance, 0)),
       status: "Pending",
     });
@@ -225,15 +242,17 @@ const generateReducingPrincipal = ({
       openingBalance: roundMoney(openingBalance),
       principal: roundMoney(principalAmount),
       interest: roundMoney(interestAmount),
-      paymentAmount: roundMoney(paymentAmount),
+      paymentAmount: roundMoney(roundMoney(principalAmount) + roundMoney(interestAmount)),
       closingBalance: roundMoney(Math.max(remainingBalance, 0)),
       status: "Pending",
     });
   }
 
-  // Rows are rounded to paise; the last one absorbs the drift so the
-  // schedule adds up to the loan's total interest exactly.
-  return reconcileFinalRow(schedule, { loanAmount, totalInterest: roundMoney(totalInterest) });
+  // Rows are rounded to paise. The last row takes the principal drift; the
+  // interest drift goes on the first row, which carries the most interest
+  // on a reducing balance (on the last row it could go below zero on long
+  // daily loans). The schedule then adds up to the loan's total interest.
+  return reconcileReducingInterest(reconcileFinalRow(schedule, { loanAmount }), roundMoney(totalInterest));
 };
 
 export const generateRepaymentSchedule = ({

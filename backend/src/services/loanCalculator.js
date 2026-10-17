@@ -10,6 +10,7 @@ import {
   getPeriodicRate,
   normaliseInterestType,
 } from "./loanTerms.js";
+import { generateRepaymentSchedule } from "./repaymentSchedule.js";
 
 export const roundMoney = (value) => {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
@@ -189,6 +190,15 @@ export const calculateReducingPrincipalBased = ({
   };
 };
 
+// Reducing-balance totals are the sum of the saved schedule's rounded rows,
+// so a loan's total interest always equals what its instalments add up to.
+const fromSchedule = (result, terms) => {
+  const rows = generateRepaymentSchedule({ ...terms, firstDueDate: "2000-01-01" });
+  if (!rows.length) return result;
+  const interest = roundMoney(rows.reduce((sum, row) => sum + row.interest, 0));
+  return { ...result, interest, totalDue: roundMoney(Number(result.principal) + interest) };
+};
+
 export const calculateLoan = ({
   principal = 0,
   rate = 0,
@@ -208,12 +218,14 @@ export const calculateLoan = ({
     return calculateFlatPrincipalBased({ principal, rate, tenure, tenureUnit, frequency });
   }
 
+  const terms = { principal, rate, tenure, tenureUnit, interestType, repaymentMethod, frequency };
+
   if (interestType === "Reducing" && repaymentMethod === "EMI") {
-    return calculateReducingEMI({ principal, rate, tenure, tenureUnit, frequency });
+    return fromSchedule(calculateReducingEMI({ principal, rate, tenure, tenureUnit, frequency }), terms);
   }
 
   if (interestType === "Reducing" && repaymentMethod === "Principal") {
-    return calculateReducingPrincipalBased({ principal, rate, tenure, tenureUnit, frequency });
+    return fromSchedule(calculateReducingPrincipalBased({ principal, rate, tenure, tenureUnit, frequency }), terms);
   }
 
   return {

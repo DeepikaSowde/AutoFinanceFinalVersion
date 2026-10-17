@@ -64,8 +64,12 @@ export const calculateLoanOutstanding = (loanRecord, allPayments = []) => {
     rawStatus.toLowerCase() === 'foreclosed' ||
     Boolean(loanRecord.isForeclosed || loanRecord.foreclosure);
 
-  // If marked explicitly Closed or Foreclosed, or principal is 0, outstanding is ₹0
-  if (loanRecord.status === 'Closed' || isForeclosed || principal <= 0) {
+  // Foreclosed, no principal, or Closed with no schedule to read: outstanding
+  // is ₹0. A Closed loan WITH a schedule goes through the full calculation
+  // below (which also gives ₹0 outstanding) so its interest and total repaid
+  // are the real figures, not ₹0.
+  const hasSchedule = Array.isArray(loanRecord.repaymentSchedule) && loanRecord.repaymentSchedule.length > 0;
+  if ((loanRecord.status === 'Closed' && !hasSchedule) || isForeclosed || principal <= 0) {
     return {
       principal,
       totalInterest: 0,
