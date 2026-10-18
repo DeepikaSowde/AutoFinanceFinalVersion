@@ -22,7 +22,7 @@ import {
   X
 } from "lucide-react";
 
-import { isDateInRange, formatDateTimeParts } from "../../utils/dateUtils";
+import { isDateInRange, formatDateTimeParts, getLocalDateString } from "../../utils/dateUtils";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import { calculateTotalInflow } from "../../utils/incomeCalculations";
 
@@ -441,7 +441,9 @@ const Ledger = () => {
       out: amountOut,
       balance: runningBalance,
       type: getLedgerType(tx.source, tx.type),
-      icon: tx.source === 'customer' ? Briefcase : User
+      icon: tx.source === 'customer' ? Briefcase : User,
+      isOpeningBalance: tx.type === "Opening Balance",
+      rawDate: tx.date
     };
   });
 
@@ -477,7 +479,7 @@ const Ledger = () => {
   const closingBalance = totalOpeningBalance + totalMoneyIn - totalMoneyOut;
 
   const filteredTransactions = ledgerTransactions.filter(tx => {
-    if (!isDateInRange(tx.date, dateFilter, customStart, customEnd)) return false;
+    if (!isDateInRange(tx.rawDate || tx.date, dateFilter, customStart, customEnd)) return false;
     if (filter === 'Income' && !tx.in) return false;
     if (filter === 'Expense' && !tx.out) return false;
     if (search.trim()) {
@@ -488,6 +490,71 @@ const Ledger = () => {
     }
     return true;
   });
+
+  const isFilterActive = dateFilter !== 'All Time' || search.trim() !== '';
+
+  const handleResetFilters = () => {
+    setDateFilter('All Time');
+    setCustomStart('');
+    setCustomEnd('');
+    setSearch('');
+    setCurrentPage(1);
+  };
+
+  // KPI cards for the filtered view.
+  // - Search only: the matching rows' subtotals.
+  // - Date period: a statement for the period. Opening Balance = cash at the
+  //   start of the period (every row dated before it, plus opening capital
+  //   dated inside it), Money In / Out = the period's rows, Closing Balance =
+  //   cash at the end of the period.
+  const periodStart = (() => {
+    const today = getLocalDateString(new Date());
+    const [y, m] = today.split("-").map(Number);
+    const pad = (n) => String(n).padStart(2, "0");
+    if (dateFilter === "Today") return today;
+    if (dateFilter === "This Week") {
+      const d = new Date();
+      d.setDate(d.getDate() - d.getDay());
+      return getLocalDateString(d);
+    }
+    if (dateFilter === "This Month") return `${y}-${pad(m)}-01`;
+    if (dateFilter === "Last Month") return m === 1 ? `${y - 1}-12-01` : `${y}-${pad(m - 1)}-01`;
+    if (dateFilter === "Custom Range") return customStart || null;
+    return null;
+  })();
+  const isDatePeriod = dateFilter !== "All Time";
+  const sumIn = (rows) => rows.reduce((sum, tx) => sum + (Number(tx.in) || 0), 0);
+  const sumOut = (rows) => rows.reduce((sum, tx) => sum + (Number(tx.out) || 0), 0);
+  const searchMatches = (tx) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return tx.description.toLowerCase().includes(q) || tx.subtext.toLowerCase().includes(q);
+  };
+  const tabMatches = (tx) => !(filter === "Income" && !tx.in) && !(filter === "Expense" && !tx.out);
+  const rowsBeforePeriod = isDatePeriod && periodStart
+    ? ledgerTransactions.filter((tx) => {
+        const day = getLocalDateString(tx.rawDate || tx.date);
+        return day && day < periodStart && tabMatches(tx) && searchMatches(tx);
+      })
+    : [];
+
+  const filteredOpeningBalance = !isFilterActive
+    ? totalOpeningBalance
+    : isDatePeriod
+      ? sumIn(rowsBeforePeriod) - sumOut(rowsBeforePeriod) + sumIn(filteredTransactions.filter((tx) => tx.isOpeningBalance))
+      : sumIn(filteredTransactions.filter((tx) => tx.isOpeningBalance));
+
+  const filteredMoneyIn = isFilterActive
+    ? sumIn(filteredTransactions.filter((tx) => !tx.isOpeningBalance))
+    : totalMoneyIn;
+
+  const filteredMoneyOut = isFilterActive
+    ? sumOut(filteredTransactions)
+    : totalMoneyOut;
+
+  const filteredClosingBalance = isFilterActive
+    ? filteredOpeningBalance + filteredMoneyIn - filteredMoneyOut
+    : closingBalance;
 
   const PAGE_SIZE = 5;
   const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / PAGE_SIZE));
@@ -522,7 +589,16 @@ const Ledger = () => {
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => { setFilter(tab.id); setCurrentPage(1); }}
+                onClick={() => {
+                  if (filter !== tab.id) {
+                    setFilter(tab.id);
+                    setCurrentPage(1);
+                    setDateFilter("All Time");
+                    setCustomStart("");
+                    setCustomEnd("");
+                    setSearch("");
+                  }
+                }}
                 className={`px-5 py-2 text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap min-w-[100px] text-center ${filter === tab.id
                     ? tab.active
                     : `${tab.base} ${tab.hover} shadow-sm`
@@ -573,7 +649,7 @@ const Ledger = () => {
             <SummaryCard
               icon={Database}
               title="Opening Balance"
-              value={formatCurrency(totalOpeningBalance)}
+              value={formatCurrency(filteredOpeningBalance)}
               iconColor="text-slate-600"
               iconBg="bg-slate-100"
               extraClass="bg-white border-slate-200 shadow-sm"
@@ -581,7 +657,7 @@ const Ledger = () => {
             <SummaryCard
               icon={ArrowUpCircle}
               title="Money In"
-              value={formatCurrency(totalMoneyIn)}
+              value={formatCurrency(filteredMoneyIn)}
               valueColor="text-emerald-700"
               iconColor="text-emerald-600"
               iconBg="bg-emerald-100"
@@ -590,7 +666,7 @@ const Ledger = () => {
             <SummaryCard
               icon={ArrowDownCircle}
               title="Money Out"
-              value={formatCurrency(totalMoneyOut)}
+              value={formatCurrency(filteredMoneyOut)}
               valueColor="text-red-600"
               iconColor="text-red-600"
               iconBg="bg-red-100"
@@ -599,7 +675,7 @@ const Ledger = () => {
             <SummaryCard
               icon={Wallet}
               title="Closing Balance"
-              value={formatCurrency(closingBalance)}
+              value={formatCurrency(filteredClosingBalance)}
               valueColor="text-[#006052]"
               iconColor="text-[#006052]"
               iconBg="bg-[#e5f0ef]"
@@ -610,7 +686,7 @@ const Ledger = () => {
           {/* FILTER TOOLBAR */}
           <div className="mt-5 flex flex-col md:flex-row md:items-center gap-3 w-full min-w-0">
             {/* Date filter (compact) */}
-            <div className="shrink-0">
+            <div className="shrink-0 flex items-center gap-2">
               <DateRangeFilter
                 dateFilter={dateFilter}
                 setDateFilter={(val) => { setDateFilter(val); setCurrentPage(1); }}
@@ -632,6 +708,18 @@ const Ledger = () => {
                 className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-4 text-[13px] font-medium text-slate-800 outline-none placeholder:text-slate-400 transition-colors hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm"
               />
             </div>
+
+            {isFilterActive && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="h-9 px-3 text-[13px] font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-300 hover:border-slate-400 rounded-lg shadow-sm transition-colors flex items-center gap-1.5 shrink-0"
+                title="Reset all filters"
+              >
+                <X className="h-3.5 w-3.5 text-slate-400" />
+                <span>Reset</span>
+              </button>
+            )}
 
             {/* Export button (compact) */}
             <button className="flex h-9 shrink-0 items-center justify-center gap-2 text-[13px] font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 px-4 rounded-lg shadow-sm transition-colors hover:bg-slate-50 w-full md:w-auto">
@@ -1071,7 +1159,17 @@ const Ledger = () => {
                 ].map((tab) => (
                   <button
                     key={tab.id}
-                    onClick={() => { setFilter(tab.id); setCurrentPage(1); setIsDrawerOpen(false); }}
+                    onClick={() => {
+                      if (filter !== tab.id) {
+                        setFilter(tab.id);
+                        setCurrentPage(1);
+                        setDateFilter("All Time");
+                        setCustomStart("");
+                        setCustomEnd("");
+                        setSearch("");
+                      }
+                      setIsDrawerOpen(false);
+                    }}
                     className={`px-4 py-2.5 text-left text-[14px] font-bold rounded-lg transition-colors ${filter === tab.id
                         ? 'bg-emerald-50 text-emerald-700'
                         : 'text-slate-600 hover:bg-slate-50'
