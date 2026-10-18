@@ -3,7 +3,7 @@ import { DATA_CHANGED_EVENT, apiGet } from '../services/api';
 import { loadLedgerData } from '../services/ledgerApi';
 import { calculateLoanOutstanding, calculateTotalPortfolioOutstanding, isEligiblePayment } from '../utils/loanCalculations.js';
 import { calculateVehicleLoanOverdue } from '../utils/vehicleOverdueCalculation.js';
-import { formatDate } from '../utils/dateUtils.js';
+import { formatDate, getLocalDateString } from '../utils/dateUtils.js';
 import { matchesDashboardDate, rememberDashboardData } from '../components/dashboard/MonthYearFilter.jsx';
 
 export const useDashboardData = (filterParam = { filterType: 'all' }) => {
@@ -211,7 +211,39 @@ export const useDashboardData = (filterParam = { filterType: 'all' }) => {
         // Total Debit: Disbursed Loans + Manual Expenses + Investor Withdrawals
         const totalDebit = totalDisbursed + totalExpense + investorMoneyOut;
 
-        const closingBalance = totalCredit - totalDebit;
+        // Closing Balance and Capital Position are positions (cash on hand,
+        // capital in), so under a date filter they count everything up to
+        // the end of the period, not only the period's movement. Total
+        // Credit / Debit above stay the period's movement.
+        const periodEnd = isFilterActive ? dateFilter.endDate || null : null;
+        const upToEnd = (dateStr) => {
+          if (!periodEnd) return true;
+          const day = getLocalDateString(dateStr);
+          return Boolean(day) && day <= periodEnd;
+        };
+        const loanDateOf = (cust) => cust.customer?.applicationDate || cust.loan?.applicationDate || cust.createdAt || cust.date;
+        const sumUpToEnd = (list, dateOf, amountOf = (item) => item.amount, keep = () => true) =>
+          list.reduce((sum, item) => (keep(item) && upToEnd(dateOf(item)) ? sum + Number(amountOf(item) || 0) : sum), 0);
+        const isLinkedWithdrawal = (exp) =>
+          investors.some((inv) => inv.transactions?.some((t) => t.id === exp.transactionId || t.expenseId === exp.id));
+        const investorTxs = investors.flatMap((inv) => inv.transactions || []);
+
+        const positionOpening = sumUpToEnd(investorTxs, (t) => t.date, undefined, (t) => t.type === "Opening Balance");
+        const positionInvestIn = sumUpToEnd(investorTxs, (t) => t.date, undefined, (t) => t.type === "New Investment" || t.type === "Re-Investment");
+        const positionInvestOut =
+          sumUpToEnd(investorTxs, (t) => t.date, undefined, (t) => t.type === "Debit") +
+          sumUpToEnd(expenseData, (e) => e.date, undefined, (e) => e.category === "Investor Withdrawal" && !isLinkedWithdrawal(e));
+        const positionDisbursed = sumUpToEnd(customers, loanDateOf, (c) => c.loanAmount);
+        const positionCredit =
+          positionOpening + positionInvestIn +
+          sumUpToEnd(payments, (p) => p.date || p.createdAt) +
+          sumUpToEnd(incomeData, (i) => i.date) +
+          sumUpToEnd(vehicleSales, (v) => v.date);
+        const positionDebit =
+          positionDisbursed + positionInvestOut +
+          sumUpToEnd(expenseData, (e) => e.date, undefined, (e) => e.category !== "Investor Withdrawal");
+
+        const closingBalance = positionCredit - positionDebit;
 
         // Group Monthly Data
         const monthlyMap = {};
@@ -294,12 +326,12 @@ export const useDashboardData = (filterParam = { filterType: 'all' }) => {
           .map(([name, value]) => ({ name, value }));
 
         // Capital Position
-        const investorCapital = totalOpeningBalance + investorMoneyIn - investorMoneyOut;
+        const investorCapital = positionOpening + positionInvestIn - positionInvestOut;
         const capitalData = {
           totalCapital: investorCapital,
-          openingCapital: totalOpeningBalance,
-          deployed: totalDisbursed,
-          available: investorCapital - totalDisbursed > 0 ? investorCapital - totalDisbursed : 0,
+          openingCapital: positionOpening,
+          deployed: positionDisbursed,
+          available: investorCapital - positionDisbursed > 0 ? investorCapital - positionDisbursed : 0,
           closingBalance: closingBalance
         };
 
