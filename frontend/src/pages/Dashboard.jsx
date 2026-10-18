@@ -14,7 +14,8 @@ import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 
 const Dashboard = () => {
-  const { data, loading } = useDashboardData();
+  const [dateFilter, setDateFilter] = useState({ filterType: 'all', label: 'All Months' });
+  const { data, loading } = useDashboardData(dateFilter);
   const [activeTab, setActiveTab] = useState('financial');
   const navigate = useNavigate();
 
@@ -72,10 +73,17 @@ const Dashboard = () => {
         </div>
 
         {activeTab === 'operational' ? (
-          <OperationalDashboard data={data} />
+          <OperationalDashboard
+            data={data}
+            dateFilter={dateFilter}
+            setDateFilter={setDateFilter}
+          />
         ) : (
           <>
-            <DashboardHeader />
+            <DashboardHeader
+              dateFilter={dateFilter}
+              setDateFilter={setDateFilter}
+            />
             <KpiGrid data={data} />
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
               <MonthlyDebitCreditChart data={data?.monthlyData} />

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Banknote, BarChart3, CircleDollarSign, ClipboardList, CreditCard, Gauge, Landmark, PieChart as PieChartIcon, ShieldCheck, Users } from 'lucide-react';
+import { Banknote, BarChart3, CircleDollarSign, ClipboardList, CreditCard, Gauge, Landmark, PieChart as PieChartIcon, ShieldCheck, Users, Bell, Download } from 'lucide-react';
 import {
   Bar,
   CartesianGrid,
@@ -17,6 +17,7 @@ import {
 import { formatCurrency, formatCompactCurrency } from '../../utils/currencyFormatter';
 import { calculateLoanOutstanding } from '../../utils/loanCalculations';
 import { calculateVehicleLoanOverdue } from '../../utils/vehicleOverdueCalculation';
+import MonthYearFilter, { matchesDashboardDate, matchesMonthYear } from './MonthYearFilter';
 
 const cardClass = 'rounded-xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5';
 const chartColors = ['#047857', '#d97706', '#64748b', '#be123c'];
@@ -61,14 +62,31 @@ const EmptyChart = ({ message }) => (
   <div className="flex h-full min-h-[190px] items-center justify-center text-center text-sm text-slate-400">{message}</div>
 );
 
-const OperationalDashboard = ({ data }) => {
+const OperationalDashboard = ({
+  data,
+  dateFilter,
+  setDateFilter,
+  selectedMonth = 'All',
+  setSelectedMonth,
+  selectedYear = 'All',
+  setSelectedYear,
+}) => {
   const operational = data?.operational;
   // Loans and payments from the API, loaded by useDashboardData (which also
-  // refreshes them after any save).
+  // refreshes them after any save); the date filter below narrows them.
   const records = useMemo(() => operational?.records || [], [operational]);
   const payments = useMemo(() => operational?.payments || [], [operational]);
 
+  const activeDateFilter = dateFilter || {
+    filterType: (selectedMonth && selectedMonth !== 'All') || (selectedYear && selectedYear !== 'All') ? 'month' : 'all',
+    selectedMonth: selectedMonth || 'All',
+    selectedYear: selectedYear || 'All'
+  };
+
   const dashboardOnlyData = useMemo(() => {
+    const isFilterActive = activeDateFilter && activeDateFilter.filterType !== 'all';
+    const matchesDate = (dateStr) => matchesDashboardDate(dateStr, activeDateFilter);
+
     const now = new Date();
     const isToday = (value) => {
       const date = new Date(value);
@@ -82,7 +100,12 @@ const OperationalDashboard = ({ data }) => {
       String(record.loanId || record.loan?.loanId || `record-${index}`),
       record,
     ])).values());
-    const classifiedRecords = uniqueRecords.map((record) => {
+
+    const filteredRecords = isFilterActive
+      ? uniqueRecords.filter(r => matchesDate(r.customer?.applicationDate || r.loan?.applicationDate || r.createdAt || r.date))
+      : uniqueRecords;
+
+    const classifiedRecords = filteredRecords.map((record) => {
       const calculation = calculateLoanOutstanding(record, payments);
       const overdue = calculateVehicleLoanOverdue(record, payments);
       const rawStatus = String(record.status || record.loan?.status || '').toLowerCase();
@@ -109,6 +132,7 @@ const OperationalDashboard = ({ data }) => {
       calculation.effectiveSchedule.forEach((installment) => {
         const dueDate = new Date(installment.dueDate);
         if (Number.isNaN(dueDate.getTime()) || dueDate.getTime() > new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) return;
+        if (isFilterActive && !matchesDate(installment.dueDate)) return;
         const monthKey = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}`;
         const current = collectionByMonth.get(monthKey) || {
           date: new Date(dueDate.getFullYear(), dueDate.getMonth(), 1),
@@ -136,7 +160,7 @@ const OperationalDashboard = ({ data }) => {
 
     return {
       collectionToday: payments
-        .filter((payment) => isToday(payment.date || payment.createdAt))
+        .filter((payment) => isToday(payment.date || payment.createdAt) && (!isFilterActive || matchesDate(payment.date || payment.createdAt)))
         .reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
       vehicleCounts,
       collectionTrend,
@@ -145,7 +169,16 @@ const OperationalDashboard = ({ data }) => {
       portfolio: portfolioCounts,
       totalLoans: classifiedRecords.length,
     };
-  }, [payments, records]);
+  }, [
+    payments,
+    records,
+    activeDateFilter?.filterType,
+    activeDateFilter?.startDate,
+    activeDateFilter?.endDate,
+    activeDateFilter?.selectedMonth,
+    activeDateFilter?.selectedYear,
+    activeDateFilter?.label
+  ]);
 
   if (!operational) return null;
 
@@ -166,8 +199,33 @@ const OperationalDashboard = ({ data }) => {
 
   return (
     <div className="min-w-0 space-y-5">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-bold tracking-tight text-slate-800 sm:text-2xl">Operational Dashboard</h1>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-800">Operational Dashboard</h1>
+        </div>
+
+        <div className="flex items-center gap-2.5 sm:gap-3 self-stretch sm:self-auto justify-end flex-wrap">
+          <MonthYearFilter
+            dateFilter={activeDateFilter}
+            setDateFilter={setDateFilter}
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
+            selectedYear={selectedYear}
+            setSelectedYear={setSelectedYear}
+          />
+          <button 
+            aria-label="Notifications"
+            className="bg-white border border-slate-200/80 rounded-lg p-2 text-slate-600 hover:bg-slate-50 cursor-not-allowed opacity-80 shadow-xs"
+          >
+            <Bell className="h-4 w-4" />
+          </button>
+          <button 
+            className="bg-emerald-700 hover:bg-emerald-800 text-white flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors cursor-not-allowed opacity-80 shadow-xs"
+          >
+            <Download className="h-4 w-4" />
+            <span>Export</span>
+          </button>
+        </div>
       </div>
 
       <section>
