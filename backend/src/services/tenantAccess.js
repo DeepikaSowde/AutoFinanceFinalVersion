@@ -25,9 +25,47 @@ const toDateString = (value) => {
   return `${y}-${m}-${d}`;
 };
 
+// Whole days from one YYYY-MM-DD to another, and a day count added to one.
+const dayNumber = (dateText) => {
+  const [y, m, d] = dateText.split("-").map(Number);
+  return Date.UTC(y, m - 1, d) / 86_400_000;
+};
+const addDays = (dateText, days) => new Date((dayNumber(dateText) + days) * 86_400_000).toISOString().slice(0, 10);
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const formatDay = (dateText) => {
+  const [y, m, d] = dateText.split("-");
+  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+};
+
+// Optional "how to renew" contact (phone / email) added to the lender's messages.
+const renewContact = () => {
+  const contact = String(process.env.SUPPORT_CONTACT || "").trim();
+  return contact ? ` Contact ${contact} to renew.` : " Contact MotoLend support to renew.";
+};
+
+/*
+ * Where the subscription stands today, for the lender app's renewal banner:
+ * days left until valid_until (negative once past it) and the last day of
+ * the grace period, during which the app still works.
+ */
+export const subscriptionState = (tenant) => {
+  if (!tenant?.validUntil) return { validUntil: null, graceDays: tenant?.graceDays ?? 0, daysLeft: null, graceEndsOn: null, inGrace: false };
+  const graceDays = tenant.graceDays ?? 0;
+  const daysLeft = dayNumber(tenant.validUntil) - dayNumber(todayInIndia());
+  return {
+    validUntil: tenant.validUntil,
+    graceDays,
+    daysLeft,
+    graceEndsOn: addDays(tenant.validUntil, graceDays),
+    inGrace: daysLeft < 0 && -daysLeft <= graceDays,
+  };
+};
+
 /*
  * Why a tenant is locked out, or null when it may use the app. A tenant is
- * blocked when suspended, marked expired, or past its valid_until date.
+ * blocked when suspended, marked expired, or past its valid_until date plus
+ * its grace days.
  */
 export const blockReason = (tenant) => {
   if (!tenant) {
@@ -41,10 +79,18 @@ export const blockReason = (tenant) => {
     };
   }
 
-  if (tenant.status === "expired" || (tenant.validUntil && tenant.validUntil < todayInIndia())) {
+  if (tenant.status === "expired") {
     return {
       code: "SUBSCRIPTION_EXPIRED",
-      message: "Your MotoLend subscription has expired. Renew it to continue using the app.",
+      message: `Your MotoLend subscription has expired.${renewContact()}`,
+    };
+  }
+
+  const { graceEndsOn } = subscriptionState(tenant);
+  if (graceEndsOn && graceEndsOn < todayInIndia()) {
+    return {
+      code: "SUBSCRIPTION_EXPIRED",
+      message: `Your MotoLend subscription expired on ${formatDay(tenant.validUntil)}.${renewContact()}`,
     };
   }
 
@@ -84,6 +130,7 @@ export const getTenantAccess = async (tenantId) => {
     product: row.product,
     status: row.status,
     validUntil: toDateString(row.valid_until),
+    graceDays: row.grace_days ?? 0,
     plan: { id: row.plan_id, code: row.plan_code, name: row.plan_name },
     features: [...features].sort(),
     limits: Object.fromEntries(limitResult.rows.map((limit) => [limit.feature_key, limit.monthly_limit])),

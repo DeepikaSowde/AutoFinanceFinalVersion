@@ -6,7 +6,7 @@
 
 import { query } from "../db/connection.js";
 import { currentUsageMonth } from "../services/tenantAccess.js";
-import { EFFECTIVE_STATUS_SQL, TODAY_SQL, loadEntitlements } from "./tenantRepository.js";
+import { EFFECTIVE_STATUS_SQL, IN_GRACE_SQL, TODAY_SQL, loadEntitlements } from "./tenantRepository.js";
 import { LIMITED_FEATURES, PRODUCTS } from "./validate.js";
 
 export const getDashboard = async () => {
@@ -14,6 +14,8 @@ export const getDashboard = async () => {
     await query(
       `SELECT tenants.*, ${EFFECTIVE_STATUS_SQL} AS effective_status,
               (tenants.valid_until - ${TODAY_SQL}) AS days_left,
+              ${IN_GRACE_SQL} AS in_grace,
+              to_char(tenants.valid_until + tenants.grace_days, 'YYYY-MM-DD') AS grace_ends_on,
               plans.code AS plan_code, plans.name AS plan_name
        FROM tenants JOIN plans ON plans.id = tenants.plan_id`
     )
@@ -30,6 +32,9 @@ export const getDashboard = async () => {
       plan: { id: t.plan_id, code: t.plan_code, name: t.plan_name },
       validUntil: t.valid_until,
       daysLeft: t.days_left,
+      // Already past valid_until, still working on its grace days.
+      inGrace: Boolean(t.in_grace),
+      graceEndsOn: t.grace_ends_on,
     }));
 
   const perPlan = {};

@@ -13,7 +13,8 @@ requireAuth  ->  loadTenant  ->  route  ->  repository queries
   `tenant_id`.
 - `loadTenant` (`src/middleware/tenant.js`) loads the tenant, its plan and
   features (plan features + `tenant_feature_overrides`), refuses the request
-  when the tenant is **suspended**, **expired** or past `valid_until`, and
+  when the tenant is **suspended**, **expired** or past `valid_until` plus its
+  `grace_days` (set per tenant by the super admin, default 0), and
   runs the rest of the request inside `runWithTenant(tenantId)`.
 - Repositories call `currentTenantId()` (`src/db/tenantContext.js`) and add it
   to every query. Outside a tenant request it throws, so a forgotten filter
@@ -21,6 +22,12 @@ requireAuth  ->  loadTenant  ->  route  ->  repository queries
 - Sign-in is refused for suspended / expired tenants with the same message.
   `GET /api/auth/me` still answers (it returns the tenant status), so the app
   can explain why.
+- Renewal banner: `GET /api/auth/me` returns `tenant.subscription`
+  (`daysLeft`, `graceDays`, `graceEndsOn`, `inGrace`) and `supportContact`
+  (env `SUPPORT_CONTACT`). The lender app (`SubscriptionBanner.jsx`) shows
+  every user a banner from 30 days before `valid_until` until the grace days
+  run out. A request refused mid-session for an expired / suspended tenant
+  signs the user out to the sign-in page with the reason.
 
 ## Plan features and limits
 

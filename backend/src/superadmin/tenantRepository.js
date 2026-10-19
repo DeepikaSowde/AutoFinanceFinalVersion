@@ -15,15 +15,22 @@ import * as v from "./validate.js";
 // "Today" for subscriptions is the lenders' calendar day.
 export const TODAY_SQL = "(now() AT TIME ZONE 'Asia/Kolkata')::date";
 
-// Suspended wins; otherwise a tenant past valid_until counts as expired.
+// Suspended wins; otherwise a tenant past valid_until + grace_days counts as
+// expired. Inside the grace days it is still active (its app shows a banner).
 export const EFFECTIVE_STATUS_SQL = `CASE
   WHEN tenants.status = 'suspended' THEN 'suspended'
-  WHEN tenants.status = 'expired' OR tenants.valid_until < ${TODAY_SQL} THEN 'expired'
+  WHEN tenants.status = 'expired' OR tenants.valid_until + tenants.grace_days < ${TODAY_SQL} THEN 'expired'
   ELSE 'active' END`;
+
+// Past valid_until but within the grace days (and not suspended / marked expired).
+export const IN_GRACE_SQL = `(tenants.status = 'active' AND tenants.valid_until < ${TODAY_SQL}
+  AND tenants.valid_until + tenants.grace_days >= ${TODAY_SQL})`;
 
 const SELECT_TENANTS = `
   SELECT tenants.*, ${EFFECTIVE_STATUS_SQL} AS effective_status,
          (tenants.valid_until - ${TODAY_SQL}) AS days_left,
+         ${IN_GRACE_SQL} AS in_grace,
+         to_char(tenants.valid_until + tenants.grace_days, 'YYYY-MM-DD') AS grace_ends_on,
          plans.code AS plan_code, plans.name AS plan_name
   FROM tenants JOIN plans ON plans.id = tenants.plan_id`;
 
@@ -96,6 +103,9 @@ const mapTenant = (row, entitlements) => ({
   effectiveStatus: row.effective_status,
   validUntil: row.valid_until,
   daysLeft: row.days_left,
+  graceDays: row.grace_days,
+  graceEndsOn: row.grace_ends_on,
+  inGrace: Boolean(row.in_grace),
   createdAt: new Date(row.created_at).toISOString(),
   ...(entitlements || {}),
 });
@@ -229,6 +239,7 @@ export const updateTenant = async (tenantId, input, actor) => {
   if (input.ownerName !== undefined) changes.owner_name = v.text(input.ownerName, "Owner name");
   if (input.phone !== undefined) changes.phone = v.phone(input.phone);
   if (input.email !== undefined) changes.email = v.email(input.email);
+  if (input.graceDays !== undefined) changes.grace_days = v.wholeNumber(input.graceDays, "Grace days", { min: 0, max: 90 });
   if (!Object.keys(changes).length) throw v.badRequest("Nothing to update.");
 
   await withTransaction(async (client) => {

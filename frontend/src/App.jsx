@@ -21,6 +21,7 @@ import SettingsOverview from './pages/Settings/SettingsOverview'
 import PenaltyGraceSettings from './pages/Settings/PenaltyGraceSettings'
 import SmartSearch from './pages/SmartSearch'
 import SmartSearchFloatingButton from './components/SmartSearchFloatingButton'
+import SubscriptionBanner from './components/SubscriptionBanner'
 import Login from './pages/auth/Login'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import { getSessionUser } from './services/api'
@@ -53,6 +54,7 @@ function AppShell() {
     <div className={`min-h-screen bg-white transition-all duration-300 ${isSidebarCollapsed ? 'sm:pl-20' : 'sm:pl-64'}`}>
       <Sidebar onCollapsedChange={setIsSidebarCollapsed} />
       <main className="min-h-screen flex flex-col bg-white">
+        <SubscriptionBanner />
         <header className="hidden items-center justify-end px-4 sm:px-6">
           <LanguageSwitcher />
         </header>

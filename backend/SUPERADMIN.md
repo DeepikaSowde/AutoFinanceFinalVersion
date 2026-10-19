@@ -33,7 +33,7 @@ Errors are `{ "error": "message" }` with 400 (invalid input), 401, 404, 409
 | GET | `/tenants` | `search, product, planId, status (active\|suspended\|expired), page, pageSize` | `{ items, total, page, pageSize }`; each item has plan, effectiveStatus, validUntil, daysLeft, usage |
 | POST | `/tenants` | `{ name, ownerName, phone, email, product, planId, validUntil? }` | the plan must belong to the product; the product cannot change later. Valid one month from today when no date is given |
 | GET | `/tenants/:id` | | + features (effective), planFeatures, overrides, limits, usage, admins, userCount |
-| PATCH | `/tenants/:id` | `{ name?, ownerName?, phone?, email? }` | |
+| PATCH | `/tenants/:id` | `{ name?, ownerName?, phone?, email?, graceDays? }` | `graceDays` 0–90: days the lender keeps access after `valid_until` (tenant items also carry `graceDays`, `graceEndsOn`, `inGrace`) |
 | POST | `/tenants/:id/create-admin` | `{ name, email, username? }` | the lender's first admin; returns `temporaryPassword` once. Username defaults to the email |
 | POST | `/tenants/:id/admin/reset-password` | `{ userId? }` | new `temporaryPassword`; signs that user out everywhere |
 | PATCH | `/tenants/:id/plan` | `{ planId }` | only a plan of the tenant's product |

@@ -44,6 +44,27 @@ export const clearSession = () => {
   }
 }
 
+// Server codes meaning the whole lender account is locked out.
+const LOCKED_OUT_CODES = ['SUBSCRIPTION_EXPIRED', 'TENANT_SUSPENDED']
+const LOCKED_OUT_KEY = 'auto_finance_locked_out'
+
+// The lock-out reason saved when a session was ended for it.
+export const getLockedOutMessage = () => {
+  try {
+    return sessionStorage.getItem(LOCKED_OUT_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+export const clearLockedOutMessage = () => {
+  try {
+    sessionStorage.removeItem(LOCKED_OUT_KEY)
+  } catch {
+    // nothing to clear
+  }
+}
+
 export class ApiError extends Error {
   constructor(message, status) {
     super(message)
@@ -81,6 +102,17 @@ const request = async (path, options = {}) => {
     // An expired or revoked session: drop it and send the user to sign in.
     if (response.status === 401 && token) {
       clearSession()
+      window.dispatchEvent(new Event('auto-finance:signed-out'))
+    }
+    // The lender's subscription ran out (or was suspended) mid-session: sign
+    // out and let the sign-in page say why.
+    if (response.status === 403 && token && LOCKED_OUT_CODES.includes(data?.code)) {
+      clearSession()
+      try {
+        sessionStorage.setItem(LOCKED_OUT_KEY, data.error || '')
+      } catch {
+        // the sign-in page then shows no reason
+      }
       window.dispatchEvent(new Event('auto-finance:signed-out'))
     }
     throw new ApiError(data?.error || `Request failed with status ${response.status}`, response.status)

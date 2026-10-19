@@ -263,15 +263,17 @@ function TenantView({ tenant, plans: allPlans, onTenant, reloadSide, payments, a
   const plans = allPlans.filter((p) => p.product === tenant.product)
   const [details, setDetails] = useState({ name: tenant.name, ownerName: tenant.ownerName, phone: tenant.phone, email: tenant.email })
   const [planId, setPlanId] = useState(String(tenant.plan.id))
+  const [graceDays, setGraceDays] = useState(String(tenant.graceDays ?? 0))
   const [features, setFeatures] = useState(() => Object.fromEntries(FEATURES.map((key) => [key, tenant.features.includes(key)])))
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
   const detailsDirty = ['name', 'ownerName', 'phone', 'email'].some((key) => (details[key] || '') !== (tenant[key] || ''))
+  const graceDirty = graceDays !== String(tenant.graceDays ?? 0)
   const planDirty = planId !== String(tenant.plan.id)
   const changedFeatures = Object.fromEntries(FEATURES.filter((key) => features[key] !== tenant.features.includes(key)).map((key) => [key, features[key]]))
   const featuresDirty = Object.keys(changedFeatures).length > 0
-  const dirty = detailsDirty || planDirty || featuresDirty
+  const dirty = detailsDirty || graceDirty || planDirty || featuresDirty
   const selectedPlan = plans.find((p) => String(p.id) === planId)
 
   const run = async (label, action, message) => {
@@ -293,7 +295,12 @@ function TenantView({ tenant, plans: allPlans, onTenant, reloadSide, payments, a
   const save = () =>
     run('save', async () => {
       let updated = null
-      if (detailsDirty) updated = await api.patch(`/tenants/${tenant.id}`, details)
+      if (detailsDirty || graceDirty) {
+        updated = await api.patch(`/tenants/${tenant.id}`, {
+          ...(detailsDirty ? details : {}),
+          ...(graceDirty ? { graceDays: graceDays.trim() === '' ? 0 : Number(graceDays) } : {}),
+        })
+      }
       if (planDirty) updated = await api.patch(`/tenants/${tenant.id}/plan`, { planId: Number(planId) })
       if (featuresDirty) updated = await api.put(`/tenants/${tenant.id}/features`, { features: changedFeatures })
       return updated
@@ -361,7 +368,17 @@ function TenantView({ tenant, plans: allPlans, onTenant, reloadSide, payments, a
                 <p className={`text-sm ${tenant.daysLeft !== null && tenant.daysLeft < 0 ? 'text-red-700' : 'text-slate-500'}`}>
                   {tenant.daysLeft !== null && tenant.daysLeft < 0 ? `Expired ${daysLeftText(tenant.daysLeft)}` : `${daysLeftText(tenant.daysLeft)} left`}
                 </p>
+                {tenant.inGrace && (
+                  <p className="text-sm font-medium text-red-700">In grace period — access stops after {formatDate(tenant.graceEndsOn)}</p>
+                )}
               </div>
+              <Field
+                label="Grace days after expiry"
+                id="grace-days"
+                hint="Days the lender can keep using the app (with a red banner) after the valid-until date. 0 = locked out the next day. Max 90."
+              >
+                <input id="grace-days" type="number" min="0" max="90" step="1" value={graceDays} onChange={(e) => setGraceDays(e.target.value)} className={inputClass} />
+              </Field>
             </div>
             <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
               <span className="text-sm text-slate-600">Extend by:</span>
@@ -447,7 +464,7 @@ export default function TenantDetail() {
   const t = tenant.data
   // Remount the editor whenever the saved tenant changes, so its form
   // starts from the latest values.
-  const snapshot = JSON.stringify([t.name, t.ownerName, t.phone, t.email, t.plan.id, t.features, t.status, t.validUntil])
+  const snapshot = JSON.stringify([t.name, t.ownerName, t.phone, t.email, t.plan.id, t.features, t.status, t.validUntil, t.graceDays])
 
   return (
     <TenantView

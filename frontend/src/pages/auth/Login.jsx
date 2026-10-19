@@ -1,12 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { getToken, login } from '../../services/api'
+import { clearLockedOutMessage, getLockedOutMessage, getToken, login } from '../../services/api'
 
 const Login = () => {
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  // Set when the app signed the user out because the subscription ended.
+  const [error, setError] = useState(getLockedOutMessage)
+
+  useEffect(() => clearLockedOutMessage(), [])
   const [busy, setBusy] = useState(false)
 
   if (getToken()) return <Navigate to="/" replace />

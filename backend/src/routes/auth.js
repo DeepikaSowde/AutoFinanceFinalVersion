@@ -12,7 +12,7 @@ import {
 } from "../services/auth.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { loadTenant } from "../middleware/tenant.js";
-import { getTenantAccess } from "../services/tenantAccess.js";
+import { getTenantAccess, subscriptionState } from "../services/tenantAccess.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
 export const authRouter = Router();
@@ -58,8 +58,16 @@ authRouter.get(
     res.json({
       user: req.user,
       tenant: tenant
-        ? { name: tenant.name, product: tenant.product, status: tenant.blocked ? (tenant.status === "suspended" ? "suspended" : "expired") : tenant.status, valid_until: tenant.validUntil }
+        ? {
+            name: tenant.name,
+            product: tenant.product,
+            status: tenant.blocked ? (tenant.status === "suspended" ? "suspended" : "expired") : tenant.status,
+            valid_until: tenant.validUntil,
+            // For the renewal banner: daysLeft, graceDays, graceEndsOn, inGrace.
+            subscription: subscriptionState(tenant),
+          }
         : null,
+      supportContact: String(process.env.SUPPORT_CONTACT || "").trim(),
       features: tenant?.features ?? [],
     });
   })

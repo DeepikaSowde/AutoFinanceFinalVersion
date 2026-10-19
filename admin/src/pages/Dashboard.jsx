@@ -104,7 +104,10 @@ export default function Dashboard() {
                     <Td className="font-medium text-slate-900">{t.name}</Td>
                     <Td><PlanBadge plan={t.plan} /></Td>
                     <Td className="whitespace-nowrap">{formatDate(t.validUntil)}</Td>
-                    <Td className={`whitespace-nowrap font-medium ${t.daysLeft <= 7 ? 'text-red-700' : 'text-amber-800'}`}>{daysLeftText(t.daysLeft)}</Td>
+                    <Td className={`whitespace-nowrap font-medium ${t.daysLeft <= 7 ? 'text-red-700' : 'text-amber-800'}`}>
+                      {t.inGrace ? `Expired ${daysLeftText(t.daysLeft)}` : daysLeftText(t.daysLeft)}
+                      {t.inGrace && <span className="block text-xs font-normal">Grace until {formatDate(t.graceEndsOn)}</span>}
+                    </Td>
                     <Td className="text-right">
                       <Link to={`/tenants/${t.id}#subscription`} className="font-semibold text-teal-800 hover:underline">
                         Extend
