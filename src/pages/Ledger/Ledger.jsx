@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import IncomeView from "./IncomeView";
 import ExpenseView from "./ExpenseView";
 import {
@@ -88,6 +88,57 @@ const Ledger = () => {
   const [incomeInvestorId, setIncomeInvestorId] = useState('');
   const [incomeError, setIncomeError] = useState('');
   const [expenseError, setExpenseError] = useState('');
+
+  // Vehicle Expense Form States
+  const [selectedVehicleForExpense, setSelectedVehicleForExpense] = useState(null);
+  const [vehicleSearchQuery, setVehicleSearchQuery] = useState('');
+  const [isVehicleDropdownOpen, setIsVehicleDropdownOpen] = useState(false);
+
+  // Normalize list of vehicle records from customers for autocomplete search
+  const vehicleOptions = useMemo(() => {
+    return customers
+      .filter(c => c && (c.vehicle?.regNo || c.regNo || c.loanId))
+      .map((c, idx) => {
+        const veh = c.vehicle || {};
+        const cust = c.customer || {};
+        const regNo = (veh.regNo || c.regNo || 'Unregistered').trim();
+        const custName = (cust.name || c.customerName || c.name || 'Customer').trim();
+        const custId = (c.customerId || cust.customerId || (cust.mobile ? `CUS-${cust.mobile.slice(-5)}` : `CUS-${String(idx + 1).padStart(3, '0')}`)).trim();
+        const makeModel = [veh.brand, veh.model].filter(Boolean).join(' ').trim();
+        const loanId = (c.loanId || c.loan?.loanId || `LN-${String(idx + 1).padStart(3, '0')}`).trim();
+        const vehicleId = (c.vehicleId || loanId || regNo).trim();
+
+        return {
+          ...c,
+          vehicleId,
+          loanId,
+          regNo,
+          vehicleRegNo: regNo,
+          customerName: custName,
+          customerId: custId,
+          makeModel,
+          searchText: `${custId} ${custName} ${regNo} ${makeModel}`.toLowerCase(),
+        };
+      });
+  }, [customers]);
+
+  // Filter matching vehicles for autocomplete dropdown
+  const filteredVehicles = useMemo(() => {
+    if (!vehicleSearchQuery.trim()) return vehicleOptions.slice(0, 8);
+    const q = vehicleSearchQuery.trim().toLowerCase();
+    return vehicleOptions.filter(v => v.searchText.includes(q)).slice(0, 12);
+  }, [vehicleOptions, vehicleSearchQuery]);
+
+  const resetExpenseForm = () => {
+    setShowAddExpense(false);
+    setExpenseAmount('');
+    setExpenseRemarks('');
+    setWithdrawalInvestorId('');
+    setSelectedVehicleForExpense(null);
+    setVehicleSearchQuery('');
+    setIsVehicleDropdownOpen(false);
+    setExpenseError('');
+  };
 
   const handleIncomeSubmit = (e) => {
     e.preventDefault();
@@ -188,6 +239,13 @@ const Ledger = () => {
       return;
     }
 
+    if (expenseCategory === 'Vehicle Expense') {
+      if (!selectedVehicleForExpense) {
+        setExpenseError('Please select a valid vehicle for the vehicle expense.');
+        return;
+      }
+    }
+
     if (expenseCategory === 'Investor Withdrawal') {
       if (!withdrawalInvestorId) {
         setExpenseError('Please select an investor for the withdrawal.');
@@ -251,16 +309,14 @@ const Ledger = () => {
       const updatedExpenses = [...expenseData, newExpense];
       window.localStorage.setItem('motoLendExpense_data', JSON.stringify(updatedExpenses));
 
-      setShowAddExpense(false);
-      setExpenseAmount('');
-      setExpenseRemarks('');
-      setWithdrawalInvestorId('');
-      setExpenseError('');
+      resetExpenseForm();
       setTriggerRefresh(prev => prev + 1);
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('motoLendStorageUpdate'));
       return;
     }
 
-    // Regular Business Expense
+    // Regular Business Expense (including Vehicle Expense)
     const newExpense = {
       id: `EXP${Date.now()}`,
       category: expenseCategory,
@@ -268,14 +324,24 @@ const Ledger = () => {
       date: expenseDate,
       mode: expenseMode,
       remarks: expenseRemarks,
+      ...(expenseCategory === 'Vehicle Expense' && selectedVehicleForExpense ? {
+        vehicleId: selectedVehicleForExpense.vehicleId || selectedVehicleForExpense.loanId || selectedVehicleForExpense.regNo,
+        vehicleRegNo: selectedVehicleForExpense.vehicleRegNo || selectedVehicleForExpense.regNo || '',
+        regNo: selectedVehicleForExpense.vehicleRegNo || selectedVehicleForExpense.regNo || '',
+        customerId: selectedVehicleForExpense.customerId || '',
+        customerName: selectedVehicleForExpense.customerName || '',
+        vehicleMakeModel: selectedVehicleForExpense.makeModel || '',
+        loanId: selectedVehicleForExpense.loanId || '',
+        createdAt: new Date().toISOString(),
+        isVehicleExpense: true,
+      } : {}),
     };
     const updated = [...expenseData, newExpense];
     window.localStorage.setItem('motoLendExpense_data', JSON.stringify(updated));
-    setShowAddExpense(false);
-    setExpenseAmount('');
-    setExpenseRemarks('');
-    setExpenseError('');
+    resetExpenseForm();
     setTriggerRefresh(prev => prev + 1);
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('motoLendStorageUpdate'));
   };
 
   // Flatten all transactions from investors (skipping debits already in expenseData and investments already in incomeData to prevent double counting)
@@ -583,8 +649,8 @@ const Ledger = () => {
                   }
                 }}
                 className={`px-5 py-2 text-[14px] font-bold rounded-lg transition-all duration-200 whitespace-nowrap min-w-[100px] text-center ${filter === tab.id
-                    ? tab.active
-                    : `${tab.base} ${tab.hover} shadow-sm`
+                  ? tab.active
+                  : `${tab.base} ${tab.hover} shadow-sm`
                   }`}
               >
                 {tab.label}
@@ -945,7 +1011,7 @@ const Ledger = () => {
                 <h3 className="font-bold text-lg text-slate-900">Add Expense</h3>
                 <p className="text-[12px] text-slate-500">Record a business expense or investor withdrawal</p>
               </div>
-              <button onClick={() => { setShowAddExpense(false); setExpenseError(''); setWithdrawalInvestorId(''); }}><X className="h-5 w-5 text-slate-400 hover:text-slate-600" /></button>
+              <button onClick={resetExpenseForm}><X className="h-5 w-5 text-slate-400 hover:text-slate-600 cursor-pointer" /></button>
             </div>
             <form onSubmit={handleExpenseSubmit} className="p-6 flex flex-col gap-4 overflow-y-auto">
               <div>
@@ -953,8 +1019,17 @@ const Ledger = () => {
                 <select
                   value={expenseCategory}
                   onChange={e => {
-                    setExpenseCategory(e.target.value);
+                    const nextCat = e.target.value;
+                    setExpenseCategory(nextCat);
                     setExpenseError('');
+                    if (nextCat !== 'Vehicle Expense') {
+                      setSelectedVehicleForExpense(null);
+                      setVehicleSearchQuery('');
+                      setIsVehicleDropdownOpen(false);
+                    }
+                    if (nextCat !== 'Investor Withdrawal') {
+                      setWithdrawalInvestorId('');
+                    }
                   }}
                   className="w-full h-11 border border-slate-300 rounded-xl px-3 text-[14px] font-medium text-slate-700 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all"
                 >
@@ -970,6 +1045,119 @@ const Ledger = () => {
                   <option value="Other">Other</option>
                 </select>
               </div>
+
+              {/* Conditional Vehicle Selection Field for Vehicle Expense */}
+              {expenseCategory === 'Vehicle Expense' && (
+                <div className="relative">
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                    Select Vehicle *
+                  </label>
+                  {selectedVehicleForExpense ? (
+                    <div className="flex items-center justify-between p-3 rounded-xl border border-[#006052]/30 bg-emerald-50/60 shadow-2xs">
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-[13px] text-slate-900 tracking-tight">
+                            {selectedVehicleForExpense.vehicleRegNo}
+                          </span>
+                          {selectedVehicleForExpense.makeModel && (
+                            <span className="text-[11px] font-semibold text-slate-600 truncate">
+                              ({selectedVehicleForExpense.makeModel})
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600 truncate mt-0.5">
+                          {selectedVehicleForExpense.customerName} • <span className="font-mono text-slate-500 font-semibold">ID: {selectedVehicleForExpense.customerId}</span>
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedVehicleForExpense(null);
+                          setVehicleSearchQuery('');
+                          setIsVehicleDropdownOpen(true);
+                        }}
+                        className="px-2.5 py-1 text-[11px] font-bold text-[#006052] bg-white border border-[#006052]/30 hover:bg-emerald-100 rounded-lg shadow-2xs transition-colors shrink-0 cursor-pointer"
+                      >
+                        Change
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <div className="relative">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={vehicleSearchQuery}
+                          onChange={(e) => {
+                            setVehicleSearchQuery(e.target.value);
+                            setIsVehicleDropdownOpen(true);
+                            setExpenseError('');
+                          }}
+                          onFocus={() => setIsVehicleDropdownOpen(true)}
+                          placeholder="Search by Customer ID, Customer Name, or Vehicle Number"
+                          className="w-full h-11 border border-slate-300 rounded-xl pl-10 pr-9 text-[13px] font-medium text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052] shadow-sm transition-all"
+                        />
+                        {vehicleSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVehicleSearchQuery('');
+                              setIsVehicleDropdownOpen(false);
+                            }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Autocomplete Dropdown */}
+                      {isVehicleDropdownOpen && (
+                        <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto divide-y divide-slate-100">
+                          {filteredVehicles.length === 0 ? (
+                            <div className="p-3 text-center text-xs text-slate-500 font-medium">
+                              No matching vehicles found
+                            </div>
+                          ) : (
+                            filteredVehicles.map((v) => (
+                              <button
+                                key={v.loanId || v.vehicleId || v.vehicleRegNo}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedVehicleForExpense(v);
+                                  setVehicleSearchQuery(`${v.vehicleRegNo} – ${v.customerName}`);
+                                  setIsVehicleDropdownOpen(false);
+                                  setExpenseError('');
+                                }}
+                                className="w-full text-left p-2.5 hover:bg-emerald-50/70 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-xs text-slate-900 tracking-tight">
+                                      {v.vehicleRegNo}
+                                    </span>
+                                    {v.makeModel && (
+                                      <span className="text-[11px] font-medium text-slate-500 truncate">
+                                        {v.makeModel}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-slate-600 truncate mt-0.5">
+                                    {v.customerName} • <span className="font-mono text-slate-400 font-semibold">{v.customerId}</span>
+                                  </p>
+                                </div>
+                                <span className="text-[11px] font-bold text-[#006052] shrink-0">
+                                  Select
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Special Investor Selector & Balance preview for Investor Withdrawal */}
               {expenseCategory === 'Investor Withdrawal' && (
@@ -1082,18 +1270,14 @@ const Ledger = () => {
               <div className="flex justify-end gap-3 mt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowAddExpense(false);
-                    setExpenseError('');
-                    setWithdrawalInvestorId('');
-                  }}
-                  className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                  onClick={resetExpenseForm}
+                  className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 text-[13px] font-bold text-white bg-[#006052] hover:bg-[#004d43] rounded-xl shadow-sm transition-colors"
+                  className="px-5 py-2.5 text-[13px] font-bold text-white bg-[#006052] hover:bg-[#004d42] rounded-xl shadow-sm transition-colors cursor-pointer"
                 >
                   Add Expense
                 </button>
@@ -1102,6 +1286,7 @@ const Ledger = () => {
           </div>
         </div>
       )}
+
 
       {/* MOBILE DRAWER (For KPI cards and actions) */}
       {isDrawerOpen && (
@@ -1138,8 +1323,8 @@ const Ledger = () => {
                       setIsDrawerOpen(false);
                     }}
                     className={`px-4 py-2.5 text-left text-[14px] font-bold rounded-lg transition-colors ${filter === tab.id
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'text-slate-600 hover:bg-slate-50'
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'text-slate-600 hover:bg-slate-50'
                       }`}
                   >
                     {tab.label}
@@ -1216,7 +1401,7 @@ const SummaryCard = ({ icon: Icon, title, value, valueColor = "text-slate-900", 
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[12px] sm:text-[14px] font-semibold text-slate-500 leading-snug break-words">{title}</p>
-        <p 
+        <p
           className={`mt-0.5 sm:mt-1 text-base sm:text-lg lg:text-xl font-bold tracking-tight whitespace-nowrap leading-tight ${valueColor}`}
         >
           {value}

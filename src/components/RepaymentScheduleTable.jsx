@@ -47,7 +47,7 @@ export const generateSchedule = (loanDetails) => {
 
   const schedule = [];
   let balance = P;
-  
+
   let baseDate;
   if (firstDueDateStr) {
     if (typeof firstDueDateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(firstDueDateStr)) {
@@ -90,7 +90,7 @@ export const generateSchedule = (loanDetails) => {
         emi = P / numberOfPayments;
       } else {
         emi = (P * periodicRate * Math.pow(1 + periodicRate, numberOfPayments)) /
-              (Math.pow(1 + periodicRate, numberOfPayments) - 1);
+          (Math.pow(1 + periodicRate, numberOfPayments) - 1);
       }
 
       for (let i = 1; i <= numberOfPayments; i++) {
@@ -128,7 +128,7 @@ export const generateSchedule = (loanDetails) => {
         if (i === numberOfPayments) {
           principalForPeriod = balance;
         }
-        
+
         let periodEmi = principalForPeriod + interestForPeriod;
         const remainingPrincipal = i === numberOfPayments ? 0 : Math.max(0, balance - principalForPeriod);
 
@@ -193,7 +193,7 @@ export const generateSchedule = (loanDetails) => {
   // The logic supports taking payments into account if we pass them in the future.
   // We'll calculate balances and statuses here.
   const today = new Date();
-  today.setHours(0,0,0,0);
+  today.setHours(0, 0, 0, 0);
 
   schedule.forEach(item => {
     if (item.amountPaid >= item.emi - 0.01) {
@@ -293,22 +293,29 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
     });
   }
 
+  const hasMidwayPayment = eligiblePayments.some(
+    (p) => Boolean(p.isMidwayClosure) ||
+      String(p.remarks || "").toLowerCase().includes("midway closure") ||
+      (Array.isArray(p.allocations) && p.allocations.some((a) => a.isMidwayClosed || a.statusAfter === "Midway Closed"))
+  );
+
   const schedule = baseOrRawSchedule.map((item) => {
     const emi = Number(item.emi || 0);
     const principal = Number(item.principal ?? (item.emi ? item.emi - (Number(item.interest || 0)) : 0));
     const interest = Number(item.interest ?? item.allocatedInterest ?? item.interestAmount ?? (emi > principal ? emi - principal : 0));
     const isMidway = Boolean(item.isMidwayClosed || item.status === "Midway Closed" || item.closureAdjusted);
+    const shouldPrepopulateMidway = isMidway && !hasMidwayPayment;
     return {
       ...item,
       principal,
       interest,
       emi,
       principalOutstanding: item.principalOutstanding !== undefined ? Number(item.principalOutstanding) : undefined,
-      amountPaid: isMidway ? (Number(item.amountPaid ?? emi)) : 0,
-      principalPaid: isMidway ? (Number(item.principalPaid ?? principal)) : 0,
-      interestPaid: isMidway ? (Number(item.interestPaid ?? 0)) : 0,
-      balance: isMidway ? 0 : emi,
-      status: isMidway ? "Paid" : (item.status || "Due"),
+      amountPaid: shouldPrepopulateMidway ? (Number(item.amountPaid ?? emi)) : 0,
+      principalPaid: shouldPrepopulateMidway ? (Number(item.principalPaid ?? principal)) : 0,
+      interestPaid: shouldPrepopulateMidway ? (Number(item.interestPaid ?? 0)) : 0,
+      balance: shouldPrepopulateMidway ? 0 : emi,
+      status: shouldPrepopulateMidway ? "Paid" : (item.status || "Due"),
       isMidwayClosed: isMidway,
       closureAdjusted: isMidway,
       paymentsList: [],
@@ -483,7 +490,7 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
     if (isMidwayRow) {
       return {
         ...item,
-        amountPaid: roundedPaid > 0 ? roundedPaid : item.emi,
+        amountPaid: roundedPaid,
         principalOutstanding: 0,
         balance: 0,
         status: "Paid",
@@ -635,21 +642,20 @@ export default function RepaymentScheduleTable({ loanDetails = {}, schedule: pro
             const isOverdue = !isMidwaySettled && row.status === 'Overdue';
             const penaltyAmount = isOverdue
               ? getInstallmentPenaltySupportingAmount(row, {
-                  loanId: loanDetails?.loanId || row.loanId,
-                  frequency,
-                  settings: penaltySettings,
-                  penaltyRecords,
-                })
+                loanId: loanDetails?.loanId || row.loanId,
+                frequency,
+                settings: penaltySettings,
+                penaltyRecords,
+              })
               : null;
 
             return (
               <tr
                 key={row.installmentNumber}
-                className={`transition-colors ${
-                  isMidwaySettled
+                className={`transition-colors ${isMidwaySettled
                     ? "bg-amber-50/70 hover:bg-amber-100/60"
                     : "hover:bg-slate-50"
-                }`}
+                  }`}
               >
                 <td className={`whitespace-nowrap px-4 py-3 font-medium ${isMidwaySettled ? "text-amber-950 font-semibold" : "text-slate-600"}`}>
                   {row.installmentNumber}

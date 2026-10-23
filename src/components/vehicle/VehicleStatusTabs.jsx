@@ -12,7 +12,7 @@ const VehicleStatusTabs = ({ activeTab, onTabChange }) => {
   const tabs = [
     { id: 'all', label: 'All Vehicles' },
     { id: 'seized', label: 'Seized' },
-    { id: 'sold', label: 'Sold' },
+    { id: 'sold', label: 'Sold Vehicles' },
     { id: 'inactive', label: 'Inactive' },
   ];
 

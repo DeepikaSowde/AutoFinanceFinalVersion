@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  ArrowLeft, Edit, Search, FileText, Coins, Landmark, 
+import {
+  ArrowLeft, Edit, Search, FileText, Coins, Landmark,
   Clock, CheckCircle2, AlertTriangle, Car, Shield, Activity, Users, CreditCard,
   FileCheck, FileText as FileTextIcon, Download, X, UserCheck, Wallet, ShieldCheck
 } from 'lucide-react';
@@ -48,7 +48,7 @@ const PhotoPlaceholder = ({ src, icon: Icon, alt, className = "h-16 w-16 rounded
 
   return (
     <>
-      <div 
+      <div
         onClick={() => setIsPreviewOpen(true)}
         className={`relative flex items-center justify-center bg-slate-100 border border-slate-200 text-slate-400 shrink-0 cursor-pointer overflow-hidden hover:ring-2 hover:ring-emerald-500 hover:ring-offset-2 transition-all ${className}`}
       >
@@ -62,20 +62,20 @@ const PhotoPlaceholder = ({ src, icon: Icon, alt, className = "h-16 w-16 rounded
       {isPreviewOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/80 p-4 sm:p-6 backdrop-blur-sm" onClick={() => setIsPreviewOpen(false)}>
           <div className="relative flex flex-col items-center max-w-4xl max-h-[90vh] w-full" onClick={e => e.stopPropagation()}>
-            <button 
+            <button
               onClick={() => setIsPreviewOpen(false)}
               className="absolute -top-12 right-0 rounded-full p-2 text-white hover:bg-white/20 transition-colors"
               aria-label="Close preview"
             >
               <X className="h-6 w-6" />
             </button>
-            
+
             {src ? (
               <>
                 <img src={src} alt={alt} className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl bg-slate-900" />
                 <div className="mt-6 flex justify-center">
-                  <a 
-                    href={src} 
+                  <a
+                    href={src}
                     download={`${alt.replace(/\s+/g, '_')}.jpg`}
                     className="inline-flex items-center gap-2 rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-slate-900 shadow-lg hover:bg-slate-100 transition-colors"
                   >
@@ -355,7 +355,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
   const activeLoans = customerLoans.filter(l => l.status === 'Active' || l.status === 'Overdue').length;
   const totalOutstanding = customerLoans.reduce((sum, l) => sum + (Number(l.outstandingAmount) || 0), 0);
   const totalOverdue = customerLoans.filter(l => l.status === 'Overdue').reduce((sum, l) => sum + (Number(l.overdueAmount) || 0), 0);
-  
+
   const loanSummary = useMemo(() => {
     if (!selectedLoanData.loan) return null;
     return calculateRepayment({
@@ -522,21 +522,21 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
   return (
     <div className="min-h-screen bg-white">
-      
+
       <div className="bg-white border-b border-slate-200 px-4 py-4 sm:px-6 lg:px-8">
-        <button 
+        <button
           onClick={onBack}
           className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 mb-4 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" /> {backLabel}
         </button>
-        
+
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-4">
-            <PhotoPlaceholder 
-              src={primaryCustomer.photoFile || null} 
-              icon={Users} 
-              alt={primaryCustomer.name || 'Customer'} 
+            <PhotoPlaceholder
+              src={primaryCustomer.photoFile || null}
+              icon={Users}
+              alt={primaryCustomer.name || 'Customer'}
               className="h-16 w-16 rounded-full"
             />
             <div>
@@ -551,7 +551,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50 hover:border-emerald-200">
               <Edit className="h-4 w-4" /> View / Edit
@@ -561,7 +561,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
       </div>
 
       <div className="px-4 py-6 sm:px-6 lg:px-8 space-y-6 w-full mx-auto">
-        
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-4">
             <div className="bg-emerald-50 text-emerald-600 p-2.5 rounded-lg shrink-0"><FileText className="h-4 w-4" /></div>
@@ -603,7 +603,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
               {customerLoans.length} Loan{customerLoans.length !== 1 ? 's' : ''}
             </div>
           </div>
-          
+
           <div className="divide-y divide-slate-100">
             {customerLoans.map(loan => {
               const isSelected = activeSelectedLoanId === loan.loanId;
@@ -612,8 +612,8 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
               const pendingPct = Math.max(0, 100 - pct);
 
               return (
-                <div 
-                  key={loan.loanId} 
+                <div
+                  key={loan.loanId}
                   onClick={() => setSelectedLoanId(loan.loanId)}
                   className={`p-5 flex flex-col lg:flex-row lg:items-center gap-6 cursor-pointer transition-colors ${isSelected ? 'bg-emerald-50/40 ring-1 ring-inset ring-emerald-500/30' : 'hover:bg-slate-50'}`}
                 >
@@ -631,9 +631,9 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                         {(() => {
                           const vStat = getEffectiveVehicleStatus(loan);
                           const vStyle = vStat === 'Active' ? 'bg-[#2563EB] text-white' :
-                                         vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
-                                         vStat === 'Sold' ? 'bg-[#64748B] text-white' :
-                                         'bg-slate-500 text-white';
+                            vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
+                              vStat === 'Sold' ? 'bg-[#64748B] text-white' :
+                                'bg-slate-500 text-white';
                           return (
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${vStyle}`}>
                               {vStat}
@@ -641,7 +641,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                           );
                         })()}
                       </div>
-                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Car className="h-3 w-3"/> {loan.vehicle?.regNo || 'Unregistered'}</p>
+                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Car className="h-3 w-3" /> {loan.vehicle?.regNo || 'Unregistered'}</p>
                     </div>
                   </div>
 
@@ -691,11 +691,10 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`whitespace-nowrap py-3 px-1 border-b-2 font-semibold text-sm transition-colors ${
-                  activeTab === tab.id
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-semibold text-sm transition-colors ${activeTab === tab.id
                     ? 'border-emerald-600 text-emerald-700'
                     : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
@@ -704,11 +703,11 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
         </div>
 
         <div className="py-4">
-          
+
           {/* OVERVIEW TAB */}
           {activeTab === 'overview' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-              
+
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100">
                   <div className="flex items-center gap-2 font-bold text-slate-900">
@@ -745,11 +744,10 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                       {selectedLoanData.referral?.commissionAmount && (
                         <FieldValue
                           label="Referral Commission"
-                          value={`₹${Number(selectedLoanData.referral.commissionAmount).toLocaleString('en-IN')}${
-                            selectedLoanData.referral.commissionPercentage
+                          value={`₹${Number(selectedLoanData.referral.commissionAmount).toLocaleString('en-IN')}${selectedLoanData.referral.commissionPercentage
                               ? ` (${selectedLoanData.referral.commissionPercentage}%)`
                               : ''
-                          } — ${selectedLoanData.referral.payCommission ? 'Paid' : 'Pending'}`}
+                            } — ${selectedLoanData.referral.payCommission ? 'Paid' : 'Pending'}`}
                         />
                       )}
                     </div>
@@ -769,19 +767,19 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     const fileKey = `${kycType}File`;
                     const hasValue = !!selectedLoanData.customer?.[noKey];
                     const hasFile = !!selectedLoanData.customer?.[fileKey];
-                    
+
                     if (!hasValue && !hasFile) return null;
-                    
+
                     const labels = { aadhaar: 'Aadhaar Number', pan: 'PAN Number', dl: 'Driving Licence Number', voter: 'Voter ID Number', otherKyc: 'Other KYC' };
-                    
+
                     return (
                       <div key={kycType} className="flex items-center justify-between border-b border-slate-100 pb-4 last:border-0 last:pb-0">
                         <div className="flex items-center gap-4">
                           {hasFile ? (
-                            <PhotoPlaceholder 
-                              src={selectedLoanData.customer[fileKey]} 
-                              icon={FileCheck} 
-                              alt={labels[kycType]} 
+                            <PhotoPlaceholder
+                              src={selectedLoanData.customer[fileKey]}
+                              icon={FileCheck}
+                              alt={labels[kycType]}
                               className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
                             />
                           ) : (
@@ -928,7 +926,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                           const remainingPct = Math.max(0, 100 - totalSettledPct);
 
                           const totalInstCount = effectiveCustomerLoanSchedule.length || loanSummary?.numberOfPayments || 0;
-                          
+
                           // Count regular paid instalments vs closure-adjusted instalments
                           const regularPaidInstCount = effectiveCustomerLoanSchedule.filter((s) => {
                             const isPaid = s.status === 'Paid' || s.status === 'Collected';
@@ -950,7 +948,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                                 <p className="text-3xl font-black text-emerald-700">{formatCurrency(paid)}</p>
                                 <p className="text-xs text-slate-500 mt-1">out of {formatCurrency(totalRepay)}</p>
                               </div>
-                              
+
                               <div className="space-y-2">
                                 <div className="flex justify-between text-xs font-semibold">
                                   {isMidway ? (
@@ -1020,7 +1018,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                   </div>
 
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mt-6">
-                    <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-emerald-600"/> Repayment Schedule</h3>
+                    <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-emerald-600" /> Repayment Schedule</h3>
                     <RepaymentScheduleTable
                       schedule={effectiveCustomerLoanSchedule}
                       loanDetails={{
@@ -1047,7 +1045,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
           {/* VEHICLE TAB */}
           {activeTab === 'vehicle' && (
             <div className="space-y-6">
-              
+
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100 flex items-center justify-between gap-2 font-bold text-slate-900">
                   <div className="flex items-center gap-2">
@@ -1056,9 +1054,9 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                   {(() => {
                     const vStat = getEffectiveVehicleStatus(selectedLoanData);
                     const vStyle = vStat === 'Active' ? 'bg-[#2563EB] text-white' :
-                                   vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
-                                   vStat === 'Sold' ? 'bg-[#64748B] text-white' :
-                                   'bg-slate-500 text-white';
+                      vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
+                        vStat === 'Sold' ? 'bg-[#64748B] text-white' :
+                          'bg-slate-500 text-white';
                     return (
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${vStyle}`}>
                         {vStat}
@@ -1067,27 +1065,27 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                   })()}
                 </div>
                 <div className="p-4 sm:p-5 flex flex-col md:flex-row gap-6 items-start">
-                   <div className="shrink-0 w-full md:w-auto flex justify-center md:justify-start">
-                     <PhotoPlaceholder 
-                       src={getVehicleDisplayImage(selectedLoanData)} 
-                       icon={Car} 
-                       alt={`${selectedLoanData.vehicle?.brand || 'Vehicle'} ${selectedLoanData.vehicle?.model || ''}`} 
-                       className="h-32 w-32 rounded-xl border-4 border-slate-50 shadow-sm"
-                     />
-                   </div>
-                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-4 gap-x-4 flex-1 w-full">
-                      <FieldValue label="Vehicle Status" value={getEffectiveVehicleStatus(selectedLoanData)} />
-                      <FieldValue label="Brand / Make" value={selectedLoanData.vehicle?.brand} />
-                      <FieldValue label="Model" value={selectedLoanData.vehicle?.model} />
-                      <FieldValue label="Variant" value={selectedLoanData.vehicle?.variant} />
-                      <FieldValue label="Vehicle Type" value={selectedLoanData.vehicle?.type} />
-                      <FieldValue label="Fuel Type" value={selectedLoanData.vehicle?.fuelType} />
-                      <FieldValue label="Colour" value={selectedLoanData.vehicle?.colour} />
-                      <FieldValue label="Year" value={selectedLoanData.vehicle?.year} />
-                      <FieldValue label="Vehicle Amount" value={selectedLoanData.vehicle?.amount ? formatCurrency(selectedLoanData.vehicle.amount) : null} />
-                      <FieldValue label="Hypothecation" value={selectedLoanData.vehicle?.hypothecation} />
-                      <FieldValue label="Existing Financier" value={selectedLoanData.vehicle?.financier} />
-                   </div>
+                  <div className="shrink-0 w-full md:w-auto flex justify-center md:justify-start">
+                    <PhotoPlaceholder
+                      src={getVehicleDisplayImage(selectedLoanData)}
+                      icon={Car}
+                      alt={`${selectedLoanData.vehicle?.brand || 'Vehicle'} ${selectedLoanData.vehicle?.model || ''}`}
+                      className="h-32 w-32 rounded-xl border-4 border-slate-50 shadow-sm"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-4 gap-x-4 flex-1 w-full">
+                    <FieldValue label="Vehicle Status" value={getEffectiveVehicleStatus(selectedLoanData)} />
+                    <FieldValue label="Brand / Make" value={selectedLoanData.vehicle?.brand} />
+                    <FieldValue label="Model" value={selectedLoanData.vehicle?.model} />
+                    <FieldValue label="Variant" value={selectedLoanData.vehicle?.variant} />
+                    <FieldValue label="Vehicle Type" value={selectedLoanData.vehicle?.type} />
+                    <FieldValue label="Fuel Type" value={selectedLoanData.vehicle?.fuelType} />
+                    <FieldValue label="Colour" value={selectedLoanData.vehicle?.colour} />
+                    <FieldValue label="Year" value={selectedLoanData.vehicle?.year} />
+                    <FieldValue label="Vehicle Amount" value={selectedLoanData.vehicle?.amount ? formatCurrency(selectedLoanData.vehicle.amount) : null} />
+                    <FieldValue label="Hypothecation" value={selectedLoanData.vehicle?.hypothecation} />
+                    <FieldValue label="Existing Financier" value={selectedLoanData.vehicle?.financier} />
+                  </div>
                 </div>
               </div>
 
@@ -1097,40 +1095,40 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     <FileTextIcon className="h-5 w-5 text-[#087F5B]" /> Registration & Identification
                   </div>
                   <div className="p-4 sm:p-5">
-                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
-                        <FieldValue label="Registration No." value={selectedLoanData.vehicle?.regNo} />
-                        <FieldValue label="Reg. Location (RTO)" value={selectedLoanData.vehicle?.rto} />
-                        <FieldValue label="Reg. Date" value={formatDate(selectedLoanData.vehicle?.regDate)} />
-                        <FieldValue label="Chassis Number" value={selectedLoanData.vehicle?.chassisNo} />
-                        <div className="col-span-1 sm:col-span-2">
-                          <FieldValue label="Engine Number" value={selectedLoanData.vehicle?.engineNo} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
+                      <FieldValue label="Registration No." value={selectedLoanData.vehicle?.regNo} />
+                      <FieldValue label="Reg. Location (RTO)" value={selectedLoanData.vehicle?.rto} />
+                      <FieldValue label="Reg. Date" value={formatDate(selectedLoanData.vehicle?.regDate)} />
+                      <FieldValue label="Chassis Number" value={selectedLoanData.vehicle?.chassisNo} />
+                      <div className="col-span-1 sm:col-span-2">
+                        <FieldValue label="Engine Number" value={selectedLoanData.vehicle?.engineNo} />
+                      </div>
+                    </div>
+                    <div className="border-t border-slate-100 pt-4 mt-5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          {selectedLoanData.vehicle?.rcFile ? (
+                            <PhotoPlaceholder
+                              src={selectedLoanData.vehicle.rcFile}
+                              icon={FileCheck}
+                              alt="RC Document"
+                              className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-14 items-center justify-center rounded bg-slate-50 border border-slate-100 text-slate-300">
+                              <FileTextIcon className="h-5 w-5" />
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-semibold text-slate-900">RC Document</p>
+                            <p className="text-sm text-slate-500 mt-0.5">Vehicle Registration</p>
+                          </div>
                         </div>
-                     </div>
-                     <div className="border-t border-slate-100 pt-4 mt-5">
-                       <div className="flex items-center justify-between">
-                         <div className="flex items-center gap-4">
-                           {selectedLoanData.vehicle?.rcFile ? (
-                              <PhotoPlaceholder 
-                                src={selectedLoanData.vehicle.rcFile} 
-                                icon={FileCheck} 
-                                alt="RC Document"
-                                className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
-                              />
-                           ) : (
-                              <div className="flex h-10 w-14 items-center justify-center rounded bg-slate-50 border border-slate-100 text-slate-300">
-                                <FileTextIcon className="h-5 w-5" />
-                              </div>
-                           )}
-                           <div>
-                             <p className="font-semibold text-slate-900">RC Document</p>
-                             <p className="text-sm text-slate-500 mt-0.5">Vehicle Registration</p>
-                           </div>
-                         </div>
-                         <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${selectedLoanData.vehicle?.rcFile ? 'bg-emerald-50 text-[#087F5B]' : 'bg-slate-100 text-slate-600'}`}>
-                           {selectedLoanData.vehicle?.rcFile ? 'Uploaded' : 'Not Provided'}
-                         </span>
-                       </div>
-                     </div>
+                        <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${selectedLoanData.vehicle?.rcFile ? 'bg-emerald-50 text-[#087F5B]' : 'bg-slate-100 text-slate-600'}`}>
+                          {selectedLoanData.vehicle?.rcFile ? 'Uploaded' : 'Not Provided'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1141,7 +1139,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                   <div className="p-4 sm:p-5">
                     {(() => {
                       const v = selectedLoanData.vehicle || {};
-                      
+
                       const isMeaningful = (val) => {
                         if (val === null || val === undefined || val === '') return false;
                         if (typeof val === 'string') {
@@ -1151,16 +1149,16 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                         return true;
                       };
 
-                      const hasInsuranceData = 
-                        isMeaningful(v.insuranceCompany) || 
-                        isMeaningful(v.policyNo) || 
-                        isMeaningful(v.insuranceExpiry) || 
-                        isMeaningful(v.taxExpiry) || 
-                        isMeaningful(v.financierEndorsement) || 
-                        isMeaningful(v.nocStatus) || 
-                        !!v.insuranceFile || 
+                      const hasInsuranceData =
+                        isMeaningful(v.insuranceCompany) ||
+                        isMeaningful(v.policyNo) ||
+                        isMeaningful(v.insuranceExpiry) ||
+                        isMeaningful(v.taxExpiry) ||
+                        isMeaningful(v.financierEndorsement) ||
+                        isMeaningful(v.nocStatus) ||
+                        !!v.insuranceFile ||
                         !!v.nocFile;
-                      
+
                       if (!hasInsuranceData) {
                         return (
                           <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -1175,102 +1173,102 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
                       return (
                         <>
-                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
-                              {v.insuranceCompany && (
-                                <div className="col-span-1 sm:col-span-2">
-                                  <FieldValue label="Insurance Company" value={v.insuranceCompany} />
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
+                            {v.insuranceCompany && (
+                              <div className="col-span-1 sm:col-span-2">
+                                <FieldValue label="Insurance Company" value={v.insuranceCompany} />
+                              </div>
+                            )}
+                            {v.policyNo && <FieldValue label="Policy Number" value={v.policyNo} />}
+                            {v.insuranceExpiry && <FieldValue label="Insurance Expiry" value={formatDate(v.insuranceExpiry)} />}
+                            {v.taxExpiry && <FieldValue label="Tax Expiry" value={formatDate(v.taxExpiry)} />}
+                            {v.financierEndorsement && <FieldValue label="Fin. Endorsement" value={v.financierEndorsement} />}
+                            {v.nocStatus && <FieldValue label="NOC Status" value={v.nocStatus} />}
+                          </div>
+
+                          {(v.insuranceFile || v.nocFile) && (
+                            <div className="border-t border-slate-100 pt-4 mt-5 flex flex-col gap-4">
+                              {v.insuranceFile && (
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-4">
+                                    <PhotoPlaceholder
+                                      src={v.insuranceFile}
+                                      icon={FileCheck}
+                                      alt="Insurance Document"
+                                      className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
+                                    />
+                                    <div>
+                                      <p className="font-semibold text-slate-900">Insurance Policy</p>
+                                    </div>
+                                  </div>
+                                  <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-[#087F5B]">
+                                    Uploaded
+                                  </span>
                                 </div>
                               )}
-                              {v.policyNo && <FieldValue label="Policy Number" value={v.policyNo} />}
-                              {v.insuranceExpiry && <FieldValue label="Insurance Expiry" value={formatDate(v.insuranceExpiry)} />}
-                              {v.taxExpiry && <FieldValue label="Tax Expiry" value={formatDate(v.taxExpiry)} />}
-                              {v.financierEndorsement && <FieldValue label="Fin. Endorsement" value={v.financierEndorsement} />}
-                              {v.nocStatus && <FieldValue label="NOC Status" value={v.nocStatus} />}
-                           </div>
-                           
-                           {(v.insuranceFile || v.nocFile) && (
-                             <div className="border-t border-slate-100 pt-4 mt-5 flex flex-col gap-4">
-                               {v.insuranceFile && (
-                                 <div className="flex items-center justify-between">
-                                   <div className="flex items-center gap-4">
-                                      <PhotoPlaceholder 
-                                        src={v.insuranceFile} 
-                                        icon={FileCheck} 
-                                        alt="Insurance Document"
-                                        className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
-                                      />
-                                     <div>
-                                       <p className="font-semibold text-slate-900">Insurance Policy</p>
-                                     </div>
-                                   </div>
-                                   <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-[#087F5B]">
-                                     Uploaded
-                                   </span>
-                                 </div>
-                               )}
-                               
-                               {v.nocFile && (
-                                 <div className="flex items-center justify-between">
-                                   <div className="flex items-center gap-4">
-                                      <PhotoPlaceholder 
-                                        src={v.nocFile} 
-                                        icon={FileCheck} 
-                                        alt="NOC Document"
-                                        className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
-                                      />
-                                     <div>
-                                       <p className="font-semibold text-slate-900">NOC Document</p>
-                                     </div>
-                                   </div>
-                                   <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-[#087F5B]">
-                                     Uploaded
-                                   </span>
-                                 </div>
-                               )}
-                             </div>
-                           )}
+
+                              {v.nocFile && (
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-4">
+                                    <PhotoPlaceholder
+                                      src={v.nocFile}
+                                      icon={FileCheck}
+                                      alt="NOC Document"
+                                      className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
+                                    />
+                                    <div>
+                                      <p className="font-semibold text-slate-900">NOC Document</p>
+                                    </div>
+                                  </div>
+                                  <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-[#087F5B]">
+                                    Uploaded
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </>
                       );
                     })()}
                   </div>
                 </div>
               </div>
-              
+
             </div>
           )}
 
           {/* GUARANTOR TAB */}
           {activeTab === 'guarantor' && (
-             <>
-               {hasGuarantorDetails ? (
-                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden max-w-2xl">
-                   <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900">Guarantor Details</div>
-                   <div className="p-5">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-6 gap-x-4">
-                        <FieldValue label="Name" value={selectedGuarantor.fullName || selectedGuarantor.name} />
-                        <FieldValue
-                          label="Mobile Number"
-                          value={(selectedGuarantor.phone || selectedGuarantor.mobile)
-                            ? `${selectedGuarantor.countryCode || ''} ${selectedGuarantor.phone || selectedGuarantor.mobile}`
-                            : null}
-                        />
-                        <FieldValue label="Relationship" value={selectedGuarantor.relationship} />
-                        <div className="col-span-2 sm:col-span-3">
-                          <FieldValue label="Address" value={selectedGuarantor.address} />
-                        </div>
+            <>
+              {hasGuarantorDetails ? (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden max-w-2xl">
+                  <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900">Guarantor Details</div>
+                  <div className="p-5">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-6 gap-x-4">
+                      <FieldValue label="Name" value={selectedGuarantor.fullName || selectedGuarantor.name} />
+                      <FieldValue
+                        label="Mobile Number"
+                        value={(selectedGuarantor.phone || selectedGuarantor.mobile)
+                          ? `${selectedGuarantor.countryCode || ''} ${selectedGuarantor.phone || selectedGuarantor.mobile}`
+                          : null}
+                      />
+                      <FieldValue label="Relationship" value={selectedGuarantor.relationship} />
+                      <div className="col-span-2 sm:col-span-3">
+                        <FieldValue label="Address" value={selectedGuarantor.address} />
                       </div>
-                   </div>
-                 </div>
-               ) : (
-                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 flex flex-col items-center justify-center text-center">
-                    <div className="bg-emerald-50 h-16 w-16 rounded-full flex items-center justify-center mb-4 border border-emerald-100 shadow-sm">
-                      <UserCheck className="h-8 w-8 text-emerald-600" />
                     </div>
-                    <h3 className="text-lg font-bold text-slate-900">No guarantor details available.</h3>
-                    <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">No guarantor information has been added to this loan yet.</p>
-                 </div>
-               )}
-             </>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 flex flex-col items-center justify-center text-center">
+                  <div className="bg-emerald-50 h-16 w-16 rounded-full flex items-center justify-center mb-4 border border-emerald-100 shadow-sm">
+                    <UserCheck className="h-8 w-8 text-emerald-600" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">No guarantor details available.</h3>
+                  <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">No guarantor information has been added to this loan yet.</p>
+                </div>
+              )}
+            </>
           )}
 
           {/* PAYMENTS TAB */}
@@ -1387,7 +1385,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                 <h3 className="text-lg font-bold text-slate-900 mb-8 flex items-center gap-2">
                   <Activity className="h-5 w-5 text-[#087F5B]" /> Activity Log
                 </h3>
-                
+
                 <div className="relative border-l-2 border-slate-100 ml-3 sm:ml-4 space-y-8 pb-4">
                   {activities.map((act, index) => {
                     const Icon = act.icon || CheckCircle2;

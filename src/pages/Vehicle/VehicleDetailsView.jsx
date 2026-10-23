@@ -23,6 +23,16 @@ import {
   ShieldAlert,
   AlertTriangle,
   X,
+  Receipt,
+  Scale,
+  TrendingUp,
+  TrendingDown,
+  Coins,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  ArrowRight,
+  Calculator,
 } from 'lucide-react';
 import { calculateVehicleLoanOverdue } from '../../utils/vehicleOverdueCalculation';
 import { calculateLoanOutstanding } from '../../utils/loanCalculations';
@@ -30,6 +40,9 @@ import VehicleStatusHistoryModal, { getChronologicalVehicleHistory } from '../..
 import { useVehicleImage } from '../../utils/vehicleImageHelper';
 import { syncVehicleSaleAccounting } from '../../utils/vehicleSaleAccounting';
 import { getEffectiveVehicleStatus } from '../../utils/vehicleStatusHelper';
+import { getForeclosureSettings, FORECLOSURE_UPDATE_EVENT } from '../../utils/foreclosureSettings';
+import { getPenaltySettings, PENALTY_UPDATE_EVENT } from '../../utils/penaltyRules';
+import { calculateForeclosureSale, syncForeclosureSettlementAccounting } from '../../utils/foreclosureCalculations';
 
 import { formatDate, formatDateTime } from '../../utils/dateUtils';
 
@@ -44,6 +57,7 @@ const STATUS_BADGES = {
   Seized: 'bg-[#EA580C] text-white',
   Released: 'bg-[#16A34A] text-white',
   Sold: 'bg-[#64748B] text-white',
+  Foreclosed: 'bg-purple-100/90 text-purple-900 border border-purple-300',
   Inactive: 'bg-slate-500 text-white',
 };
 
@@ -54,7 +68,7 @@ const FieldItem = ({ label, value }) => (
   </div>
 );
 
-const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
+const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => {
   // Current live vehicle data
   const [record, setRecord] = useState(vehicleRecord);
   const [allPayments, setAllPayments] = useState([]);
@@ -80,6 +94,21 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
   const [buyerPhone, setBuyerPhone] = useState('');
   const [proceedsReceived, setProceedsReceived] = useState('');
   const [saleNotes, setSaleNotes] = useState('');
+
+  // Foreclosure & Penalty Settings State
+  const [foreclosureSettings, setForeclosureSettings] = useState(() => getForeclosureSettings());
+  const [penaltySettings, setPenaltySettings] = useState(() => getPenaltySettings());
+
+  // Settlement & Recovery Section State in Sold Vehicle Details View
+  const [settlementMode, setSettlementMode] = useState(''); // 'recovery' | 'waive_loss' | 'payout' | 'retain_profit' | 'waive_profit'
+  const [settlementAmountInput, setSettlementAmountInput] = useState('');
+  const [settlementNotesInput, setSettlementNotesInput] = useState('');
+  const [settlementActionError, setSettlementActionError] = useState('');
+  const [settlementSuccessAlert, setSettlementSuccessAlert] = useState('');
+  const [isModifyingSettlement, setIsModifyingSettlement] = useState(false);
+
+  // Sold View Details State (expand/collapse calculation breakdown on already sold vehicle)
+  const [showSoldCalcBreakdown, setShowSoldCalcBreakdown] = useState(false);
 
   // Edit Seizure Form State
   const [editSeizureDate, setEditSeizureDate] = useState('');
@@ -139,8 +168,19 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
 
   useEffect(() => {
     refreshData();
-    window.addEventListener('storage', refreshData);
-    return () => window.removeEventListener('storage', refreshData);
+    const handleStorage = () => refreshData();
+    const handleForeclosureUpdate = (e) => setForeclosureSettings(e.detail || getForeclosureSettings());
+    const handlePenaltyUpdate = (e) => setPenaltySettings(e.detail || getPenaltySettings());
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(FORECLOSURE_UPDATE_EVENT, handleForeclosureUpdate);
+    window.addEventListener(PENALTY_UPDATE_EVENT, handlePenaltyUpdate);
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(FORECLOSURE_UPDATE_EVENT, handleForeclosureUpdate);
+      window.removeEventListener(PENALTY_UPDATE_EVENT, handlePenaltyUpdate);
+    };
   }, [vehicleRecord]);
 
   const vehicle = record?.vehicle || {};
@@ -149,6 +189,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
 
   const currentStatus = getEffectiveVehicleStatus(record);
   const isSeized = currentStatus.toLowerCase() === 'seized';
+  const isSold = currentStatus === 'Sold' || record?.status === 'Foreclosed' || record?.isForeclosed;
 
   const regNo = vehicle.regNo || record?.regNo || 'Unregistered';
   const makeModel = [vehicle.brand, vehicle.model].filter(Boolean).join(' ') || 'Unknown Vehicle';
@@ -181,6 +222,19 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
     return calculateLoanOutstanding(record, allPayments);
   }, [record, allPayments]);
 
+  // Calculate Foreclosure Sale metrics according to active Foreclosure & Penalty Settings
+  const foreclosureCalc = useMemo(() => {
+    return calculateForeclosureSale({
+      record,
+      salePrice: Number(salePrice) || 0,
+      saleDate: saleDate || new Date().toISOString().split('T')[0],
+      vehicleExpensesInput: vehicleExpenses !== '' && !isNaN(Number(vehicleExpenses)) ? Number(vehicleExpenses) : null,
+      foreclosureSettings,
+      penaltySettings,
+      allPayments,
+    });
+  }, [record, salePrice, saleDate, vehicleExpenses, foreclosureSettings, penaltySettings, allPayments]);
+
   // Handle open Edit Seizure
   const handleOpenEditSeizure = () => {
     setEditSeizureDate(seizureDetails.seizureDate || seizureDetails.date?.split('T')[0] || new Date().toISOString().split('T')[0]);
@@ -204,16 +258,48 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
 
   // Handle open Sold modal
   const handleOpenSold = () => {
+    // Refresh latest settings from storage on modal open
+    setForeclosureSettings(getForeclosureSettings());
+    setPenaltySettings(getPenaltySettings());
+
     const existingSale = record.vehicle?.saleDetails || record.saleDetails || {};
     setSaleDate(existingSale.saleDate || new Date().toISOString().split('T')[0]);
     setSalePrice(existingSale.salePrice ? String(existingSale.salePrice) : '');
-    setVehicleExpenses(
-      existingSale.vehicleExpenses !== undefined && existingSale.vehicleExpenses !== null
-        ? String(existingSale.vehicleExpenses)
-        : (existingSale.saleExpenses !== undefined && existingSale.saleExpenses !== null
-          ? String(existingSale.saleExpenses)
-          : '')
-    );
+
+    // Read existing recorded expenses for this vehicle to pre-populate if not already set
+    let defaultExp = '';
+    if (existingSale.vehicleExpenses !== undefined && existingSale.vehicleExpenses !== null) {
+      defaultExp = String(existingSale.vehicleExpenses);
+    } else if (existingSale.saleExpenses !== undefined && existingSale.saleExpenses !== null) {
+      defaultExp = String(existingSale.saleExpenses);
+    } else {
+      try {
+        const rawExp = localStorage.getItem('motoLendExpense_data');
+        const allExp = rawExp ? JSON.parse(rawExp) : [];
+        const tLoan = record.loanId;
+        const tReg = (record.vehicle?.regNo || record.regNo || '').trim().toLowerCase();
+        const tVehId = (record.vehicleId || '').trim();
+        const existingExpTotal = allExp
+          .filter(e => {
+            if (e.category !== 'Vehicle Expense' && !e.isVehicleExpense) return false;
+            if (tLoan && (e.loanId === tLoan || e.vehicleId === tLoan)) return true;
+            if (tVehId && e.vehicleId === tVehId) return true;
+            if (tReg) {
+              const eReg = (e.vehicleRegNo || e.regNo || '').trim().toLowerCase();
+              if (eReg && eReg === tReg) return true;
+            }
+            return false;
+          })
+          .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+        if (existingExpTotal > 0) {
+          defaultExp = String(existingExpTotal);
+        }
+      } catch (err) {
+        console.error('Failed to read existing expenses:', err);
+      }
+    }
+    setVehicleExpenses(defaultExp);
+
     setBuyerName(existingSale.buyerName || '');
     setBuyerPhone(existingSale.buyerPhone || '');
     setProceedsReceived(existingSale.proceedsReceived ? String(existingSale.proceedsReceived) : '');
@@ -365,7 +451,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
     setTimeout(() => setReleaseSuccessToast(false), 5000);
   };
 
-  // Save Mark as Sold
+  // Save Mark as Sold & Foreclosure Finalization (Independent of later settlement decisions)
   const handleConfirmSold = (e) => {
     e.preventDefault();
     const errors = {};
@@ -379,26 +465,66 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
       return;
     }
 
-    const saleAmountNum = Number(salePrice);
-    const vehicleExpensesNum = vehicleExpenses ? Number(vehicleExpenses) : 0;
-    const netSale = Math.max(0, saleAmountNum - vehicleExpensesNum);
+    const saleAmountNum = Number(salePrice) || 0;
+    const cost = foreclosureCalc.totalForeclosureCost;
+    const profitLoss = foreclosureCalc.profitLoss;
+    const timestamp = new Date().toISOString();
 
-    const newHistoryEntry = {
-      vehicleId: record.loanId || record.vehicleId || vehicle.regNo || '',
+    const isProfit = foreclosureCalc.isProfit;
+    const isLoss = foreclosureCalc.isLoss;
+    const isBreakEven = foreclosureCalc.isBreakEven;
+
+    // Initial settlement state: Pending later decision in Sold Vehicles view (or Settled if break-even)
+    const settlementObj = {
+      status: isBreakEven ? 'Settled' : 'Pending',
+      type: isBreakEven ? 'breakeven' : isProfit ? 'surplus_pending' : 'shortfall_pending',
+      action: isBreakEven ? 'Break-even Foreclosure' : 'Pending Settlement Decision',
+      amount: 0,
+      settlementAmount: 0,
+      shortfall: foreclosureCalc.shortfall,
+      profitLoss: profitLoss,
+      isProfit: isProfit,
+      isLoss: isLoss,
+      createdAt: timestamp,
+      notes: isBreakEven
+        ? 'Finalized at break-even (Total Foreclosure Cost matches Sale Amount)'
+        : 'Pending settlement decision in Sold Vehicles section',
+    };
+
+    const vehicleRefId = record.loanId || record.vehicleId || vehicle.regNo || '';
+
+    // 1. Vehicle Sale Lifecycle Entry
+    const saleHistoryEntry = {
+      vehicleId: vehicleRefId,
       fromStatus: currentStatus,
       toStatus: 'Sold',
       eventType: 'sale',
-      date: new Date().toISOString(),
+      date: timestamp,
       saleDate,
       salePrice: saleAmountNum,
       saleAmount: saleAmountNum,
-      vehicleExpenses: vehicleExpensesNum,
-      netSaleAmount: netSale,
+      vehicleExpenses: foreclosureCalc.vehicleExpenses,
+      totalForeclosureCost: cost,
+      profitLoss: profitLoss,
+      isProfit: foreclosureCalc.isProfit,
       buyerName: buyerName.trim(),
       buyerPhone: buyerPhone.trim(),
-      proceedsReceived: proceedsReceived ? Number(proceedsReceived) : netSale,
+      proceedsReceived: proceedsReceived ? Number(proceedsReceived) : saleAmountNum,
       notes: saleNotes.trim(),
-      reason: `Vehicle Sold for ₹${saleAmountNum.toLocaleString('en-IN')}`,
+      reason: `Vehicle Sold for ₹${saleAmountNum.toLocaleString('en-IN')} (Total Foreclosure Cost: ₹${Math.round(cost).toLocaleString('en-IN')})`,
+      performedBy: 'Admin',
+    };
+
+    // 2. Foreclosure Finalized Lifecycle Entry
+    const foreclosureHistoryEntry = {
+      vehicleId: vehicleRefId,
+      toStatus: 'Foreclosed',
+      eventType: 'foreclosure_completed',
+      date: new Date(Date.now() + 1000).toISOString(),
+      reason: `Foreclosure Finalized & Loan Account Closed. Status: Foreclosed. Profit/Loss: ${profitLoss >= 0 ? '+' : ''}₹${Math.round(profitLoss).toLocaleString('en-IN')}`,
+      totalCost: cost,
+      salePrice: saleAmountNum,
+      netSettlement: 0,
       performedBy: 'Admin',
     };
 
@@ -406,12 +532,30 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
       const currentHist = Array.isArray(entry.statusHistory)
         ? entry.statusHistory
         : (Array.isArray(entry.vehicle?.statusHistory) ? entry.vehicle.statusHistory : []);
-      const updatedHist = [...currentHist, newHistoryEntry];
+      const updatedHist = [...currentHist, saleHistoryEntry, foreclosureHistoryEntry];
 
       return {
         ...entry,
+        status: 'Foreclosed',
+        isForeclosed: true,
         vehicleStatus: 'Sold',
         statusHistory: updatedHist,
+        loan: {
+          ...(entry.loan || {}),
+          status: 'Foreclosed',
+          isForeclosed: true,
+          closedDate: saleDate,
+        },
+        foreclosure: {
+          completedAt: timestamp,
+          saleDate,
+          salePrice: saleAmountNum,
+          finalizedCalculation: foreclosureCalc,
+          settlement: settlementObj,
+          buyerName: buyerName.trim(),
+          buyerPhone: buyerPhone.trim(),
+          notes: saleNotes.trim(),
+        },
         vehicle: {
           ...(entry.vehicle || {}),
           status: 'Sold',
@@ -420,32 +564,334 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
             saleDate,
             salePrice: saleAmountNum,
             saleAmount: saleAmountNum,
-            vehicleExpenses: vehicleExpensesNum,
-            netSaleAmount: netSale,
+            vehicleExpenses: foreclosureCalc.vehicleExpenses,
+            netSaleAmount: Math.max(0, saleAmountNum - foreclosureCalc.vehicleExpenses),
             buyerName: buyerName.trim(),
             buyerPhone: buyerPhone.trim(),
-            proceedsReceived: proceedsReceived ? Number(proceedsReceived) : netSale,
+            proceedsReceived: proceedsReceived ? Number(proceedsReceived) : saleAmountNum,
             notes: saleNotes.trim(),
-            recordedAt: new Date().toISOString(),
+            recordedAt: timestamp,
           },
-          // Preserve existing seizure details
           seizureDetails: entry.vehicle?.seizureDetails || entry.seizureDetails,
         },
       };
     });
 
-    // Synchronize Vehicle Sale Income & Vehicle Expenses in Ledger
+    // 1. Synchronize Vehicle Sale Income in Ledger
     syncVehicleSaleAccounting({
       record,
       saleDate,
       salePrice: saleAmountNum,
-      vehicleExpenses: vehicleExpensesNum,
+      vehicleExpenses: foreclosureCalc.vehicleExpenses,
       buyerName: buyerName.trim(),
       buyerPhone: buyerPhone.trim(),
       saleNotes: saleNotes.trim(),
     });
 
+    // DO NOT call syncForeclosureSettlementAccounting here! Settlement decisions are made later in Sold Vehicles view.
+
     setActiveModal(null);
+  };
+
+  // -------------------------------------------------------------
+  // POST-SALE SETTLEMENT & RECOVERY HANDLERS (Sold Vehicles View)
+  // -------------------------------------------------------------
+
+  // 1. Collect Shortfall from Customer
+  const handleConfirmRecovery = (recoveryAmount, notes = '') => {
+    setSettlementActionError('');
+    const fData = record.foreclosure || {};
+    const calc = fData.finalizedCalculation || {};
+    const shortfall = Number(calc.shortfall !== undefined ? calc.shortfall : Math.abs(calc.profitLoss || 0));
+    const numAmt = Math.round(Number(recoveryAmount) || 0);
+
+    if (numAmt <= 0) {
+      setSettlementActionError('Please enter a valid amount greater than ₹0.');
+      return;
+    }
+    if (numAmt > shortfall) {
+      setSettlementActionError(`Amount collected cannot exceed total shortfall of ₹${shortfall.toLocaleString('en-IN')}.`);
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    const settlementObj = {
+      type: 'recovery',
+      action: 'Shortfall Collected from Customer',
+      amount: numAmt,
+      settlementAmount: numAmt,
+      shortfall,
+      profitLoss: calc.profitLoss,
+      status: 'Completed',
+      timestamp,
+      notes: notes.trim() || `Shortfall of ₹${numAmt.toLocaleString('en-IN')} collected from customer (Total shortfall: ₹${shortfall.toLocaleString('en-IN')})`,
+    };
+
+    const vehicleRefId = record.loanId || record.vehicleId || record.vehicle?.regNo || '';
+    const historyEntry = {
+      vehicleId: vehicleRefId,
+      eventType: 'settlement',
+      date: timestamp,
+      settlementType: 'recovery',
+      amount: numAmt,
+      status: 'Completed',
+      notes: settlementObj.notes,
+      reason: settlementObj.action,
+      performedBy: 'Admin',
+    };
+
+    updateVehicleInStorage((entry) => {
+      const currentHist = Array.isArray(entry.statusHistory)
+        ? entry.statusHistory
+        : (Array.isArray(entry.vehicle?.statusHistory) ? entry.vehicle.statusHistory : []);
+      const updatedHist = [...currentHist, historyEntry];
+
+      return {
+        ...entry,
+        statusHistory: updatedHist,
+        foreclosure: {
+          ...(entry.foreclosure || {}),
+          settlement: settlementObj,
+        },
+        vehicle: {
+          ...(entry.vehicle || {}),
+          statusHistory: updatedHist,
+        },
+      };
+    });
+
+    // Record Income in Ledger only after explicit confirmation
+    syncForeclosureSettlementAccounting({
+      record,
+      settlement: settlementObj,
+      saleDate: fData.saleDate || new Date().toISOString().split('T')[0],
+    });
+
+    setIsModifyingSettlement(false);
+    setSettlementMode('');
+    setSettlementAmountInput('');
+    setSettlementNotesInput('');
+    setSettlementSuccessAlert(`Shortfall collection of ₹${numAmt.toLocaleString('en-IN')} confirmed and recorded as Income in Ledger (INC-RECOVERY-${record.loanId || 'VEH'}).`);
+    setTimeout(() => setSettlementSuccessAlert(''), 6000);
+  };
+
+  // 2. Do Not Collect from Customer
+  const handleConfirmLossWaiver = (notes = '') => {
+    setSettlementActionError('');
+    const fData = record.foreclosure || {};
+    const calc = fData.finalizedCalculation || {};
+    const shortfall = Number(calc.shortfall !== undefined ? calc.shortfall : Math.abs(calc.profitLoss || 0));
+    const timestamp = new Date().toISOString();
+
+    const settlementObj = {
+      type: 'waiver',
+      action: 'Do Not Collect from Customer',
+      amount: 0,
+      settlementAmount: 0,
+      shortfall,
+      profitLoss: calc.profitLoss,
+      status: 'Waived',
+      timestamp,
+      recoveryWaivedAt: timestamp,
+      notes: notes.trim() || `Shortfall of ₹${shortfall.toLocaleString('en-IN')} will not be collected from customer. No income transaction created.`,
+    };
+
+    const vehicleRefId = record.loanId || record.vehicleId || record.vehicle?.regNo || '';
+    const historyEntry = {
+      vehicleId: vehicleRefId,
+      eventType: 'settlement',
+      date: timestamp,
+      settlementType: 'waiver',
+      amount: 0,
+      status: 'Waived',
+      notes: settlementObj.notes,
+      reason: settlementObj.action,
+      performedBy: 'Admin',
+    };
+
+    updateVehicleInStorage((entry) => {
+      const currentHist = Array.isArray(entry.statusHistory)
+        ? entry.statusHistory
+        : (Array.isArray(entry.vehicle?.statusHistory) ? entry.vehicle.statusHistory : []);
+      const updatedHist = [...currentHist, historyEntry];
+
+      return {
+        ...entry,
+        statusHistory: updatedHist,
+        foreclosure: {
+          ...(entry.foreclosure || {}),
+          settlement: settlementObj,
+        },
+        vehicle: {
+          ...(entry.vehicle || {}),
+          statusHistory: updatedHist,
+        },
+      };
+    });
+
+    // Waivers create NO financial transaction in Ledger
+    syncForeclosureSettlementAccounting({
+      record,
+      settlement: settlementObj,
+      saleDate: fData.saleDate || new Date().toISOString().split('T')[0],
+    });
+
+    setIsModifyingSettlement(false);
+    setSettlementMode('');
+    setSettlementAmountInput('');
+    setSettlementNotesInput('');
+    setSettlementSuccessAlert(`Decision confirmed: Shortfall will not be collected from customer. Vehicle history updated without creating any Ledger financial transaction.`);
+    setTimeout(() => setSettlementSuccessAlert(''), 6000);
+  };
+
+  // 3. Confirm Customer Profit Payment
+  const handleConfirmProfitPayout = (payoutAmount, notes = '') => {
+    setSettlementActionError('');
+    const fData = record.foreclosure || {};
+    const calc = fData.finalizedCalculation || {};
+    const profitLoss = Number(calc.profitLoss || 0);
+    const numAmt = Math.round(Number(payoutAmount) || 0);
+
+    if (numAmt <= 0) {
+      setSettlementActionError('Please enter a valid payout amount greater than ₹0.');
+      return;
+    }
+    if (numAmt > profitLoss) {
+      setSettlementActionError(`Payment amount cannot exceed total profit surplus of ₹${profitLoss.toLocaleString('en-IN')}.`);
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    const settlementObj = {
+      type: 'payout',
+      action: 'Customer Profit Paid',
+      amount: numAmt,
+      settlementAmount: numAmt,
+      profitLoss,
+      status: 'Completed',
+      timestamp,
+      notes: notes.trim() || `Customer profit payment of ₹${numAmt.toLocaleString('en-IN')} paid to customer from vehicle sale profit of ₹${profitLoss.toLocaleString('en-IN')}`,
+    };
+
+    const vehicleRefId = record.loanId || record.vehicleId || record.vehicle?.regNo || '';
+    const historyEntry = {
+      vehicleId: vehicleRefId,
+      eventType: 'settlement',
+      date: timestamp,
+      settlementType: 'payout',
+      amount: numAmt,
+      status: 'Completed',
+      notes: settlementObj.notes,
+      reason: settlementObj.action,
+      performedBy: 'Admin',
+    };
+
+    updateVehicleInStorage((entry) => {
+      const currentHist = Array.isArray(entry.statusHistory)
+        ? entry.statusHistory
+        : (Array.isArray(entry.vehicle?.statusHistory) ? entry.vehicle.statusHistory : []);
+      const updatedHist = [...currentHist, historyEntry];
+
+      return {
+        ...entry,
+        statusHistory: updatedHist,
+        foreclosure: {
+          ...(entry.foreclosure || {}),
+          settlement: settlementObj,
+        },
+        vehicle: {
+          ...(entry.vehicle || {}),
+          statusHistory: updatedHist,
+        },
+      };
+    });
+
+    // Record Expense in Ledger only after explicit confirmation
+    syncForeclosureSettlementAccounting({
+      record,
+      settlement: settlementObj,
+      saleDate: fData.saleDate || new Date().toISOString().split('T')[0],
+    });
+
+    setIsModifyingSettlement(false);
+    setSettlementMode('');
+    setSettlementAmountInput('');
+    setSettlementNotesInput('');
+    setSettlementSuccessAlert(`Customer profit payment of ₹${numAmt.toLocaleString('en-IN')} confirmed and recorded as Expense in Ledger (EXP-PAYOUT-${record.loanId || 'VEH'}).`);
+    setTimeout(() => setSettlementSuccessAlert(''), 6000);
+  };
+
+  // 4. Do Not Pay Customer Profit (Profit Retained / Waived)
+  const handleConfirmRetainProfit = (notes = '') => {
+    handleConfirmProfitWaiver(notes);
+  };
+
+  // 5. Do Not Pay Customer Profit
+  const handleConfirmProfitWaiver = (notes = '') => {
+    setSettlementActionError('');
+    const fData = record.foreclosure || {};
+    const calc = fData.finalizedCalculation || {};
+    const profitLoss = Number(calc.profitLoss || 0);
+    const timestamp = new Date().toISOString();
+
+    const settlementObj = {
+      type: 'waiver',
+      action: 'Do Not Pay Customer Profit',
+      amount: 0,
+      settlementAmount: 0,
+      profitLoss,
+      status: 'Waived',
+      timestamp,
+      settlementWaivedAt: timestamp,
+      notes: notes.trim() || `Customer profit of ₹${profitLoss.toLocaleString('en-IN')} will not be paid to customer. No expense transaction created.`,
+    };
+
+    const vehicleRefId = record.loanId || record.vehicleId || record.vehicle?.regNo || '';
+    const historyEntry = {
+      vehicleId: vehicleRefId,
+      eventType: 'settlement',
+      date: timestamp,
+      settlementType: 'waiver',
+      amount: 0,
+      status: 'Waived',
+      notes: settlementObj.notes,
+      reason: settlementObj.action,
+      performedBy: 'Admin',
+    };
+
+    updateVehicleInStorage((entry) => {
+      const currentHist = Array.isArray(entry.statusHistory)
+        ? entry.statusHistory
+        : (Array.isArray(entry.vehicle?.statusHistory) ? entry.vehicle.statusHistory : []);
+      const updatedHist = [...currentHist, historyEntry];
+
+      return {
+        ...entry,
+        statusHistory: updatedHist,
+        foreclosure: {
+          ...(entry.foreclosure || {}),
+          settlement: settlementObj,
+        },
+        vehicle: {
+          ...(entry.vehicle || {}),
+          statusHistory: updatedHist,
+        },
+      };
+    });
+
+    // Waivers create NO payment transaction
+    syncForeclosureSettlementAccounting({
+      record,
+      settlement: settlementObj,
+      saleDate: fData.saleDate || new Date().toISOString().split('T')[0],
+    });
+
+    setIsModifyingSettlement(false);
+    setSettlementMode('');
+    setSettlementAmountInput('');
+    setSettlementNotesInput('');
+    setSettlementSuccessAlert(`Decision confirmed: Customer profit will not be paid. Vehicle history updated without creating any Ledger financial transaction.`);
+    setTimeout(() => setSettlementSuccessAlert(''), 6000);
   };
 
   return (
@@ -465,16 +911,23 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-500">Current Status:</span>
           <span
-            className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-2xs ${
-              STATUS_BADGES[currentStatus] || STATUS_BADGES.Active
-            }`}
+            className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-2xs ${STATUS_BADGES[currentStatus] || STATUS_BADGES.Active
+              }`}
           >
             {currentStatus}
           </span>
           <button
             type="button"
+            onClick={() => onViewExpenseHistory && onViewExpenseHistory(record)}
+            className="ml-1 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-emerald-600/30 bg-emerald-50/50 hover:bg-emerald-100/70 text-[#006052] text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+          >
+            <Receipt className="h-3.5 w-3.5" />
+            <span>Expense History</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveModal('history')}
-            className="ml-1 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-[#006052] bg-white hover:bg-emerald-50/70 text-[#006052] text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-[#006052] bg-white hover:bg-emerald-50/70 text-[#006052] text-xs font-bold shadow-2xs transition-colors cursor-pointer"
           >
             <History className="h-3.5 w-3.5" />
             <span>View Status History</span>
@@ -533,9 +986,8 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
               {regNo}
             </h1>
             <span
-              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold shadow-2xs ${
-                STATUS_BADGES[currentStatus] || STATUS_BADGES.Seized
-              }`}
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold shadow-2xs ${STATUS_BADGES[currentStatus] || STATUS_BADGES.Seized
+                }`}
             >
               {currentStatus}
             </span>
@@ -578,6 +1030,944 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
           </div>
         </div>
       </div>
+
+      {/* =========================================================
+          FORECLOSURE & VEHICLE SALE SETTLEMENT (For Sold / Foreclosed)
+      ========================================================= */}
+      {(currentStatus === 'Sold' || record?.status === 'Foreclosed' || record?.isForeclosed) && (() => {
+        const fData = record.foreclosure || {};
+        const saleDetails = record.vehicle?.saleDetails || record.saleDetails || {};
+        const calc = fData.finalizedCalculation || {};
+        const saleAmt = Number(fData.salePrice || saleDetails.salePrice || saleDetails.saleAmount || 0);
+        const totalCost = Number(calc.totalForeclosureCost !== undefined ? calc.totalForeclosureCost : (Number(saleDetails.vehicleExpenses || 0) + Number(loanOutstandingInfo?.outstandingAmount || 0)));
+        const profitLoss = calc.profitLoss !== undefined ? Number(calc.profitLoss) : (saleAmt - totalCost);
+        const isProfit = profitLoss > 0;
+        const isLoss = profitLoss < 0;
+        const isBreakEven = profitLoss === 0;
+        const shortfall = calc.shortfall !== undefined ? Number(calc.shortfall) : Math.abs(profitLoss);
+        const settlement = fData.settlement || {};
+
+        // Total Outstanding strictly from outstanding loan balance at sale (principal + unpaid interest)
+        const totalOutstanding = (calc.outstandingPrincipal !== undefined && calc.unpaidInterest !== undefined)
+          ? (Number(calc.outstandingPrincipal) + Number(calc.unpaidInterest))
+          : (calc.components?.outstandingPrincipalAndInterest?.total !== undefined)
+            ? Number(calc.components.outstandingPrincipalAndInterest.total)
+            : (loanOutstandingInfo?.outstandingAmount !== undefined)
+              ? Number(loanOutstandingInfo.outstandingAmount)
+              : (Number(calc.outstandingPrincipal || 0) + Number(calc.unpaidInterest || 0));
+
+        const loanId = record.loanId || 'VEH';
+        const saleTxId = `INC-SALE-${loanId}`;
+        const recoveryTxId = `INC-RECOVERY-${loanId}`;
+        const payoutTxId = `EXP-PAYOUT-${loanId}`;
+
+        return (
+          <div className="flex flex-col lg:flex-row items-start gap-4 lg:gap-5 w-full">
+            {/* =========================================================
+                LEFT COLUMN (~52% width)
+                1. Foreclosure Summary (2x2 KPI grid)
+                2. Sale Details (2-column info grid)
+            ========================================================= */}
+            <div className="w-full lg:w-[52%] space-y-4">
+              {/* 1. FORECLOSURE SUMMARY */}
+              <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Scale className="h-4 w-4 text-[#006052]" />
+                    <h2 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">
+                      Foreclosure Summary
+                    </h2>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
+                    Foreclosed
+                  </span>
+                </div>
+
+                <div className="p-3.5 sm:p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* KPI 1: Vehicle Sale Amount */}
+                    <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col justify-between min-h-[96px]">
+                      <span className="text-xs font-semibold text-slate-500">Vehicle Sale Amount</span>
+                      <p className="text-lg sm:text-xl font-bold text-slate-900 mt-1">
+                        {formatCurrency(saleAmt)}
+                      </p>
+                      <span className="text-[11px] text-slate-500 mt-1">
+                        Recorded as Ledger Income
+                      </span>
+                    </div>
+
+                    {/* KPI 2: Total Outstanding (Replaces Total Foreclosure Cost label) */}
+                    <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col justify-between min-h-[96px]">
+                      <span className="text-xs font-semibold text-slate-500">Total Outstanding</span>
+                      <p className="text-lg sm:text-xl font-bold text-slate-900 mt-1">
+                        {formatCurrency(totalOutstanding)}
+                      </p>
+                      <span className="text-[11px] text-slate-500 mt-1">
+                        Principal + Unpaid Interest at sale
+                      </span>
+                    </div>
+
+                    {/* KPI 3: Foreclosure Profit / Loss */}
+                    <div
+                      className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[96px] ${
+                        isProfit
+                          ? 'bg-emerald-50/80 border-emerald-200'
+                          : isLoss
+                            ? 'bg-red-50/80 border-red-200'
+                            : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <span
+                        className={`text-xs font-bold ${
+                          isProfit ? 'text-emerald-800' : isLoss ? 'text-red-800' : 'text-slate-600'
+                        }`}
+                      >
+                        {isProfit ? 'Foreclosure Profit' : isLoss ? 'Foreclosure Shortfall' : 'Break-even'}
+                      </span>
+                      <p
+                        className={`text-lg sm:text-xl font-extrabold mt-1 ${
+                          isProfit ? 'text-emerald-700' : isLoss ? 'text-red-700' : 'text-slate-800'
+                        }`}
+                      >
+                        {isProfit ? `+${formatCurrency(profitLoss)}` : isLoss ? `-${formatCurrency(shortfall)}` : '₹0'}
+                      </p>
+                      <span
+                        className={`text-[11px] font-medium mt-1 ${
+                          isProfit ? 'text-emerald-700' : isLoss ? 'text-red-700' : 'text-slate-500'
+                        }`}
+                      >
+                        {isProfit ? 'Surplus from vehicle sale' : isLoss ? 'Unrecovered shortfall' : 'Sale matched costs'}
+                      </span>
+                    </div>
+
+                    {/* KPI 4: Customer Settlement */}
+                    <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/60 flex flex-col justify-between min-h-[96px]">
+                      <span className="text-xs font-bold text-purple-900">Customer Settlement</span>
+                      <p className="text-sm sm:text-base font-bold text-purple-950 mt-1 truncate">
+                        {settlement.type === 'payout'
+                          ? `Paid: ${formatCurrency(settlement.amount)}`
+                          : settlement.type === 'recovery'
+                            ? `Collected: ${formatCurrency(settlement.amount)}`
+                            : settlement.type === 'waiver'
+                              ? (isLoss ? 'Not Collected' : 'Not Paid')
+                              : settlement.type === 'retained'
+                                ? 'Not Paid'
+                                : settlement.status || (isBreakEven ? 'Break-Even' : 'Pending Settlement')}
+                      </p>
+                      <span className="text-[11px] text-purple-800 mt-1 truncate">
+                        {settlement.notes || (settlement.status ? `Status: ${settlement.status}` : 'Pending settlement decision')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. SALE DETAILS */}
+              <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-[#006052]" />
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                      Sale Details
+                    </h3>
+                  </div>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Finalized Transaction Info
+                  </span>
+                </div>
+
+                <div className="p-4 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Sale Date</span>
+                      <span className="font-bold text-slate-800">{formatDate(fData.saleDate || saleDetails.saleDate)}</span>
+                    </div>
+                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Buyer Name</span>
+                      <span className="font-bold text-slate-800 truncate max-w-[150px] text-right">{fData.buyerName || saleDetails.buyerName || 'Direct Sale / Auction'}</span>
+                    </div>
+                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Buyer Mobile</span>
+                      <span className="font-bold text-slate-800">{fData.buyerPhone || saleDetails.buyerPhone || 'Not recorded'}</span>
+                    </div>
+                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Loan Account Status</span>
+                      <span className="font-bold text-purple-700">Foreclosed (Account Closed)</span>
+                    </div>
+                  </div>
+
+                  {/* Optional Sale Notes */}
+                  {(fData.notes || saleDetails.notes) && (
+                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 text-xs text-slate-700">
+                      <span className="font-semibold text-slate-600 block text-[11px] mb-0.5">Sale Notes:</span>
+                      <p className="text-slate-700 text-xs leading-relaxed">{fData.notes || saleDetails.notes}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* =========================================================
+                RIGHT COLUMN (~48% width)
+                1. Settlement & Recovery
+                2. Cost Breakdown (collapsed by default)
+                3. Accounting & Ledger Transaction References
+            ========================================================= */}
+            <div className="w-full lg:w-[48%] space-y-4">
+              {/* 1. SETTLEMENT & RECOVERY */}
+              <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Coins className="h-4 w-4 text-[#006052]" />
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                      Settlement &amp; Recovery
+                    </h3>
+                  </div>
+
+                  {/* Settlement Status Badge */}
+                  <div>
+                    {settlement.status === 'Completed' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>
+                          {settlement.type === 'payout'
+                            ? `Paid: ${formatCurrency(settlement.amount)}`
+                            : settlement.type === 'recovery'
+                              ? `Collected: ${formatCurrency(settlement.amount)}`
+                              : 'Completed'}
+                        </span>
+                      </span>
+                    ) : settlement.status === 'Waived' || settlement.status === 'Retained' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                        <ShieldCheck className="h-3.5 w-3.5 text-purple-600" />
+                        <span>{isLoss ? 'Not Collected' : 'Not Paid'}</span>
+                      </span>
+                    ) : isBreakEven ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        <Scale className="h-3.5 w-3.5 text-slate-600" />
+                        <span>Break-Even</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                        <Clock className="h-3.5 w-3.5 text-amber-600" />
+                        <span>Pending Settlement</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-3.5">
+                  <p className="text-xs text-slate-500">
+                    {isLoss
+                      ? 'Manage shortfall recovery from customer or choose not to collect'
+                      : isProfit
+                        ? 'Manage customer profit payment or choose not to pay customer profit'
+                        : 'Foreclosure sale proceeds matched total foreclosure cost'}
+                  </p>
+
+                  {/* Feedback Messages */}
+                  {settlementSuccessAlert && (
+                    <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-center gap-2 animate-in fade-in duration-150">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <span>{settlementSuccessAlert}</span>
+                    </div>
+                  )}
+
+                  {settlementActionError && (
+                    <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-900 text-xs font-medium flex items-center gap-2 animate-in fade-in duration-150">
+                      <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+                      <span>{settlementActionError}</span>
+                    </div>
+                  )}
+
+                  {/* 1. LOSS SHORTFALL WORKFLOW */}
+                  {isLoss && (
+                    <div className="space-y-3.5">
+                      {/* Shortfall Summary Strip */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 bg-red-50/50 rounded-xl border border-red-200/80 text-xs">
+                        <div>
+                          <span className="text-slate-500 font-medium block">Total Shortfall (Loss):</span>
+                          <span className="text-sm sm:text-base font-extrabold text-red-700">
+                            {formatCurrency(shortfall)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 font-medium block">Amount Collected:</span>
+                          <span className="text-sm sm:text-base font-extrabold text-slate-800">
+                            {formatCurrency(settlement.type === 'recovery' ? settlement.amount : 0)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 font-medium block">Outstanding Shortfall:</span>
+                          <span className="text-sm sm:text-base font-extrabold text-red-800">
+                            {formatCurrency(
+                              Math.max(
+                                0,
+                                shortfall - (settlement.type === 'recovery' ? Number(settlement.amount || 0) : 0)
+                              )
+                            )}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* If already settled & not editing, show resolved view */}
+                      {(settlement.status === 'Completed' || settlement.status === 'Waived' || settlement.status === 'Retained') && !isModifyingSettlement ? (
+                        <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              <span className="font-bold text-slate-900">
+                                {settlement.status === 'Completed'
+                                  ? `Shortfall Collected from Customer: ${formatCurrency(settlement.amount)} Recorded in Ledger`
+                                  : 'Do Not Collect from Customer: Shortfall Not Collected'}
+                              </span>
+                            </div>
+                            <p className="text-slate-500">
+                              {settlement.notes}
+                            </p>
+                            {settlement.timestamp && (
+                              <p className="text-[11px] text-slate-400">
+                                Recorded on {formatDate(settlement.timestamp)} • Ledger Reference: {settlement.type === 'recovery' ? `INC-RECOVERY-${record.loanId || 'VEH'}` : 'None (No income transaction)'}
+                              </p>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsModifyingSettlement(true);
+                              setSettlementMode(settlement.type === 'recovery' ? 'recovery' : 'waive_loss');
+                              setSettlementAmountInput(settlement.amount ? String(settlement.amount) : '');
+                              setSettlementNotesInput(settlement.notes || '');
+                            }}
+                            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold cursor-pointer shrink-0"
+                          >
+                            Modify Settlement
+                          </button>
+                        </div>
+                      ) : (
+                        /* Interactive Action Section for Loss */
+                        <div className="space-y-3 pt-1">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {/* Option 1: Collect Shortfall from Customer */}
+                            <label
+                              className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-1.5 text-xs ${(settlementMode || 'recovery') === 'recovery'
+                                  ? 'bg-red-50/40 border-red-500 ring-2 ring-red-500/20'
+                                  : 'bg-white border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="radio"
+                                  name="lossSettlementMode"
+                                  value="recovery"
+                                  checked={(settlementMode || 'recovery') === 'recovery'}
+                                  onChange={() => setSettlementMode('recovery')}
+                                  className="text-red-600 focus:ring-red-500"
+                                />
+                                <span className="font-bold text-slate-900">Collect Shortfall from Customer</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 font-normal">
+                                Record the amount actually received from the customer as income in the Ledger.
+                              </p>
+                            </label>
+
+                            {/* Option 2: Do Not Collect from Customer */}
+                            <label
+                              className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-1.5 text-xs ${settlementMode === 'waive_loss'
+                                  ? 'bg-purple-50/40 border-purple-500 ring-2 ring-purple-500/20'
+                                  : 'bg-white border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="radio"
+                                  name="lossSettlementMode"
+                                  value="waive_loss"
+                                  checked={settlementMode === 'waive_loss'}
+                                  onChange={() => setSettlementMode('waive_loss')}
+                                  className="text-purple-600 focus:ring-purple-500"
+                                />
+                                <span className="font-bold text-slate-900">Do Not Collect from Customer</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 font-normal">
+                                The company will not collect the remaining shortfall from the customer. No income transaction will be created.
+                              </p>
+                            </label>
+                          </div>
+
+                          {/* Option 1 Sub-form: Collect Shortfall from Customer */}
+                          {(settlementMode || 'recovery') === 'recovery' && (
+                            <div className="p-3.5 rounded-xl border border-red-200 bg-red-50/20 space-y-3 text-xs animate-in fade-in duration-150">
+                              <div>
+                                <label className="block font-semibold text-slate-700 mb-1">
+                                  Amount Collected from Customer (₹) <span className="text-red-500">*</span>
+                                </label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max={shortfall}
+                                    step="any"
+                                    value={settlementAmountInput !== '' ? settlementAmountInput : shortfall}
+                                    onChange={(e) => setSettlementAmountInput(e.target.value)}
+                                    placeholder={`Up to ${shortfall}`}
+                                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-xs"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setSettlementAmountInput(String(Math.round(shortfall)))}
+                                    className="px-2.5 py-1.5 rounded-lg border border-red-300 bg-red-50 text-red-800 text-xs font-bold hover:bg-red-100 whitespace-nowrap cursor-pointer"
+                                  >
+                                    Full Shortfall
+                                  </button>
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-1">
+                                  Record the amount actually received from the customer as income in the Ledger. Maximum recoverable shortfall: {formatCurrency(shortfall)}.
+                                </p>
+                              </div>
+
+                              <div>
+                                <label className="block font-semibold text-slate-700 mb-1">
+                                  Recovery Notes <span className="text-slate-400 font-normal">(Optional)</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  value={settlementNotesInput}
+                                  onChange={(e) => setSettlementNotesInput(e.target.value)}
+                                  placeholder="Cash receipt number, UPI ref, customer acknowledgment..."
+                                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-xs"
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1">
+                                {isModifyingSettlement ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsModifyingSettlement(false)}
+                                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs cursor-pointer"
+                                  >
+                                    Cancel Editing
+                                  </button>
+                                ) : <div />}
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleConfirmRecovery(
+                                      settlementAmountInput !== '' ? settlementAmountInput : shortfall,
+                                      settlementNotesInput
+                                    )
+                                  }
+                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-700 hover:bg-red-800 text-white font-bold text-xs shadow-2xs transition-colors cursor-pointer"
+                                >
+                                  <Check className="h-4 w-4" />
+                                  <span>
+                                    Collect Shortfall from Customer ({formatCurrency(Number(settlementAmountInput !== '' ? settlementAmountInput : shortfall) || 0)})
+                                  </span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Option 2 Sub-form: Do Not Collect from Customer */}
+                          {settlementMode === 'waive_loss' && (
+                            <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/20 space-y-3 text-xs animate-in fade-in duration-150">
+                              <div className="p-2.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-xs">
+                                <span className="font-bold block mb-0.5">Do Not Collect from Customer Confirmation:</span>
+                                The company will not collect the remaining shortfall of {formatCurrency(shortfall)} from the customer. No income transaction will be created.
+                              </div>
+
+                              <div>
+                                <label className="block font-semibold text-slate-700 mb-1">
+                                  Notes / Reason <span className="text-slate-400 font-normal">(Optional)</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  value={settlementNotesInput}
+                                  onChange={(e) => setSettlementNotesInput(e.target.value)}
+                                  placeholder="Management approval, reason for non-collection..."
+                                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 text-xs"
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1">
+                                {isModifyingSettlement ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsModifyingSettlement(false)}
+                                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs cursor-pointer"
+                                  >
+                                    Cancel Editing
+                                  </button>
+                                ) : <div />}
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmLossWaiver(settlementNotesInput)}
+                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-2xs transition-colors cursor-pointer"
+                                >
+                                  <ShieldCheck className="h-4 w-4" />
+                                  <span>Confirm Do Not Collect from Customer</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 2. PROFIT SURPLUS WORKFLOW */}
+                  {isProfit && (
+                    <div className="space-y-3.5">
+                      {/* Surplus Summary Strip */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 bg-emerald-50/50 rounded-xl border border-emerald-200/80 text-xs">
+                        <div>
+                          <span className="text-slate-500 font-medium block">Total Sale Surplus:</span>
+                          <span className="text-sm sm:text-base font-extrabold text-emerald-800">
+                            +{formatCurrency(profitLoss)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 font-medium block">Customer Profit Payment:</span>
+                          <span className="text-sm sm:text-base font-extrabold text-slate-800">
+                            {formatCurrency(settlement.type === 'payout' ? settlement.amount : 0)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 font-medium block">Profit Retained:</span>
+                          <span className="text-sm sm:text-base font-extrabold text-[#006052]">
+                            {settlement.type === 'payout'
+                              ? formatCurrency(Math.max(0, profitLoss - Number(settlement.amount || 0)))
+                              : formatCurrency(profitLoss)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* If already settled & not editing, show resolved view */}
+                      {(settlement.status === 'Completed' || settlement.status === 'Waived' || settlement.status === 'Retained') && !isModifyingSettlement ? (
+                        <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              <span className="font-bold text-slate-900">
+                                {settlement.status === 'Completed'
+                                  ? `Customer Profit Payment Finalized: ${formatCurrency(settlement.amount)} Recorded as Expense in Ledger`
+                                  : 'Do Not Pay Customer Profit (No Expense Recorded)'}
+                              </span>
+                            </div>
+                            <p className="text-slate-500">
+                              {settlement.notes}
+                            </p>
+                            {settlement.timestamp && (
+                              <p className="text-[11px] text-slate-400">
+                                Recorded on {formatDate(settlement.timestamp)} • Ledger Reference: {settlement.type === 'payout' ? `EXP-PAYOUT-${record.loanId || 'VEH'}` : 'None (No expense transaction)'}
+                              </p>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsModifyingSettlement(true);
+                              setSettlementMode(settlement.type === 'payout' ? 'payout' : 'waive_profit');
+                              setSettlementAmountInput(settlement.amount ? String(settlement.amount) : '');
+                              setSettlementNotesInput(settlement.notes || '');
+                            }}
+                            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold cursor-pointer shrink-0"
+                          >
+                            Modify Settlement
+                          </button>
+                        </div>
+                      ) : (
+                        /* Interactive Action Section for Profit */
+                        <div className="space-y-3 pt-1">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {/* Option 1: Customer Profit Payment */}
+                            <label
+                              className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-1.5 text-xs ${(settlementMode || 'payout') === 'payout'
+                                  ? 'bg-emerald-50/40 border-[#006052] ring-2 ring-[#006052]/20 font-semibold'
+                                  : 'bg-white border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="radio"
+                                  name="profitSettlementMode"
+                                  value="payout"
+                                  checked={(settlementMode || 'payout') === 'payout'}
+                                  onChange={() => setSettlementMode('payout')}
+                                  className="text-[#006052] focus:ring-[#006052]"
+                                />
+                                <span className="font-bold text-slate-900">Pay Customer Profit</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 font-normal">
+                                Pay the agreed amount to the customer and record the actual payment as an expense in the Ledger.
+                              </p>
+                            </label>
+
+                            {/* Option 2: Do Not Pay Customer Profit */}
+                            <label
+                              className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-1.5 text-xs ${settlementMode === 'waive_profit'
+                                  ? 'bg-purple-50/40 border-purple-500 ring-2 ring-purple-500/20 font-semibold'
+                                  : 'bg-white border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="radio"
+                                  name="profitSettlementMode"
+                                  value="waive_profit"
+                                  checked={settlementMode === 'waive_profit'}
+                                  onChange={() => setSettlementMode('waive_profit')}
+                                  className="text-purple-600 focus:ring-purple-500"
+                                />
+                                <span className="font-bold text-slate-900">Do Not Pay Customer Profit</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 font-normal">
+                                The company will not pay the profit amount to the customer. No expense transaction will be created.
+                              </p>
+                            </label>
+                          </div>
+
+                          {/* Option 1 Sub-form: Pay Customer Profit */}
+                          {(settlementMode || 'payout') === 'payout' && (
+                            <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/20 space-y-3 text-xs animate-in fade-in duration-150">
+                              <div>
+                                <label className="block font-semibold text-slate-700 mb-1">
+                                  Amount to Pay Customer (₹) <span className="text-red-500">*</span>
+                                </label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max={profitLoss}
+                                    step="any"
+                                    value={settlementAmountInput !== '' ? settlementAmountInput : profitLoss}
+                                    onChange={(e) => setSettlementAmountInput(e.target.value)}
+                                    placeholder={`Up to ${profitLoss}`}
+                                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#006052]/20 focus:border-[#006052] text-xs"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setSettlementAmountInput(String(Math.round(profitLoss)))}
+                                    className="px-2.5 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold hover:bg-emerald-100 whitespace-nowrap cursor-pointer"
+                                  >
+                                    Full Surplus
+                                  </button>
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-1">
+                                  Pay the agreed amount to the customer and record the actual payment as an expense in the Ledger. Maximum payable profit: {formatCurrency(profitLoss)}.
+                                </p>
+                              </div>
+
+                              <div>
+                                <label className="block font-semibold text-slate-700 mb-1">
+                                  Payout Notes <span className="text-slate-400 font-normal">(Optional)</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  value={settlementNotesInput}
+                                  onChange={(e) => setSettlementNotesInput(e.target.value)}
+                                  placeholder="Disbursement voucher, bank transfer ID, customer receipt..."
+                                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#006052]/20 focus:border-[#006052] text-xs"
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1">
+                                {isModifyingSettlement ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsModifyingSettlement(false)}
+                                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs cursor-pointer"
+                                  >
+                                    Cancel Editing
+                                  </button>
+                                ) : <div />}
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleConfirmProfitPayout(
+                                      settlementAmountInput !== '' ? settlementAmountInput : profitLoss,
+                                      settlementNotesInput
+                                    )
+                                  }
+                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#006052] hover:bg-[#004d42] text-white font-bold text-xs shadow-2xs transition-colors cursor-pointer"
+                                >
+                                  <Check className="h-4 w-4" />
+                                  <span>
+                                    Pay Customer Profit ({formatCurrency(Number(settlementAmountInput !== '' ? settlementAmountInput : profitLoss) || 0)})
+                                  </span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Option 2 Sub-form: Do Not Pay Customer Profit */}
+                          {settlementMode === 'waive_profit' && (
+                            <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/20 space-y-3 text-xs animate-in fade-in duration-150">
+                              <div className="p-2.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-xs">
+                                <span className="font-bold block mb-0.5">Do Not Pay Customer Profit Confirmation:</span>
+                                The company will not pay the profit amount of {formatCurrency(profitLoss)} to the customer. No expense transaction will be created.
+                              </div>
+
+                              <div>
+                                <label className="block font-semibold text-slate-700 mb-1">
+                                  Notes / Reason <span className="text-slate-400 font-normal">(Optional)</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  value={settlementNotesInput}
+                                  onChange={(e) => setSettlementNotesInput(e.target.value)}
+                                  placeholder="Management approval, reason for non-payment..."
+                                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 text-xs"
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1">
+                                {isModifyingSettlement ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsModifyingSettlement(false)}
+                                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs cursor-pointer"
+                                  >
+                                    Cancel Editing
+                                  </button>
+                                ) : <div />}
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmProfitWaiver(settlementNotesInput)}
+                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-2xs transition-colors cursor-pointer"
+                                >
+                                  <ShieldCheck className="h-4 w-4" />
+                                  <span>Confirm Do Not Pay Customer Profit</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 3. BREAK-EVEN WORKFLOW */}
+                  {isBreakEven && (
+                    <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/60 text-xs text-blue-900 flex items-center gap-3">
+                      <Scale className="h-5 w-5 text-blue-700 shrink-0" />
+                      <div>
+                        <p className="font-bold">Foreclosure Break-Even Finalized</p>
+                        <p className="text-blue-800 mt-0.5">
+                          Sale proceeds match the foreclosure cost exactly ({formatCurrency(saleAmt)}). No customer payout or shortfall recovery is required.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 2. COST BREAKDOWN (COLLAPSED BY DEFAULT, MOVED TO RIGHT COLUMN) */}
+              <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowSoldCalcBreakdown((prev) => !prev)}
+                  className="w-full px-4 py-3 bg-slate-50/70 hover:bg-slate-100/70 flex items-center justify-between text-left transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <Calculator className="h-4 w-4 text-[#006052]" />
+                    <span className="text-xs sm:text-sm font-bold text-slate-900">
+                      Cost Breakdown
+                    </span>
+                    <span className="text-[11px] text-slate-500 font-normal hidden sm:inline">
+                      (Components contributing to Foreclosure Cost)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    <span>{showSoldCalcBreakdown ? 'Hide Breakdown' : 'View Breakdown'}</span>
+                    {showSoldCalcBreakdown ? (
+                      <ChevronUp className="h-3.5 w-3.5 text-slate-500" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
+                    )}
+                  </div>
+                </button>
+
+                {showSoldCalcBreakdown && (
+                  <div className="p-4 space-y-2.5 text-xs bg-white border-t border-slate-100 animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 text-xs font-bold text-slate-800">
+                      <span>Foreclosure Cost Breakdown (At Sale)</span>
+                      <span className="text-slate-500 font-normal">Component Contribution</span>
+                    </div>
+
+                    {/* Principal + Interest */}
+                    <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                      <div>
+                        <span className="font-semibold text-slate-800">
+                          Outstanding at Sale
+                        </span>
+                        <span className="block text-[11px] text-slate-500">
+                          Always included • Principal: {formatCurrency(calc.outstandingPrincipal || calc.components?.outstandingPrincipalAndInterest?.principal || 0)} + Unpaid Interest: {formatCurrency(calc.unpaidInterest || calc.components?.outstandingPrincipalAndInterest?.unpaidInterest || 0)}
+                        </span>
+                      </div>
+                      <span className="font-bold text-slate-900">
+                        {formatCurrency(
+                          (calc.outstandingPrincipal || calc.components?.outstandingPrincipalAndInterest?.principal || 0) +
+                          (calc.unpaidInterest || calc.components?.outstandingPrincipalAndInterest?.unpaidInterest || 0)
+                        )}
+                      </span>
+                    </div>
+
+                    {/* Vehicle Expenses */}
+                    {(calc.components?.vehicleExpenses?.enabled || Number(saleDetails.vehicleExpenses || 0) > 0) && (
+                      <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                        <div>
+                          <span className="font-semibold text-slate-800">Vehicle Expenses</span>
+                          <span className="block text-[11px] text-slate-500">
+                            Storage, towing, repairs, repossession charges
+                          </span>
+                        </div>
+                        <span className="font-bold text-slate-900">
+                          {formatCurrency(calc.vehicleExpenses !== undefined ? calc.vehicleExpenses : saleDetails.vehicleExpenses)}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Seized-Period Interest */}
+                    {calc.components?.seizedPeriodInterest?.enabled && (
+                      <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                        <div>
+                          <span className="font-semibold text-slate-800">Seized-Period Interest</span>
+                          <span className="block text-[11px] text-slate-500">
+                            Basis: {calc.components?.seizedPeriodInterest?.basis || 'Option A'}
+                            {calc.components?.seizedPeriodInterest?.details?.duration &&
+                              ` • ${calc.components.seizedPeriodInterest.details.duration} ${calc.components.seizedPeriodInterest.details.unit || 'Months'}`}
+                          </span>
+                        </div>
+                        <span className="font-bold text-slate-900">
+                          {formatCurrency(calc.seizedPeriodInterest || calc.components?.seizedPeriodInterest?.amount || 0)}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Applicable Penalty */}
+                    {(calc.components?.applicablePenalty?.enabled || Number(calc.penalty || 0) > 0) && (
+                      <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                        <div>
+                          <span className="font-semibold text-slate-800">Applicable Penalty</span>
+                          <span className="block text-[11px] text-slate-500">
+                            {calc.components?.applicablePenalty?.reason ||
+                              (Number(calc.penalty || 0) > 0
+                                ? 'Overdue penalty calculated per Penalty Settings'
+                                : 'No overdue penalty due or eligible')}
+                          </span>
+                        </div>
+                        <span className="font-bold text-slate-900">
+                          {formatCurrency(calc.penalty || 0)}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Total Cost Row */}
+                    <div className="flex items-center justify-between pt-2 text-slate-900 font-bold text-xs sm:text-sm">
+                      <span>Total Foreclosure Cost:</span>
+                      <span className="text-[#006052] font-extrabold">{formatCurrency(totalCost)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. ACCOUNTING & LEDGER TRANSACTION REFERENCES */}
+              <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileCheck className="h-4 w-4 text-[#006052]" />
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                      Accounting &amp; Ledger Transaction References
+                    </h3>
+                  </div>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Auditable Records
+                  </span>
+                </div>
+
+                <div className="p-3.5 sm:p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    {/* 1. Vehicle Sale Income */}
+                    <div className="p-3 bg-slate-50/70 rounded-lg border border-slate-200/80 shadow-2xs space-y-1 flex flex-col justify-between min-h-[96px]">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-slate-800">Vehicle Sale Proceeds</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            Ledger Income
+                          </span>
+                        </div>
+                        <p className="text-slate-600 font-medium">
+                          Ref: <code className="bg-white px-1 py-0.5 rounded text-[11px] font-mono font-bold text-slate-800 border border-slate-200">{saleTxId}</code>
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-200/60 mt-1">
+                        <span>Amount: <strong className="text-slate-800">{formatCurrency(saleAmt)}</strong></span>
+                        <span>{formatDate(fData.saleDate || saleDetails.saleDate)}</span>
+                      </div>
+                    </div>
+
+                    {/* 2. Foreclosure Settlement Transaction */}
+                    <div className="p-3 bg-slate-50/70 rounded-lg border border-slate-200/80 shadow-2xs space-y-1 flex flex-col justify-between min-h-[96px]">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-slate-800">Settlement Transaction</span>
+                          {settlement.status === 'Completed' ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                              {settlement.type === 'payout' ? 'Ledger Expense' : 'Ledger Income'}
+                            </span>
+                          ) : settlement.status === 'Waived' || settlement.status === 'Retained' ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                              {isLoss ? 'Do Not Collect' : 'Do Not Pay'}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+
+                        {settlement.status === 'Completed' ? (
+                          <p className="text-slate-600 font-medium">
+                            Ref: <code className="bg-white px-1 py-0.5 rounded text-[11px] font-mono font-bold text-slate-800 border border-slate-200">
+                              {settlement.type === 'payout' ? payoutTxId : recoveryTxId}
+                            </code>
+                          </p>
+                        ) : (
+                          <p className="text-slate-600 text-[11px] line-clamp-2">
+                            {settlement.notes || (isLoss ? 'Shortfall will not be collected. No income transaction.' : isProfit ? 'Profit will not be paid. No expense transaction.' : 'Pending decision.')}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-200/60 mt-1">
+                        {settlement.status === 'Completed' ? (
+                          <>
+                            <span>
+                              {settlement.type === 'payout' ? 'Paid: ' : 'Collected: '}
+                              <strong className="text-slate-800">{formatCurrency(settlement.amount)}</strong>
+                            </span>
+                            <span>{formatDate(settlement.timestamp)}</span>
+                          </>
+                        ) : (
+                          <span className="text-slate-400">No financial entries created</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
 
       {/* =========================================================
           2 & 3. SEIZURE DETAILS & OVERDUE SECTION (For Seized Status)
@@ -730,9 +2120,11 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
 
       {/* =========================================================
           5. VEHICLE STATUS HISTORY (Chronological Timeline)
+          Hidden from main page on Sold Vehicles per redesign
       ========================================================= */}
-      <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
-        <div className="px-5 sm:px-6 py-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3 font-bold text-slate-900 text-sm">
+      {!isSold && (
+        <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+          <div className="px-5 sm:px-6 py-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3 font-bold text-slate-900 text-sm">
           <div className="flex items-center gap-2">
             <History className="h-4 w-4 text-[#006052]" />
             <span>Vehicle Status History</span>
@@ -770,15 +2162,20 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                   <div key={item.id || idx} className="relative">
                     {/* Timeline Bullet */}
                     <div
-                      className={`absolute -left-[31px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-white shadow-xs ${
-                        item.eventType === 'seizure' || item.toStatus === 'Seized'
-                          ? 'bg-[#EA580C]'
-                          : item.eventType === 'release' || item.statusBadge?.includes('Released')
+                      className={`absolute -left-[31px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-white shadow-xs ${item.eventType === 'seizure' || item.toStatus === 'Seized'
+                        ? 'bg-[#EA580C]'
+                        : item.eventType === 'release' || item.statusBadge?.includes('Released')
                           ? 'bg-[#006052]'
                           : item.eventType === 'sale' || item.toStatus === 'Sold'
-                          ? 'bg-[#64748B]'
-                          : 'bg-[#2563EB]'
-                      }`}
+                            ? 'bg-slate-700'
+                            : item.eventType === 'settlement'
+                              ? 'bg-emerald-600'
+                              : item.eventType === 'foreclosure_completed'
+                                ? 'bg-purple-600'
+                                : item.eventType === 'expense'
+                                  ? 'bg-amber-600'
+                                  : 'bg-[#2563EB]'
+                        }`}
                     />
 
                     <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-1.5 text-xs">
@@ -788,9 +2185,8 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                             {item.title || (item.fromStatus ? `${item.fromStatus} → ${item.toStatus}` : item.toStatus)}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              item.badgeColor || 'bg-slate-600 text-white'
-                            }`}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.badgeColor || 'bg-slate-600 text-white'
+                              }`}
                           >
                             {item.statusBadge || item.toStatus}
                           </span>
@@ -800,9 +2196,48 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                         </span>
                       </div>
 
-                      {item.fromStatus && (
+                      {item.fromStatus && item.eventType !== 'sale' && item.eventType !== 'settlement' && item.eventType !== 'foreclosure_completed' && (
                         <p className="text-slate-600">
                           <span className="font-semibold text-slate-700">Transition:</span> {item.fromStatus} → {item.toStatus}
+                        </p>
+                      )}
+                      {item.salePrice && (
+                        <p className="text-slate-700 font-semibold">
+                          <span className="text-slate-500 font-medium">Sale Price:</span> {formatCurrency(item.salePrice)}
+                        </p>
+                      )}
+                      {item.totalForeclosureCost !== undefined && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Total Foreclosure Cost:</span> {formatCurrency(item.totalForeclosureCost)}
+                        </p>
+                      )}
+                      {item.totalCost !== undefined && item.eventType === 'foreclosure_completed' && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Foreclosure Final Cost:</span> {formatCurrency(item.totalCost)}
+                        </p>
+                      )}
+                      {item.profitLoss !== undefined && (
+                        <p className={item.isProfit ? 'text-emerald-700 font-bold' : 'text-red-700 font-bold'}>
+                          <span className="text-slate-500 font-medium">Foreclosure Result:</span>{' '}
+                          {item.isProfit
+                            ? `Profit: +${formatCurrency(item.profitLoss)}`
+                            : item.profitLoss < 0
+                              ? `Shortfall: -${formatCurrency(Math.abs(item.profitLoss))}`
+                              : 'Break-even'}
+                        </p>
+                      )}
+                      {item.settlementType && (
+                        <p className="text-slate-700 font-semibold">
+                          <span className="text-slate-500 font-medium">Settlement Resolution:</span>{' '}
+                          {item.settlementType === 'payout'
+                            ? `Customer Payout (${formatCurrency(item.amount)})`
+                            : item.settlementType === 'retained'
+                              ? 'Profit Retained by Company'
+                              : item.settlementType === 'recovery'
+                                ? `Shortfall Recovery Received (${formatCurrency(item.amount)})`
+                                : item.settlementType === 'waiver'
+                                  ? 'Customer Settlement Waived'
+                                  : item.settlementType}
                         </p>
                       )}
                       {item.releasedTo && (
@@ -815,31 +2250,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                           <span className="font-semibold text-slate-700">Settlement Amount:</span> {formatCurrency(item.clearedAmount)}
                         </p>
                       )}
-                      {item.reason && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Reason / Notes:</span> {item.reason}
-                        </p>
-                      )}
-                      {item.eventDate && item.eventType === 'seizure' && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Seizure Date:</span> {formatDate(item.eventDate)}
-                        </p>
-                      )}
-                      {item.eventDate && item.eventType === 'release' && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Release Date:</span> {formatDate(item.eventDate)}
-                        </p>
-                      )}
-                      {item.saleDate && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Sale Date:</span> {formatDate(item.saleDate)}
-                        </p>
-                      )}
-                      {item.salePrice && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Sale Price:</span> {formatCurrency(item.salePrice)}
-                        </p>
-                      )}
                       {item.buyerName && (
                         <p className="text-slate-600">
                           <span className="font-semibold text-slate-700">Buyer:</span> {item.buyerName}{' '}
@@ -848,7 +2258,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                       )}
                       {item.storageLocation && (
                         <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Storage:</span> {item.storageLocation}
+                          <span className="font-semibold text-slate-700">Storage Location:</span> {item.storageLocation}
                         </p>
                       )}
                       {item.condition && (
@@ -856,9 +2266,14 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                           <span className="font-semibold text-slate-700">Condition:</span> {item.condition}
                         </p>
                       )}
+                      {item.reason && (
+                        <p className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Details / Remarks:</span> {item.reason}
+                        </p>
+                      )}
                       {item.notes && item.notes !== item.reason && (
                         <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Remarks:</span> {item.notes}
+                          <span className="font-semibold text-slate-700">Notes:</span> {item.notes}
                         </p>
                       )}
                     </div>
@@ -869,6 +2284,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
           })()}
         </div>
       </div>
+      )}
 
       {/* =========================================================
           MODALS / FORMS FOR SEIZED ACTIONS
@@ -993,35 +2409,41 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
         </div>
       )}
 
-      {/* 2. MARK AS SOLD MODAL */}
+      {/* 2. MARK AS SOLD & FORECLOSURE SETTLEMENT MODAL */}
       {activeModal === 'sold' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
             onClick={() => setActiveModal(null)}
           />
-          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150 my-6 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
-                  <DollarSign className="h-4.5 w-4.5" />
+                <div className="h-9 w-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                  <Scale className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Mark Vehicle as Sold</h3>
-                  <p className="text-xs text-slate-500">Record auction or direct sale details</p>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900">
+                    Mark Vehicle as Sold & Foreclosure
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Foreclosure settlement based on active calculation settings
+                  </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleConfirmSold} className="p-5 space-y-4 text-xs sm:text-sm">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <form onSubmit={handleConfirmSold} className="p-5 space-y-5 overflow-y-auto text-xs sm:text-sm flex-1">
+              {/* Sale Inputs (2-col grid) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
                     Sale Date <span className="text-red-500">*</span>
@@ -1039,7 +2461,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    Sale Amount (₹) <span className="text-red-500">*</span>
+                    Vehicle Sale Amount (₹) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -1047,16 +2469,14 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                     step="any"
                     value={salePrice}
                     onChange={(e) => setSalePrice(e.target.value)}
-                    placeholder="e.g. 85000"
+                    placeholder="e.g. 75000"
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#006052]/20 focus:border-[#006052]"
                   />
                   {formErrors.salePrice && (
                     <p className="text-xs text-red-500 mt-1">{formErrors.salePrice}</p>
                   )}
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
                     Buyer Name
@@ -1065,7 +2485,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                     type="text"
                     value={buyerName}
                     onChange={(e) => setBuyerName(e.target.value)}
-                    placeholder="Buyer or Dealer Name"
+                    placeholder="Buyer / Dealer Name"
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#006052]/20 focus:border-[#006052]"
                   />
                 </div>
@@ -1084,10 +2504,19 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                 </div>
               </div>
 
+              {/* Vehicle Expenses Input */}
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Vehicle Expenses (₹)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-semibold text-slate-700">
+                    Vehicle Expenses (₹)
+                  </label>
+                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${foreclosureSettings.includeVehicleExpenses
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                    : 'bg-slate-100 text-slate-600 border border-slate-200'
+                    }`}>
+                    {foreclosureSettings.includeVehicleExpenses ? 'Enabled in Settings' : 'Disabled in Settings'}
+                  </span>
+                </div>
                 <input
                   type="number"
                   min="0"
@@ -1097,93 +2526,201 @@ const VehicleDetailsView = ({ vehicleRecord, onBack }) => {
                   placeholder="0.00"
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#006052]/20 focus:border-[#006052]"
                 />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {foreclosureSettings.includeVehicleExpenses
+                    ? 'Storage, towing, yard repairs. Included in Total Foreclosure Cost.'
+                    : 'Excluded from Foreclosure Cost calculation per Foreclosure Settings.'}
+                </p>
               </div>
 
-              {/* Profit / Loss Estimate Section */}
-              {(() => {
-                const saleAmountNum = Number(salePrice) || 0;
-                const vehicleExpensesNum = Number(vehicleExpenses) || 0;
-                const netSaleAmount = Math.max(0, saleAmountNum - vehicleExpensesNum);
-                const outstandingLoanAmount = Math.round(Number(loanOutstandingInfo?.outstandingAmount || 0));
-                const profitLossDiff = netSaleAmount - outstandingLoanAmount;
+              {/* =========================================================
+                  FORECLOSURE CALCULATION BREAKDOWN
+              ========================================================= */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Scale className="h-4 w-4 text-[#006052]" />
+                    <span className="text-xs font-bold text-slate-800">
+                      Foreclosure Calculation Breakdown
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    Live Settings Applied
+                  </span>
+                </div>
 
-                return (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-700">Profit / Loss Estimate</span>
-                      <span className="text-[10px] text-slate-400 font-medium">UI Estimate</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200/60">
-                      <div>
-                        <span className="text-slate-500 block text-[11px]">Net Sale Amount</span>
-                        <span className="font-bold text-slate-800">
-                          ₹{netSaleAmount.toLocaleString('en-IN')}
+                <div className="space-y-2 text-xs">
+                  {/* 1. Outstanding Principal + Interest at Sale: Always Enabled */}
+                  <div className="flex items-center justify-between py-1.5 border-b border-slate-200/60">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-800">
+                          Outstanding Principal + Unpaid Interest
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                          Always Enabled
                         </span>
                       </div>
-                      <div>
-                        <span className="text-slate-500 block text-[11px]">Outstanding Loan Amount</span>
-                        <span className="font-bold text-slate-800">
-                          ₹{outstandingLoanAmount.toLocaleString('en-IN')}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div
-                      className={`p-2.5 rounded-lg border flex items-center justify-between text-xs font-bold ${
-                        saleAmountNum === 0
-                          ? 'bg-slate-100 border-slate-200 text-slate-600'
-                          : profitLossDiff > 0
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                          : profitLossDiff < 0
-                          ? 'bg-red-50 border-red-200 text-red-800'
-                          : 'bg-blue-50 border-blue-200 text-blue-800'
-                      }`}
-                    >
-                      <span className="font-semibold text-slate-600">Estimate:</span>
-                      <span className="text-[13px] font-extrabold tracking-tight">
-                        {saleAmountNum === 0 ? (
-                          `Estimated Loss: ₹${outstandingLoanAmount.toLocaleString('en-IN')}`
-                        ) : profitLossDiff > 0 ? (
-                          `Estimated Profit: ₹${Math.round(profitLossDiff).toLocaleString('en-IN')}`
-                        ) : profitLossDiff < 0 ? (
-                          `Estimated Loss: ₹${Math.round(Math.abs(profitLossDiff)).toLocaleString('en-IN')}`
-                        ) : (
-                          'Break-even'
-                        )}
+                      <span className="block text-[11px] text-slate-500 mt-0.5">
+                        Principal: {formatCurrency(foreclosureCalc.outstandingPrincipal)} + Unpaid Interest: {formatCurrency(foreclosureCalc.unpaidInterest)}
                       </span>
                     </div>
+                    <span className="font-bold text-slate-900 text-sm">
+                      {formatCurrency(foreclosureCalc.outstandingPrincipal + foreclosureCalc.unpaidInterest)}
+                    </span>
                   </div>
-                );
-              })()}
 
+                  {/* 2. Vehicle Expenses: Only if enabled */}
+                  {foreclosureCalc.components.vehicleExpenses.enabled && (
+                    <div className="flex items-center justify-between py-1.5 border-b border-slate-200/60">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-800">
+                            Vehicle Expenses
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                            Included
+                          </span>
+                        </div>
+                        <span className="block text-[11px] text-slate-500 mt-0.5">
+                          Repossession, towing, garage & storage expenses
+                        </span>
+                      </div>
+                      <span className="font-bold text-slate-900 text-sm">
+                        {formatCurrency(foreclosureCalc.vehicleExpenses)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* 3. Seized-Period Interest: Only if enabled */}
+                  {foreclosureCalc.components.seizedPeriodInterest.enabled && (
+                    <div className="flex items-center justify-between py-1.5 border-b border-slate-200/60">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-800">
+                            Seized-Period Interest
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 font-bold border border-purple-200">
+                            {foreclosureCalc.components.seizedPeriodInterest.basis}
+                          </span>
+                        </div>
+                        <span className="block text-[11px] text-slate-500 mt-0.5">
+                          {foreclosureCalc.components.seizedPeriodInterest.details?.duration
+                            ? `Eligible: ${foreclosureCalc.components.seizedPeriodInterest.details.duration} ${foreclosureCalc.components.seizedPeriodInterest.details.unit} (${foreclosureCalc.components.seizedPeriodInterest.details.startDate} to ${foreclosureCalc.components.seizedPeriodInterest.details.endDate})`
+                            : 'Eligible repossession duration'}
+                        </span>
+                      </div>
+                      <span className="font-bold text-slate-900 text-sm">
+                        {formatCurrency(foreclosureCalc.seizedPeriodInterest)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* 4. Applicable Penalty */}
+                  {(foreclosureCalc.components?.applicablePenalty?.enabled || foreclosureCalc.components?.applicablePenalty?.reason || Number(foreclosureCalc.penalty || 0) > 0) && (
+                    <div className="flex items-center justify-between py-1.5 border-b border-slate-200/60">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-800">
+                            Applicable Penalty
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${foreclosureCalc.penalty > 0 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                            Penalty Settings
+                          </span>
+                        </div>
+                        <span className="block text-[11px] text-slate-500 mt-0.5">
+                          {foreclosureCalc.components?.applicablePenalty?.reason ||
+                            (foreclosureCalc.penalty > 0
+                              ? 'Calculated under active penalty rules'
+                              : 'No overdue penalty due or eligible')}
+                        </span>
+                      </div>
+                      <span className="font-bold text-slate-900 text-sm">
+                        {formatCurrency(foreclosureCalc.penalty)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Total Cost Row */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs sm:text-sm">
+                    <span className="font-bold text-slate-700">Total Foreclosure Cost:</span>
+                    <span className="font-extrabold text-[#006052] text-sm sm:text-base">
+                      {formatCurrency(foreclosureCalc.totalForeclosureCost)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Final Profit / Loss Banner */}
+                <div
+                  className={`p-3 rounded-xl border flex items-center justify-between ${Number(salePrice) <= 0
+                    ? 'bg-slate-100 border-slate-200 text-slate-600'
+                    : foreclosureCalc.isProfit
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                      : foreclosureCalc.isLoss
+                        ? 'bg-red-50 border-red-200 text-red-900'
+                        : 'bg-blue-50 border-blue-200 text-blue-900'
+                    }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {foreclosureCalc.isProfit ? (
+                      <TrendingUp className="h-4 w-4 text-emerald-700 shrink-0" />
+                    ) : foreclosureCalc.isLoss ? (
+                      <TrendingDown className="h-4 w-4 text-red-700 shrink-0" />
+                    ) : (
+                      <Scale className="h-4 w-4 text-slate-500 shrink-0" />
+                    )}
+                    <span className="font-bold text-xs sm:text-sm">
+                      {Number(salePrice) <= 0
+                        ? 'Enter Sale Amount above'
+                        : foreclosureCalc.isProfit
+                          ? 'Foreclosure Sale Profit:'
+                          : foreclosureCalc.isLoss
+                            ? 'Foreclosure Shortfall (Loss):'
+                            : 'Break-even'}
+                    </span>
+                  </div>
+                  <span className="text-sm sm:text-base font-extrabold tracking-tight">
+                    {Number(salePrice) <= 0
+                      ? '—'
+                      : foreclosureCalc.isProfit
+                        ? `+${formatCurrency(foreclosureCalc.profitLoss)}`
+                        : foreclosureCalc.isLoss
+                          ? `-${formatCurrency(foreclosureCalc.shortfall)}`
+                          : '₹0'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Optional Sale Notes */}
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Sale Notes (Optional)
+                  Sale Notes <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
                 <textarea
                   rows={2}
                   value={saleNotes}
                   onChange={(e) => setSaleNotes(e.target.value)}
-                  placeholder="Auction details, receipt ref, transfer paperwork..."
+                  placeholder="Auction reference, transfer paperwork, buyer remarks..."
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#006052]/20 focus:border-[#006052]"
                 />
               </div>
 
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              {/* Modal Action Buttons */}
+              <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setActiveModal(null)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
+
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-[#006052] hover:bg-[#004d42] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  <DollarSign className="h-4 w-4" />
-                  <span>Confirm Sale</span>
+                  <Check className="h-4 w-4" />
+                  <span>Confirm Vehicle Sale &amp; Foreclosure</span>
                 </button>
               </div>
             </form>

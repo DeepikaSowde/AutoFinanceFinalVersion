@@ -683,14 +683,14 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 </h1>
                 <span
                   className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border shrink-0 ${loanStatus === "Active"
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : loanStatus === "Midway Closed"
-                        ? "bg-amber-50 text-amber-800 border-amber-300"
-                        : loanStatus === "Foreclosed"
-                          ? "bg-purple-50 text-purple-700 border-purple-200"
-                          : loanStatus === "Overdue"
-                            ? "bg-rose-50 text-rose-700 border-rose-200"
-                            : "bg-slate-100 text-slate-600 border-slate-200"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : loanStatus === "Midway Closed"
+                      ? "bg-amber-50 text-amber-800 border-amber-300"
+                      : loanStatus === "Foreclosed"
+                        ? "bg-purple-50 text-purple-700 border-purple-200"
+                        : loanStatus === "Overdue"
+                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                          : "bg-slate-100 text-slate-600 border-slate-200"
                     }`}
                 >
                   {loanStatus}
@@ -750,8 +750,8 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
               }}
               title={isMidwayClosed ? "Editing is disabled for midway-closed loans" : "Edit Loan"}
               className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${isMidwayClosed
-                  ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-60 pointer-events-none"
-                  : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer"
+                ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-60 pointer-events-none"
+                : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer"
                 }`}
             >
               <Edit className={`h-3.5 w-3.5 ${isMidwayClosed ? "text-slate-400" : "text-slate-500"}`} strokeWidth={2} />
@@ -768,8 +768,8 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
               }}
               title={isMidwayClosed ? "This loan is already midway closed" : "Midway Closure"}
               className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${isMidwayClosed
-                  ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60 pointer-events-none"
-                  : "bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+                ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60 pointer-events-none"
+                : "bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
                 }`}
             >
               <Coins className="h-3.5 w-3.5" />
@@ -942,8 +942,8 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-4 sm:px-6 py-2.5 text-xs sm:text-sm font-semibold whitespace-nowrap transition-all border-b-2 cursor-pointer ${isActive
-                    ? "border-emerald-700 text-emerald-800 bg-emerald-50/40 rounded-t-lg"
-                    : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+                  ? "border-emerald-700 text-emerald-800 bg-emerald-50/40 rounded-t-lg"
+                  : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
                   }`}
               >
                 {tab.label}
@@ -1276,14 +1276,14 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                           key={row.installmentNumber}
                           onClick={() => setSelectedInstallmentForHistory(row)}
                           className={`transition-colors cursor-pointer group ${isMidwaySettled
-                              ? "bg-amber-50/70 hover:bg-amber-100/60"
-                              : "hover:bg-emerald-50/40"
+                            ? "bg-amber-50/70 hover:bg-amber-100/60"
+                            : "hover:bg-emerald-50/40"
                             }`}
                           title="Click to view collection history"
                         >
                           <td className={`whitespace-nowrap px-3.5 py-3 font-semibold ${isMidwaySettled
-                              ? "text-amber-950 group-hover:text-amber-900"
-                              : "text-slate-700 group-hover:text-emerald-800"
+                            ? "text-amber-950 group-hover:text-amber-900"
+                            : "text-slate-700 group-hover:text-emerald-800"
                             }`}>
                             {row.installmentNumber}
                           </td>
@@ -1309,14 +1309,14 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                             <div className="flex flex-col items-center justify-center gap-0.5">
                               <span
                                 className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${isMidwaySettled
-                                    ? "bg-orange-100/90 text-amber-900 border border-amber-300 ring-1 ring-amber-500/20"
-                                    : row.status === "Collected" || row.status === "Paid"
-                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                      : row.status === "Partial"
-                                        ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                        : row.status === "Overdue"
-                                          ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                          : "bg-slate-100 text-slate-700 border border-slate-200"
+                                  ? "bg-orange-100/90 text-amber-900 border border-amber-300 ring-1 ring-amber-500/20"
+                                  : row.status === "Collected" || row.status === "Paid"
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : row.status === "Partial"
+                                      ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                      : row.status === "Overdue"
+                                        ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                        : "bg-slate-100 text-slate-700 border border-slate-200"
                                   }`}
                               >
                                 {isMidwaySettled ? "Paid" : (row.status || "Due")}
@@ -1455,6 +1455,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
               loanPayments={loanPayments}
               effectiveLoanId={effectiveLoanId}
               isMidwayClosed={isMidwayClosed}
+              isForeclosed={isForeclosed}
               isLoanCompleted={
                 isForeclosed ||
                 isMidwayClosed ||
@@ -1524,15 +1525,13 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                         <td className="px-4 py-2.5 text-right font-semibold text-slate-900 whitespace-nowrap">
                           {formatCurrency(r.calculatedPenaltyAmount || r.actualPenaltyAmount)}
                         </td>
-                        <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${
-                          r.collectedAmount !== null && r.collectedAmount > 0 ? 'text-emerald-700 font-bold' : 'text-slate-400'
-                        }`}>
+                        <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${r.collectedAmount !== null && r.collectedAmount > 0 ? 'text-emerald-700 font-bold' : 'text-slate-400'
+                          }`}>
                           {r.collectedAmount !== null && r.collectedAmount !== undefined ? formatCurrency(r.collectedAmount) : '—'}
                         </td>
                         <td className="px-4 py-2.5 text-center whitespace-nowrap">
                           <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase ${
-                              r.status === 'Collected'
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase ${r.status === 'Collected'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : r.status === 'Frozen'
                                   ? 'bg-sky-50 text-sky-700 border border-sky-200'
@@ -1541,7 +1540,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                                     : r.status === 'Partial'
                                       ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                       : 'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}
+                              }`}
                           >
                             {r.status}
                           </span>

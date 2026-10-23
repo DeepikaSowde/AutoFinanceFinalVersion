@@ -37,6 +37,7 @@ export default function InstallmentTimeline({
   effectiveLoanId = "LN-001",
   isLoanCompleted = false,
   isMidwayClosed = false,
+  isForeclosed = false,
 }) {
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(900);
@@ -352,8 +353,9 @@ export default function InstallmentTimeline({
             {markerPoints.map((item) => {
               const isMidwayItem = isMidwayClosed && (item.isMidwayClosed || item.status === "Midway Closed");
               const isPaid = !isMidwayItem && (item.status === "Paid" || item.status === "Collected" || item.completionPct === 100);
-              const isPartial = !isPaid && !isMidwayItem && (item.status === "Partial" || item.completionPct > 0);
-              const isOverdue = !isPaid && !isPartial && !isMidwayItem && item.status === "Overdue";
+              const isForeclosedItem = isForeclosed && !isPaid && !isMidwayItem;
+              const isPartial = !isPaid && !isMidwayItem && !isForeclosedItem && (item.status === "Partial" || item.completionPct > 0);
+              const isOverdue = !isPaid && !isPartial && !isMidwayItem && !isForeclosedItem && item.status === "Overdue";
 
               let circleFill = "#FFFFFF";
               let circleStroke = "#CBD5E1";
@@ -367,6 +369,12 @@ export default function InstallmentTimeline({
                 numberColor = "#C2410C";
                 badgeBg = "#FFEDD5";
                 badgeText = "#C2410C";
+              } else if (isForeclosedItem) {
+                circleFill = "#FAF5FF";
+                circleStroke = "#A855F7";
+                numberColor = "#7E22CE";
+                badgeBg = "#F3E8FF";
+                badgeText = "#7E22CE";
               } else if (isPaid) {
                 circleFill = "#047857";
                 circleStroke = "#065F46";
@@ -387,8 +395,12 @@ export default function InstallmentTimeline({
                 badgeText = "#BE123C";
               }
 
-              // Text for completion status: e.g. "100% Completed", "Midway Closed", "50% Completed"
-              const completionLabel = isMidwayItem ? "Midway Closed" : `${item.completionPct}% Completed`;
+              // Text for completion status: e.g. "100% Completed", "Midway Closed", "Foreclosed"
+              const completionLabel = isMidwayItem
+                ? "Midway Closed"
+                : isForeclosedItem
+                ? "Foreclosed"
+                : `${item.completionPct}% Completed`;
 
               return (
                 <g key={`inst-marker-${item.installmentNumber}`}>
@@ -399,7 +411,7 @@ export default function InstallmentTimeline({
                     r={markerRadius}
                     fill={circleFill}
                     stroke={circleStroke}
-                    strokeWidth={isPaid || isPartial || isOverdue || isMidwayItem ? 3 : 2}
+                    strokeWidth={isPaid || isPartial || isOverdue || isMidwayItem || isForeclosedItem ? 3 : 2}
                     filter="url(#markerShadow)"
                   />
 
@@ -426,6 +438,30 @@ export default function InstallmentTimeline({
                         fontWeight="bold"
                       >
                         CLOSED
+                      </text>
+                    </>
+                  ) : isForeclosedItem ? (
+                    <>
+                      <text
+                        x={item.cx}
+                        y={item.cy - 1}
+                        textAnchor="middle"
+                        fill="#7E22CE"
+                        fontSize={colsPerRow <= 3 ? "10" : "11"}
+                        fontWeight="800"
+                        fontFamily="inherit"
+                      >
+                        #{item.installmentNumber}
+                      </text>
+                      <text
+                        x={item.cx}
+                        y={item.cy + 10}
+                        textAnchor="middle"
+                        fill="#A855F7"
+                        fontSize="7"
+                        fontWeight="bold"
+                      >
+                        SETTLED
                       </text>
                     </>
                   ) : isPaid ? (

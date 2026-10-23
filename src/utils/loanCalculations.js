@@ -106,8 +106,8 @@ export const calculateLoanOutstanding = (loanRecord, allPayments = []) => {
   const effectiveCustomerId = loanRecord.customerId
     ? String(loanRecord.customerId).trim().toLowerCase()
     : customer.mobile
-    ? `cus-${customer.mobile.slice(-5)}`.toLowerCase()
-    : '';
+      ? `cus-${customer.mobile.slice(-5)}`.toLowerCase()
+      : '';
 
   const loanPayments = (allPayments || []).filter((p) => {
     if (!isEligiblePayment(p)) return false;
@@ -199,7 +199,7 @@ export const calculateLoanOutstanding = (loanRecord, allPayments = []) => {
       remainingPrincipal: 0,
       remainingInterest: 0,
       outstandingAmount: 0,
-      advanceBalance: advance,
+      advanceBalance: 0,
       status: 'Midway Closed',
       effectiveSchedule,
     };

@@ -314,35 +314,39 @@ const Collection = () => {
         (s) => s.status !== "Collected" && s.status !== "Paid" && s.emi - (s.amountPaid || 0) > 0.01
       );
 
-      const isDueToday = todayInstalls.length > 0;
-      const isOverdue = overdueInstalls.length > 0;
+      const isForeclosed = c.status === "Foreclosed" || c.isForeclosed || c.loan?.status === "Foreclosed" || c.loan?.isForeclosed;
 
-      const totalDueToday = todayInstalls.reduce((sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)), 0);
-      const totalOverdue = overdueInstalls.reduce((sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)), 0);
-      const totalUnpaidInstallmentAmount = allUnpaidInstalls.reduce(
+      const isDueToday = isForeclosed ? false : todayInstalls.length > 0;
+      const isOverdue = isForeclosed ? false : overdueInstalls.length > 0;
+
+      const totalDueToday = isForeclosed ? 0 : todayInstalls.reduce((sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)), 0);
+      const totalOverdue = isForeclosed ? 0 : overdueInstalls.reduce((sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)), 0);
+      const totalUnpaidInstallmentAmount = isForeclosed ? 0 : allUnpaidInstalls.reduce(
         (sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)),
         0
       );
 
-      const originalDueToday = todayInstalls.reduce((sum, s) => sum + s.emi, 0);
-      const originalOverdue = overdueInstalls.reduce((sum, s) => sum + s.emi, 0);
+      const originalDueToday = isForeclosed ? 0 : todayInstalls.reduce((sum, s) => sum + s.emi, 0);
+      const originalOverdue = isForeclosed ? 0 : overdueInstalls.reduce((sum, s) => sum + s.emi, 0);
 
       const activeInstalls = [...overdueInstalls, ...todayInstalls];
-      let statusText = "Pending";
+      let statusText = isForeclosed ? "Foreclosed" : "Pending";
 
-      if (activeInstalls.length > 0) {
-        const allCollected = activeInstalls.every((s) => s.status === "Collected" || s.status === "Paid" || (s.amountPaid || 0) >= s.emi);
-        const anyPartial = activeInstalls.some(
-          (s) => s.status === "Partial" || ((s.amountPaid || 0) > 0 && (s.amountPaid || 0) < s.emi)
-        );
+      if (!isForeclosed) {
+        if (activeInstalls.length > 0) {
+          const allCollected = activeInstalls.every((s) => s.status === "Collected" || s.status === "Paid" || (s.amountPaid || 0) >= s.emi);
+          const anyPartial = activeInstalls.some(
+            (s) => s.status === "Partial" || ((s.amountPaid || 0) > 0 && (s.amountPaid || 0) < s.emi)
+          );
 
-        if (allCollected) {
+          if (allCollected) {
+            statusText = "Collected";
+          } else if (anyPartial) {
+            statusText = "Partial";
+          }
+        } else if (allUnpaidInstalls.length === 0 && schedule.length > 0) {
           statusText = "Collected";
-        } else if (anyPartial) {
-          statusText = "Partial";
         }
-      } else if (allUnpaidInstalls.length === 0 && schedule.length > 0) {
-        statusText = "Collected";
       }
 
       const customerId =
@@ -371,14 +375,17 @@ const Collection = () => {
 
       // Dedicated Penalty status:
       // If loan has a frozen penalty and no regular overdue installments (or active collection is 0)
-      if (hasFrozenPenalty && overdueInstalls.length === 0 && todayInstalls.length === 0) {
-        statusText = "Penalty";
-      } else if (hasPendingPenalty && overdueInstalls.length === 0 && todayInstalls.length === 0) {
-        statusText = "Pending Penalty";
+      if (!isForeclosed) {
+        if (hasFrozenPenalty && overdueInstalls.length === 0 && todayInstalls.length === 0) {
+          statusText = "Penalty";
+        } else if (hasPendingPenalty && overdueInstalls.length === 0 && todayInstalls.length === 0) {
+          statusText = "Pending Penalty";
+        }
       }
 
       return {
         ...c,
+        isForeclosed,
         customerId,
         loanId,
         isDueToday,
@@ -597,6 +604,11 @@ const Collection = () => {
   }, [filteredHistoryList, currentHistoryPage, historyPageSize]);
 
   const handleCollectClick = (c, penaltyOnly = false) => {
+    if (c.status === "Foreclosed" || c.isForeclosed || c.loan?.status === "Foreclosed" || c.loan?.isForeclosed) {
+      alert("This loan has been Foreclosed. Further normal collections are blocked.");
+      return;
+    }
+
     setSelectedCustomer(c);
     setIsPenaltyOnlyMode(penaltyOnly);
 

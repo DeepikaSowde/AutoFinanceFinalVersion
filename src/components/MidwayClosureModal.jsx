@@ -180,8 +180,16 @@ export default function MidwayClosureModal({
     const schedule = computeEffectiveSchedule(baseSchedule, relevantPayments);
 
     // Sum principal repaid so far
-    const totalPrincipalRepaid = schedule.reduce((sum, s) => sum + Number(s.principalPaid || 0), 0);
-    const principalOutstanding = Math.max(0, principalAmount - totalPrincipalRepaid);
+    const totalPrincipalRepaid = schedule.reduce((sum, s) => {
+      if (s.principalPaid !== undefined && s.principalPaid !== null && !isNaN(Number(s.principalPaid))) {
+        return sum + Number(s.principalPaid || 0);
+      }
+      const intDue = Number(s.interest || 0);
+      const amtPaid = Number(s.amountPaid || 0);
+      const intPaid = Math.min(intDue, amtPaid);
+      return sum + Math.max(0, amtPaid - intPaid);
+    }, 0);
+    const principalOutstanding = Math.max(0, Math.round((principalAmount - totalPrincipalRepaid) * 100) / 100);
 
     // Count fully paid installments
     const installmentsPaidCount = schedule.filter(
@@ -257,8 +265,8 @@ export default function MidwayClosureModal({
         setInterestInstalmentsCount(0);
       } else if (interestInstalmentsCount > maxCount) {
         setInterestInstalmentsCount(maxCount);
-      } else if (interestInstalmentsCount < 1) {
-        setInterestInstalmentsCount(1);
+      } else if (interestInstalmentsCount < 0 && interestInstalmentsCount !== "") {
+        setInterestInstalmentsCount(0);
       }
     }
   }, [loanDetails]);
@@ -460,12 +468,21 @@ export default function MidwayClosureModal({
         (settlement.selectedInstalments || []).map((s) => Number(s.installmentNumber))
       );
 
+      // Remaining unpaid/partially paid installments that need principal settlement
+      const unpaidInstalls = (loanDetails.schedule || []).filter((inst) => {
+        return !(inst.status === "Paid" || inst.status === "Collected" || inst.balance <= 0.01);
+      });
+
+      let remainingPrincipalToAllocate = principalCollected;
       const closureAllocations = [];
       const updatedSchedule = (loanDetails.schedule || []).map((inst) => {
         // If already fully paid previously, preserve exact original payment record and Paid status
         if (inst.status === "Paid" || inst.status === "Collected" || inst.balance <= 0.01) {
           return { ...inst, status: "Paid" };
         }
+
+        const isLastUnpaid = unpaidInstalls.length > 0 &&
+          Number(inst.installmentNumber) === Number(unpaidInstalls[unpaidInstalls.length - 1].installmentNumber);
 
         // Remaining pending principal and interest on this instalment
         const prevPrinPaid = Number(inst.principalPaid || 0);
@@ -476,14 +493,19 @@ export default function MidwayClosureModal({
         const instInt = Number(inst.interest || 0);
         const pendingInt = Math.max(0, Math.round((instInt - prevIntPaid) * 100) / 100);
 
-        // Principal is satisfied in full for all remaining instalments
-        const prinAlloc = remPrin;
+        // Principal is satisfied in full for all remaining instalments, exact down to last cent
+        const prinAlloc = isLastUnpaid
+          ? Math.max(0, Math.round(remainingPrincipalToAllocate * 100) / 100)
+          : Math.min(remPrin, Math.max(0, Math.round(remainingPrincipalToAllocate * 100) / 100));
+
+        remainingPrincipalToAllocate = Math.max(0, Math.round((remainingPrincipalToAllocate - prinAlloc) * 100) / 100);
+
         // Interest is only charged if explicitly selected by the admin
         const isSelectedForInterest = selectedInstNumbers.has(Number(inst.installmentNumber));
         const intAlloc = isSelectedForInterest ? pendingInt : 0;
-        const totalAlloc = prinAlloc + intAlloc;
+        const totalAlloc = Math.round((prinAlloc + intAlloc) * 100) / 100;
 
-        if (totalAlloc > 0) {
+        if (totalAlloc > 0 || prinAlloc > 0) {
           closureAllocations.push({
             installmentNumber: inst.installmentNumber,
             dueDate: inst.dueDate,
@@ -533,6 +555,15 @@ export default function MidwayClosureModal({
         vehicle: {
           ...(cleanCustomer.vehicle || {}),
           status: updatedVStat,
+        },
+        loan: {
+          ...(cleanCustomer.loan || {}),
+          status: "Midway Closed",
+          loanStatus: "Midway Closed",
+          outstandingAmount: 0,
+          totalPrincipalOutstanding: 0,
+          totalInterestOutstanding: 0,
+          totalLoanOutstanding: 0,
         },
         // Preserve customer status as Active so customer can take future loans
         customerStatus: "Active",

@@ -48,7 +48,10 @@ export const getPenaltySettings = () => {
     const raw = localStorage.getItem(PENALTY_SETTINGS_STORAGE_KEY);
     if (!raw) return { ...DEFAULT_PENALTY_SETTINGS };
     const parsed = JSON.parse(raw);
+    const globalState = parsed.enabled !== false && parsed.isGloballyEnabled !== false && parsed.globalEnabled !== false;
     return {
+      enabled: globalState,
+      isGloballyEnabled: globalState,
       Daily: {
         ...DEFAULT_PENALTY_SETTINGS.Daily,
         ...(parsed.Daily || {}),
@@ -993,7 +996,8 @@ export const getLoanPenaltySummary = (
   customerName,
   schedule = [],
   frequency = 'Monthly',
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  customSettings = null
 ) => {
   if (!loanId) {
     return {
@@ -1012,13 +1016,16 @@ export const getLoanPenaltySummary = (
   }
 
   const existingRecords = getPenaltyRecords();
-  const settings = getPenaltySettings();
-  const loanRecords = existingRecords.filter((r) => r.loanId === loanId);
+  const settings = customSettings || getPenaltySettings();
+  const targetLoanId = String(loanId || '').trim().toLowerCase();
+  const loanRecords = existingRecords.filter((r) => 
+    String(r.loanId || '').trim().toLowerCase() === targetLoanId
+  );
 
-  // Group existing records by installmentNumber
+  // Group existing records by numeric installmentNumber
   const recordsByInstallment = {};
   loanRecords.forEach((r) => {
-    recordsByInstallment[String(r.installmentNumber)] = r;
+    recordsByInstallment[String(Number(r.installmentNumber))] = r;
   });
 
   const pendingPenaltyRecords = [];
@@ -1028,7 +1035,7 @@ export const getLoanPenaltySummary = (
 
   // Check each installment in schedule
   schedule.forEach((inst) => {
-    const instNumStr = String(inst.installmentNumber);
+    const instNumStr = String(Number(inst.installmentNumber));
     const existing = recordsByInstallment[instNumStr];
 
     if (existing) {
@@ -1039,7 +1046,20 @@ export const getLoanPenaltySummary = (
       } else if (existing.status === 'Cancelled') {
         cancelledPenaltyRecords.push(existing);
       } else if (existing.status === 'Pending') {
-        pendingPenaltyRecords.push(existing);
+        // Re-evaluate pending penalty against current settings, frequency, and reference date
+        const rec = getOrCalculatePenaltyRecord(
+          loanId,
+          customerId,
+          customerName,
+          inst,
+          frequency,
+          existingRecords,
+          settings,
+          referenceDate
+        );
+        if (rec && rec.status === 'Pending' && Number(rec.calculatedAmount) > 0) {
+          pendingPenaltyRecords.push(rec);
+        }
       }
       return;
     }
@@ -1057,8 +1077,31 @@ export const getLoanPenaltySummary = (
         settings,
         referenceDate
       );
-      if (rec && rec.status === 'Pending') {
+      if (rec && rec.status === 'Pending' && Number(rec.calculatedAmount) > 0) {
         pendingPenaltyRecords.push(rec);
+      }
+    }
+  });
+
+  // Also include any existing loan penalty records whose installment was not in schedule
+  const visitedInstNumbers = new Set(schedule.map((s) => String(Number(s.installmentNumber))));
+  loanRecords.forEach((r) => {
+    const instStr = String(Number(r.installmentNumber));
+    if (!visitedInstNumbers.has(instStr)) {
+      if (r.status === 'Frozen') {
+        frozenPenaltyRecords.push(r);
+      } else if (r.status === 'Collected') {
+        collectedPenaltyRecords.push(r);
+      } else if (r.status === 'Cancelled') {
+        cancelledPenaltyRecords.push(r);
+      } else if (r.status === 'Pending') {
+        const normFreq = normalizeFrequency(frequency);
+        const rule = settings[normFreq] || DEFAULT_PENALTY_SETTINGS[normFreq];
+        const isFreqEnabled = normFreq === 'Monthly' ? (rule.enabled !== false) : Boolean(rule.enabled);
+        const isGloballyEnabled = settings?.enabled !== false && settings?.isGloballyEnabled !== false && settings?.globalEnabled !== false;
+        if (isFreqEnabled && isGloballyEnabled && Number(r.calculatedAmount) > 0) {
+          pendingPenaltyRecords.push(r);
+        }
       }
     }
   });

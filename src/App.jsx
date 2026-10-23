@@ -20,6 +20,7 @@ import ReferralCommission from './pages/customer/ReferralCommission'
 import ChitInvestment from './pages/ChitInvestment'
 import SettingsOverview from './pages/Settings/SettingsOverview'
 import PenaltyGraceSettings from './pages/Settings/PenaltyGraceSettings'
+import ForeclosureVehicleSaleSettings from './pages/Settings/ForeclosureVehicleSaleSettings'
 import SmartSearch from './pages/SmartSearch'
 import SmartSearchFloatingButton from './components/SmartSearchFloatingButton'
 
@@ -53,6 +54,7 @@ function App() {
             <Route path="/users" element={<UserManagement />} />
             <Route path="/settings" element={<SettingsOverview />} />
             <Route path="/settings/penalty-grace" element={<PenaltyGraceSettings />} />
+            <Route path="/settings/foreclosure-vehicle-sale" element={<ForeclosureVehicleSaleSettings />} />
             <Route path="/reminders" element={<Reminder />} />
             <Route path="/chit-investment" element={<ChitInvestment />} />
             <Route path="*" element={<Navigate to="/newloan" replace />} />

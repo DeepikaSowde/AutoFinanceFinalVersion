@@ -17,12 +17,13 @@ import {
   ShieldAlert,
   KeyRound,
   DollarSign,
+  Receipt,
 } from 'lucide-react';
 import { getChronologicalVehicleHistory } from './VehicleStatusHistoryModal';
 import { useVehicleImage } from '../../utils/vehicleImageHelper';
 import { formatDate, formatDateTime } from '../../utils/dateUtils';
 
-const ActiveVehicleModal = ({ isOpen, onClose, vehicleRecord, onSeizureSuccess }) => {
+const ActiveVehicleModal = ({ isOpen, onClose, vehicleRecord, onSeizureSuccess, onViewExpenseHistory }) => {
   // Modal Views: 'details' (main) | 'seize' (seizure form) | 'history' (status history)
   const [currentView, setCurrentView] = useState('details');
 
@@ -560,11 +561,21 @@ const ActiveVehicleModal = ({ isOpen, onClose, vehicleRecord, onSeizureSuccess }
         ========================================================= */}
         {currentView === 'details' && (
           <div className="px-5 sm:px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5 shrink-0">
+            {/* Action: Expense History */}
+            <button
+              type="button"
+              onClick={() => onViewExpenseHistory && onViewExpenseHistory(vehicleRecord)}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-emerald-600/30 bg-emerald-50/50 hover:bg-emerald-100/70 text-[#006052] text-xs sm:text-sm font-bold shadow-2xs transition-colors cursor-pointer order-3 sm:order-1"
+            >
+              <Receipt className="h-4 w-4" />
+              <span>Expense History</span>
+            </button>
+
             {/* Secondary Button: View Status History */}
             <button
               type="button"
               onClick={() => setCurrentView('history')}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-[#006052] bg-white text-[#006052] hover:bg-emerald-50/60 text-xs sm:text-sm font-bold shadow-2xs transition-colors cursor-pointer order-2 sm:order-1"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-[#006052] bg-white text-[#006052] hover:bg-emerald-50/60 text-xs sm:text-sm font-bold shadow-2xs transition-colors cursor-pointer order-2"
             >
               <History className="h-4 w-4" />
               <span>View Status History</span>

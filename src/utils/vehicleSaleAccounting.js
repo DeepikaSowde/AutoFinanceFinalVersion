@@ -94,21 +94,39 @@ export const syncVehicleSaleAccounting = ({
     // Stable deterministic ID for this vehicle's sale expense
     const expenseId = `EXP-VEH-${loanId || cleanRegKey}`;
 
+    // Calculate previously recorded expenses for this vehicle excluding this specific sale expense entry
+    const priorVehicleExpenses = expenseList
+      .filter((exp) => {
+        if (exp.id === expenseId || exp.isSaleVehicleExpense) return false;
+        if (exp.category !== 'Vehicle Expense' && !exp.isVehicleExpense) return false;
+        const matchesLoan = loanId && (exp.loanId === loanId || exp.vehicleId === loanId);
+        const matchesReg = regNo && (
+          (exp.vehicleRegNo && exp.vehicleRegNo.toLowerCase() === regNo.toLowerCase()) ||
+          (exp.regNo && exp.regNo.toLowerCase() === regNo.toLowerCase())
+        );
+        return matchesLoan || matchesReg;
+      })
+      .reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
+
+    // Only record additional amount if the entered vehicleExpenses exceeds prior recorded expenses
+    const additionalAmount = Math.max(0, vehicleExpensesNum - priorVehicleExpenses);
+
     const existingExpenseIndex = expenseList.findIndex(
       (exp) =>
         exp.id === expenseId ||
-        (exp.isVehicleExpense && exp.loanId && exp.loanId === loanId && loanId !== '—') ||
-        (exp.category === 'Vehicle Expense' && exp.regNo && exp.regNo.toLowerCase() === regNo.toLowerCase())
+        (exp.isSaleVehicleExpense && exp.loanId && exp.loanId === loanId && loanId !== '—')
     );
 
-    if (vehicleExpensesNum > 0) {
+    if (additionalAmount > 0) {
       const expenseEntry = {
         id: expenseId,
         category: 'Vehicle Expense',
-        amount: vehicleExpensesNum,
+        amount: additionalAmount,
         date: dateVal,
         mode: 'Cash',
-        remarks: `Vehicle Expenses – ${regNo}`,
+        remarks: priorVehicleExpenses > 0
+          ? `Vehicle Sale Additional Expenses – ${regNo}`
+          : `Vehicle Expenses – ${regNo}`,
         regNo: regNo,
         vehicleRegNo: regNo,
         loanId: loanId || '—',
@@ -117,6 +135,7 @@ export const syncVehicleSaleAccounting = ({
         buyerName: buyerName ? buyerName.trim() : '',
         notes: saleNotes ? saleNotes.trim() : '',
         isVehicleExpense: true,
+        isSaleVehicleExpense: true,
         updatedAt: new Date().toISOString(),
       };
 
@@ -129,7 +148,7 @@ export const syncVehicleSaleAccounting = ({
         expenseList.push(expenseEntry);
       }
     } else {
-      // If expenses were cleared or 0, remove prior entry if any
+      // If no additional expense is needed (fully covered by existing records), remove prior sale expense entry if any
       if (existingExpenseIndex >= 0) {
         expenseList.splice(existingExpenseIndex, 1);
       }

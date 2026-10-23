@@ -4,8 +4,10 @@ import VehicleStatusTabs from '../../components/vehicle/VehicleStatusTabs';
 import VehicleSummaryCards from '../../components/vehicle/VehicleSummaryCards';
 import VehicleSearchAndFilter from '../../components/vehicle/VehicleSearchAndFilter';
 import VehicleCardGrid from '../../components/vehicle/VehicleCardGrid';
+import SoldVehiclesTable from '../../components/vehicle/SoldVehiclesTable';
 import VehicleDetailsView from './VehicleDetailsView';
 import ActiveVehicleModal from '../../components/vehicle/ActiveVehicleModal';
+import VehicleExpenseHistoryModal from '../../components/vehicle/VehicleExpenseHistoryModal';
 import { getEffectiveVehicleStatus, syncVehiclesWithClosedLoans } from '../../utils/vehicleStatusHelper';
 
 /**
@@ -23,6 +25,9 @@ const Vehicle = () => {
 
   // Selected vehicle for details view
   const [selectedVehicle, setSelectedVehicle] = useState(null);
+
+  // Selected vehicle for expense history modal
+  const [expenseHistoryVehicle, setExpenseHistoryVehicle] = useState(null);
 
   // Tab filter: 'all' | 'seized' | 'sold'
   const [activeTab, setActiveTab] = useState('all');
@@ -164,6 +169,7 @@ const Vehicle = () => {
         <div className="w-full max-w-7xl mx-auto">
           <VehicleDetailsView
             vehicleRecord={selectedVehicle}
+            onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
             onBack={() => {
               setSelectedVehicle(null);
               try {
@@ -175,6 +181,13 @@ const Vehicle = () => {
             }}
           />
         </div>
+
+        {/* Vehicle Expense History Modal */}
+        <VehicleExpenseHistoryModal
+          isOpen={Boolean(expenseHistoryVehicle)}
+          onClose={() => setExpenseHistoryVehicle(null)}
+          vehicleRecord={expenseHistoryVehicle}
+        />
       </div>
     );
   }
@@ -219,13 +232,22 @@ const Vehicle = () => {
         />
 
         {/* =========================================================
-            5. VEHICLE CARD GRID
+            5. VEHICLE CARD GRID / SOLD VEHICLES TABLE
         ========================================================= */}
-        <VehicleCardGrid
-          vehicles={filteredVehicles}
-          onViewDetails={handleViewDetails}
-          onAddVehicle={() => navigate('/newloan')}
-        />
+        {activeTab === 'sold' ? (
+          <SoldVehiclesTable
+            vehicles={filteredVehicles}
+            onViewDetails={handleViewDetails}
+            onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
+          />
+        ) : (
+          <VehicleCardGrid
+            vehicles={filteredVehicles}
+            onViewDetails={handleViewDetails}
+            onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
+            onAddVehicle={() => navigate('/newloan')}
+          />
+        )}
 
         {/* =========================================================
             6. ACTIVE VEHICLE DETAILS POPUP MODAL
@@ -234,6 +256,7 @@ const Vehicle = () => {
           isOpen={Boolean(activeVehicleForModal)}
           onClose={() => setActiveVehicleForModal(null)}
           vehicleRecord={activeVehicleForModal}
+          onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
           onSeizureSuccess={() => {
             // Force re-read from storage
             try {
@@ -244,9 +267,19 @@ const Vehicle = () => {
             }
           }}
         />
+
+        {/* =========================================================
+            7. VEHICLE EXPENSE HISTORY MODAL
+        ========================================================= */}
+        <VehicleExpenseHistoryModal
+          isOpen={Boolean(expenseHistoryVehicle)}
+          onClose={() => setExpenseHistoryVehicle(null)}
+          vehicleRecord={expenseHistoryVehicle}
+        />
       </div>
     </div>
   );
 };
+
 
 export default Vehicle;
