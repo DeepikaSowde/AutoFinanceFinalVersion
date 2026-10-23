@@ -33,10 +33,12 @@ import {
   CheckCircle2,
   ArrowRight,
   Calculator,
+  BarChart3,
 } from 'lucide-react';
 import { calculateVehicleLoanOverdue } from '../../utils/vehicleOverdueCalculation';
 import { calculateLoanOutstanding } from '../../utils/loanCalculations';
 import VehicleStatusHistoryModal, { getChronologicalVehicleHistory } from '../../components/vehicle/VehicleStatusHistoryModal';
+import RepaymentScheduleModal from '../../components/RepaymentScheduleModal';
 import { useVehicleImage } from '../../utils/vehicleImageHelper';
 import { syncVehicleSaleAccounting } from '../../utils/vehicleSaleAccounting';
 import { getEffectiveVehicleStatus } from '../../utils/vehicleStatusHelper';
@@ -44,7 +46,7 @@ import { getForeclosureSettings, FORECLOSURE_UPDATE_EVENT } from '../../utils/fo
 import { getPenaltySettings, PENALTY_UPDATE_EVENT } from '../../utils/penaltyRules';
 import { calculateForeclosureSale, syncForeclosureSettlementAccounting } from '../../utils/foreclosureCalculations';
 
-import { formatDate, formatDateTime } from '../../utils/dateUtils';
+import { formatDate, formatDateTime, isDateOnlyString } from '../../utils/dateUtils';
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(Number(val))) return '₹0';
@@ -109,6 +111,8 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
 
   // Sold View Details State (expand/collapse calculation breakdown on already sold vehicle)
   const [showSoldCalcBreakdown, setShowSoldCalcBreakdown] = useState(false);
+  const [showSalesDetails, setShowSalesDetails] = useState(false);
+  const [showAccountingReferences, setShowAccountingReferences] = useState(false);
 
   // Edit Seizure Form State
   const [editSeizureDate, setEditSeizureDate] = useState('');
@@ -221,6 +225,39 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
   const loanOutstandingInfo = useMemo(() => {
     return calculateLoanOutstanding(record, allPayments);
   }, [record, allPayments]);
+
+  // Formatted seizure date handling: display actual date & time if recorded, otherwise strictly date without fake default time
+  const formattedSeizureDate = useMemo(() => {
+    const rawTimestamp = seizureDetails.timestamp || seizureDetails.recordedAt || seizureDetails.createdAt;
+    const rawDate = seizureDetails.seizureDate || seizureDetails.date;
+    if (rawTimestamp && !isDateOnlyString(rawTimestamp)) {
+      return formatDateTime(rawTimestamp, seizureDetails);
+    }
+    if (rawDate) {
+      if (!isDateOnlyString(rawDate)) {
+        return formatDateTime(rawDate, seizureDetails);
+      }
+      return formatDate(rawDate);
+    }
+    return 'Not recorded';
+  }, [seizureDetails]);
+
+  // Loan details for RepaymentScheduleModal
+  const loanDetailsForModal = useMemo(() => {
+    const loan = record?.loan || {};
+    return {
+      ...loan,
+      ...record,
+      loanAmount: record?.loanAmount || loan.loanAmount || record?.vehicle?.amount || 0,
+      interestRate: loan.interestRate || record?.interestRate || 0,
+      tenure: loan.tenure || record?.tenure || 0,
+      tenureUnit: loan.tenureUnit || record?.tenureUnit || 'Months',
+      paymentFrequency: loan.paymentFrequency || record?.paymentFrequency || 'Monthly',
+      interestType: loan.interestType || record?.interestType || 'Flat',
+      repaymentMethod: loan.repaymentMethod || record?.repaymentMethod || 'EMI',
+      repaymentSchedule: loanOutstandingInfo?.effectiveSchedule || record?.repaymentSchedule || [],
+    };
+  }, [record, loanOutstandingInfo]);
 
   // Calculate Foreclosure Sale metrics according to active Foreclosure & Penalty Settings
   const foreclosureCalc = useMemo(() => {
@@ -962,11 +999,11 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
       )}
 
       {/* =========================================================
-          1. COMPACT VEHICLE SUMMARY (No redundant specifications)
+          1. COMPACT VEHICLE SUMMARY
       ========================================================= */}
-      <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-5 sm:p-6 flex flex-col md:flex-row gap-6 items-start">
+      <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-4 sm:p-5 flex flex-col md:flex-row gap-4 sm:gap-5 items-start">
         {/* Photo Container */}
-        <div className="w-full md:w-52 h-44 md:h-36 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
+        <div className="w-full md:w-44 h-36 md:h-32 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
           {imageSrc ? (
             <img
               src={imageSrc}
@@ -975,58 +1012,60 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
               className="w-full h-full object-cover object-center"
             />
           ) : (
-            <FallbackIcon className="h-16 w-16 text-slate-300 stroke-1" />
+            <FallbackIcon className="h-14 w-14 text-slate-300 stroke-1" />
           )}
         </div>
 
         {/* Header Details */}
-        <div className="flex-1 min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-0 space-y-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
               {regNo}
             </h1>
             <span
-              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold shadow-2xs ${STATUS_BADGES[currentStatus] || STATUS_BADGES.Seized
-                }`}
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold shadow-2xs ${
+                STATUS_BADGES[currentStatus] || STATUS_BADGES.Sold
+              }`}
             >
               {currentStatus}
             </span>
+            {(isSold || record?.status === 'Foreclosed' || record?.isForeclosed) && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-900 border border-purple-200 shadow-2xs">
+                Foreclosed
+              </span>
+            )}
           </div>
-          <p className="text-sm font-semibold text-slate-600">{makeModel}</p>
+          <p className="text-xs sm:text-sm font-semibold text-slate-600">{makeModel}</p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100 text-xs sm:text-sm">
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-slate-400 shrink-0" />
-              <span className="text-slate-500">Linked Customer:</span>
-              <span className="font-semibold text-slate-800 truncate">
-                {customerName}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2.5 pt-2.5 border-t border-slate-100 text-xs">
+            <div>
+              <span className="text-slate-400 block text-[11px] font-medium">Customer Name</span>
+              <span className="font-semibold text-slate-800 truncate block">{customerName}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[11px] font-medium">Customer Mobile</span>
+              <span className="font-semibold text-slate-800 truncate block">{customerMobile}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[11px] font-medium">Customer ID</span>
+              <span className="font-semibold text-slate-800 truncate block">{record.customerId || customer.customerId || '—'}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[11px] font-medium">Loan ID</span>
+              <span className="font-semibold text-slate-800 truncate block">{record.loanId || loan.loanId || '—'}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[11px] font-medium">Loan Amount</span>
+              <span className="font-semibold text-slate-800 truncate block">
+                {formatCurrency(record?.loanAmount || loan.loanAmount || record?.loan?.loanAmount || loanOutstandingInfo?.principal || 0)}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <Phone className="h-4 w-4 text-slate-400 shrink-0" />
-              <span className="text-slate-500">Customer Mobile:</span>
-              <span className="font-semibold text-slate-800">
-                {customerMobile}
+            <div>
+              <span className="text-slate-400 block text-[11px] font-medium">Foreclosure Date</span>
+              <span className="font-semibold text-slate-800 truncate block">
+                {formatDate(record.foreclosure?.saleDate || record.vehicle?.saleDetails?.saleDate || record.saleDetails?.saleDate || record.foreclosure?.completedAt || record.foreclosureDate || record.closedDate) || '—'}
               </span>
             </div>
-            {record.loanId && (
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-slate-400 shrink-0" />
-                <span className="text-slate-500">Loan ID:</span>
-                <span className="font-semibold text-slate-800">
-                  {record.loanId}
-                </span>
-              </div>
-            )}
-            {record.customerId && (
-              <div className="flex items-center gap-2">
-                <Tag className="h-4 w-4 text-slate-400 shrink-0" />
-                <span className="text-slate-500">Customer ID:</span>
-                <span className="font-semibold text-slate-800">
-                  {record.customerId}
-                </span>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -1046,6 +1085,16 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
         const isBreakEven = profitLoss === 0;
         const shortfall = calc.shortfall !== undefined ? Number(calc.shortfall) : Math.abs(profitLoss);
         const settlement = fData.settlement || {};
+        const recoveredAmt = settlement.type === 'recovery' && settlement.status === 'Completed'
+          ? Number(settlement.amount || 0)
+          : (settlement.type === 'recovery' ? Number(settlement.amount || 0) : 0);
+        const remainingShortfall = Math.max(0, shortfall - recoveredAmt);
+        const vehicleExpensesVal = calc.vehicleExpenses !== undefined ? Number(calc.vehicleExpenses) : Number(saleDetails.vehicleExpenses || 0);
+        const seizedInterestVal = Number(calc.seizedPeriodInterest || calc.components?.seizedPeriodInterest?.amount || 0);
+        const penaltyVal = Number(calc.penalty || calc.components?.penalty?.amount || 0);
+        const vehicleExpensesEnabled = Boolean(calc.components?.vehicleExpenses?.enabled || Number(saleDetails.vehicleExpenses || 0) > 0);
+        const penaltyEnabled = Boolean(calc.components?.applicablePenalty?.enabled || Number(calc.penalty || 0) > 0);
+        const seizedInterestEnabled = Boolean(calc.components?.seizedPeriodInterest?.enabled || Number(calc.seizedPeriodInterest || calc.components?.seizedPeriodInterest?.amount || 0) > 0);
 
         // Total Outstanding strictly from outstanding loan balance at sale (principal + unpaid interest)
         const totalOutstanding = (calc.outstandingPrincipal !== undefined && calc.unpaidInterest !== undefined)
@@ -1056,164 +1105,339 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
               ? Number(loanOutstandingInfo.outstandingAmount)
               : (Number(calc.outstandingPrincipal || 0) + Number(calc.unpaidInterest || 0));
 
+        // Heights for vertical bar comparison chart (Image 2 style)
+        const totalRequired = Math.max(0, totalCost);
+        const maxBarVal = Math.max(saleAmt, totalCost, 1);
+        const saleBarHeightPct = Math.max(12, Math.min(100, Math.round((saleAmt / maxBarVal) * 100)));
+        const requiredBarHeightPct = Math.max(12, Math.min(100, Math.round((totalCost / maxBarVal) * 100)));
+
+        // Component cards data for Shortfall Summary (Matching Image 1)
+        const shortfallComponents = (() => {
+          let unallocated = saleAmt;
+          const list = [];
+
+          // 1. Principal + Interest
+          const pDue = totalOutstanding;
+          const pSat = Math.min(unallocated, pDue);
+          const pRem = Math.max(0, pDue - pSat);
+          unallocated = Math.max(0, unallocated - pSat);
+          list.push({
+            name: 'Principal + Interest',
+            due: pDue,
+            satisfied: pSat,
+            remaining: pRem,
+            status: pRem === 0 ? 'Satisfied' : 'Not Satisfied',
+          });
+
+          // 2. Vehicle Expenses
+          const veDue = vehicleExpensesVal;
+          const veSat = Math.min(unallocated, veDue);
+          const veRem = Math.max(0, veDue - veSat);
+          unallocated = Math.max(0, unallocated - veSat);
+          list.push({
+            name: 'Vehicle Expenses',
+            due: veDue,
+            satisfied: veSat,
+            remaining: veRem,
+            status: veRem === 0 ? 'Satisfied' : 'Not Satisfied',
+          });
+
+          // 3. Penalty Charges
+          const penDue = penaltyVal;
+          const penSat = Math.min(unallocated, penDue);
+          const penRem = Math.max(0, penDue - penSat);
+          unallocated = Math.max(0, unallocated - penSat);
+          list.push({
+            name: 'Penalty Charges',
+            due: penDue,
+            satisfied: penSat,
+            remaining: penRem,
+            status: penRem === 0 ? 'Satisfied' : 'Not Satisfied',
+          });
+
+          // 4. Processing / Legal Charges (or Seizure-period Interest)
+          const spiDue = seizedInterestVal;
+          const spiSat = Math.min(unallocated, spiDue);
+          const spiRem = Math.max(0, spiDue - spiSat);
+          list.push({
+            name: seizedInterestVal > 0 ? 'Seizure-period Interest' : 'Processing / Legal Charges',
+            due: spiDue,
+            satisfied: spiSat,
+            remaining: spiRem,
+            status: spiRem === 0 ? 'Satisfied' : 'Not Satisfied',
+          });
+
+          return list;
+        })();
+
         const loanId = record.loanId || 'VEH';
         const saleTxId = `INC-SALE-${loanId}`;
         const recoveryTxId = `INC-RECOVERY-${loanId}`;
         const payoutTxId = `EXP-PAYOUT-${loanId}`;
 
         return (
-          <div className="flex flex-col lg:flex-row items-start gap-4 lg:gap-5 w-full">
-            {/* =========================================================
-                LEFT COLUMN (~52% width)
-                1. Foreclosure Summary (2x2 KPI grid)
-                2. Sale Details (2-column info grid)
-            ========================================================= */}
-            <div className="w-full lg:w-[52%] space-y-4">
-              {/* 1. FORECLOSURE SUMMARY */}
-              <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Scale className="h-4 w-4 text-[#006052]" />
-                    <h2 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">
-                      Foreclosure Summary
-                    </h2>
+          <div className="space-y-4 lg:space-y-5 w-full">
+            <div className="flex flex-col lg:flex-row items-start gap-4 lg:gap-5 w-full">
+              {/* =========================================================
+                  LEFT COLUMN (~44% width)
+                  1. Foreclosure Summary (4 concise KPI cards)
+                  2. Sale vs Required Amount (Vertical Bar Chart)
+                  3. Sale Details (Collapsible)
+              ========================================================= */}
+              <div className="w-full lg:w-[44%] space-y-4">
+                {/* 1. FORECLOSURE SUMMARY */}
+                <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Scale className="h-4 w-4 text-[#006052]" />
+                      <h2 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">
+                        Foreclosure Summary
+                      </h2>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
+                      Foreclosed
+                    </span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
-                    Foreclosed
-                  </span>
+
+                  <div className="p-3.5 sm:p-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* KPI 1: Total Outstanding */}
+                      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col justify-between min-h-[82px]">
+                        <span className="text-xs font-semibold text-slate-500">Total Outstanding</span>
+                        <p className="text-lg sm:text-xl font-bold text-slate-900 mt-1">
+                          {formatCurrency(totalOutstanding)}
+                        </p>
+                      </div>
+
+                      {/* KPI 2: Vehicle Sale Amount */}
+                      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col justify-between min-h-[82px]">
+                        <span className="text-xs font-semibold text-slate-500">Vehicle Sale Amount</span>
+                        <p className="text-lg sm:text-xl font-bold text-[#006052] mt-1">
+                          {formatCurrency(saleAmt)}
+                        </p>
+                      </div>
+
+                      {/* KPI 3: Foreclosure Profit / Loss */}
+                      <div
+                        className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[82px] ${
+                          isProfit
+                            ? 'bg-emerald-50/80 border-emerald-200'
+                            : isLoss
+                              ? 'bg-red-50/80 border-red-200'
+                              : 'bg-slate-50 border-slate-200'
+                        }`}
+                      >
+                        <span
+                          className={`text-xs font-bold ${
+                            isProfit ? 'text-emerald-800' : isLoss ? 'text-red-800' : 'text-slate-600'
+                          }`}
+                        >
+                          {isProfit ? 'Foreclosure Profit' : isLoss ? 'Foreclosure Loss' : 'Break-even'}
+                        </span>
+                        <p
+                          className={`text-lg sm:text-xl font-extrabold mt-1 ${
+                            isProfit ? 'text-emerald-700' : isLoss ? 'text-red-700' : 'text-slate-800'
+                          }`}
+                        >
+                          {isProfit ? `+${formatCurrency(profitLoss)}` : isLoss ? `-${formatCurrency(shortfall)}` : '₹0'}
+                        </p>
+                      </div>
+
+                      {/* KPI 4: Customer Settlement */}
+                      <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/60 flex flex-col justify-between min-h-[82px]">
+                        <span className="text-xs font-bold text-purple-900">Customer Settlement</span>
+                        <p className="text-base sm:text-lg font-bold text-purple-950 mt-1 truncate">
+                          {settlement.type === 'payout'
+                            ? `Paid: ${formatCurrency(settlement.amount)}`
+                            : settlement.type === 'recovery'
+                              ? `Collected: ${formatCurrency(settlement.amount)}`
+                              : settlement.type === 'waiver'
+                                ? (isLoss ? 'Not Collected' : 'Not Paid')
+                                : settlement.type === 'retained'
+                                  ? 'Not Paid'
+                                  : settlement.status || (isBreakEven ? 'Break-Even' : 'Pending')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="p-3.5 sm:p-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* KPI 1: Vehicle Sale Amount */}
-                    <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col justify-between min-h-[96px]">
-                      <span className="text-xs font-semibold text-slate-500">Vehicle Sale Amount</span>
-                      <p className="text-lg sm:text-xl font-bold text-slate-900 mt-1">
-                        {formatCurrency(saleAmt)}
-                      </p>
-                      <span className="text-[11px] text-slate-500 mt-1">
-                        Recorded as Ledger Income
-                      </span>
+                {/* 2. SALE VS REQUIRED AMOUNT — VERTICAL BAR COMPARISON CHART (Matching Reference Image 2) */}
+                <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <BarChart3 className="h-4 w-4 text-[#006052]" />
+                      <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                        Sale vs Required Amount
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 sm:p-4 space-y-3.5">
+                    {/* Vertical Bar Chart Area */}
+                    <div className="w-full flex flex-col justify-end pt-2 pb-1">
+                      <div className="h-44 sm:h-48 flex items-end justify-center gap-14 sm:gap-20 px-4 pb-2">
+                        {/* Sale Amount Bar Column (Green) */}
+                        <div className="flex flex-col items-center justify-end h-full w-28">
+                          <span className="text-xs sm:text-sm font-bold text-[#006052] mb-2 whitespace-nowrap">
+                            {formatCurrency(saleAmt)}
+                          </span>
+                          <div
+                            className="w-14 sm:w-16 rounded-t-lg bg-[#006052] shadow-2xs transition-all duration-300"
+                            style={{ height: `${saleBarHeightPct}%` }}
+                          />
+                        </div>
+
+                        {/* Required Amount Bar Column (Red) */}
+                        <div className="flex flex-col items-center justify-end h-full w-28">
+                          <span className="text-xs sm:text-sm font-bold text-rose-600 mb-2 whitespace-nowrap">
+                            {formatCurrency(totalCost)}
+                          </span>
+                          <div
+                            className="w-14 sm:w-16 rounded-t-lg bg-[#e11d48] shadow-2xs transition-all duration-300"
+                            style={{ height: `${requiredBarHeightPct}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Base Divider Line */}
+                      <div className="w-full border-t border-slate-200" />
+
+                      {/* Category Names Below Bars */}
+                      <div className="flex items-center justify-center gap-14 sm:gap-20 px-4 pt-3 pb-1">
+                        <div className="w-28 text-center">
+                          <span className="text-xs sm:text-sm font-bold text-slate-800">Sale Amount</span>
+                        </div>
+                        <div className="w-28 text-center">
+                          <span className="text-xs sm:text-sm font-bold text-slate-800">Required Amount</span>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* KPI 2: Total Outstanding (Replaces Total Foreclosure Cost label) */}
-                    <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col justify-between min-h-[96px]">
-                      <span className="text-xs font-semibold text-slate-500">Total Outstanding</span>
-                      <p className="text-lg sm:text-xl font-bold text-slate-900 mt-1">
-                        {formatCurrency(totalOutstanding)}
-                      </p>
-                      <span className="text-[11px] text-slate-500 mt-1">
-                        Principal + Unpaid Interest at sale
-                      </span>
-                    </div>
+                    {/* Three Summary Cards Directly Below */}
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-xs">
+                      <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/60">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="h-2 w-2 rounded-full bg-[#006052] shrink-0" />
+                          <span className="text-[11px] font-semibold text-slate-500 truncate">Sale Amount</span>
+                        </div>
+                        <p className="text-xs sm:text-sm font-bold text-[#006052] truncate">
+                          {formatCurrency(saleAmt)}
+                        </p>
+                      </div>
 
-                    {/* KPI 3: Foreclosure Profit / Loss */}
-                    <div
-                      className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[96px] ${
-                        isProfit
-                          ? 'bg-emerald-50/80 border-emerald-200'
-                          : isLoss
-                            ? 'bg-red-50/80 border-red-200'
-                            : 'bg-slate-50 border-slate-200'
-                      }`}
+                      <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/60">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="h-2 w-2 rounded-full bg-slate-600 shrink-0" />
+                          <span className="text-[11px] font-semibold text-slate-500 truncate">Total Required</span>
+                        </div>
+                        <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                          {formatCurrency(totalCost)}
+                        </p>
+                      </div>
+
+                      <div
+                        className={`p-2.5 rounded-lg border ${
+                          isLoss
+                            ? 'border-red-200 bg-red-50/50'
+                            : isProfit
+                              ? 'border-emerald-200 bg-emerald-50/50'
+                              : 'border-slate-200 bg-slate-50/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span
+                            className={`h-2 w-2 rounded-full shrink-0 ${
+                              isLoss ? 'bg-red-600' : isProfit ? 'bg-emerald-600' : 'bg-slate-400'
+                            }`}
+                          />
+                          <span
+                            className={`text-[11px] font-semibold truncate ${
+                              isLoss ? 'text-red-700' : isProfit ? 'text-emerald-700' : 'text-slate-500'
+                            }`}
+                          >
+                            {isLoss ? 'Shortfall / Loss' : isProfit ? 'Surplus' : 'Net Balance'}
+                          </span>
+                        </div>
+                        <p
+                          className={`text-xs sm:text-sm font-bold truncate ${
+                            isLoss ? 'text-red-700' : isProfit ? 'text-emerald-700' : 'text-slate-800'
+                          }`}
+                        >
+                          {isLoss ? formatCurrency(shortfall) : isProfit ? `+${formatCurrency(profitLoss)}` : '₹0'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. SALE DETAILS (Collapsible: Default Closed) */}
+                <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-[#006052]" />
+                      <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                        Sale Details
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowSalesDetails((prev) => !prev)}
+                      className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
                     >
-                      <span
-                        className={`text-xs font-bold ${
-                          isProfit ? 'text-emerald-800' : isLoss ? 'text-red-800' : 'text-slate-600'
-                        }`}
-                      >
-                        {isProfit ? 'Foreclosure Profit' : isLoss ? 'Foreclosure Shortfall' : 'Break-even'}
-                      </span>
-                      <p
-                        className={`text-lg sm:text-xl font-extrabold mt-1 ${
-                          isProfit ? 'text-emerald-700' : isLoss ? 'text-red-700' : 'text-slate-800'
-                        }`}
-                      >
-                        {isProfit ? `+${formatCurrency(profitLoss)}` : isLoss ? `-${formatCurrency(shortfall)}` : '₹0'}
-                      </p>
-                      <span
-                        className={`text-[11px] font-medium mt-1 ${
-                          isProfit ? 'text-emerald-700' : isLoss ? 'text-red-700' : 'text-slate-500'
-                        }`}
-                      >
-                        {isProfit ? 'Surplus from vehicle sale' : isLoss ? 'Unrecovered shortfall' : 'Sale matched costs'}
-                      </span>
-                    </div>
-
-                    {/* KPI 4: Customer Settlement */}
-                    <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/60 flex flex-col justify-between min-h-[96px]">
-                      <span className="text-xs font-bold text-purple-900">Customer Settlement</span>
-                      <p className="text-sm sm:text-base font-bold text-purple-950 mt-1 truncate">
-                        {settlement.type === 'payout'
-                          ? `Paid: ${formatCurrency(settlement.amount)}`
-                          : settlement.type === 'recovery'
-                            ? `Collected: ${formatCurrency(settlement.amount)}`
-                            : settlement.type === 'waiver'
-                              ? (isLoss ? 'Not Collected' : 'Not Paid')
-                              : settlement.type === 'retained'
-                                ? 'Not Paid'
-                                : settlement.status || (isBreakEven ? 'Break-Even' : 'Pending Settlement')}
-                      </p>
-                      <span className="text-[11px] text-purple-800 mt-1 truncate">
-                        {settlement.notes || (settlement.status ? `Status: ${settlement.status}` : 'Pending settlement decision')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 2. SALE DETAILS */}
-              <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-[#006052]" />
-                    <h3 className="text-xs sm:text-sm font-bold text-slate-900">
-                      Sale Details
-                    </h3>
-                  </div>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    Finalized Transaction Info
-                  </span>
-                </div>
-
-                <div className="p-4 space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
-                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
-                      <span className="text-slate-500 font-medium">Sale Date</span>
-                      <span className="font-bold text-slate-800">{formatDate(fData.saleDate || saleDetails.saleDate)}</span>
-                    </div>
-                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
-                      <span className="text-slate-500 font-medium">Buyer Name</span>
-                      <span className="font-bold text-slate-800 truncate max-w-[150px] text-right">{fData.buyerName || saleDetails.buyerName || 'Direct Sale / Auction'}</span>
-                    </div>
-                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
-                      <span className="text-slate-500 font-medium">Buyer Mobile</span>
-                      <span className="font-bold text-slate-800">{fData.buyerPhone || saleDetails.buyerPhone || 'Not recorded'}</span>
-                    </div>
-                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
-                      <span className="text-slate-500 font-medium">Loan Account Status</span>
-                      <span className="font-bold text-purple-700">Foreclosed (Account Closed)</span>
-                    </div>
+                      <span>{showSalesDetails ? 'Close' : 'View Sale Details'}</span>
+                      {showSalesDetails ? <ChevronUp className="h-3.5 w-3.5 text-slate-500" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-500" />}
+                    </button>
                   </div>
 
-                  {/* Optional Sale Notes */}
-                  {(fData.notes || saleDetails.notes) && (
-                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 text-xs text-slate-700">
-                      <span className="font-semibold text-slate-600 block text-[11px] mb-0.5">Sale Notes:</span>
-                      <p className="text-slate-700 text-xs leading-relaxed">{fData.notes || saleDetails.notes}</p>
+                  {showSalesDetails && (
+                    <div className="p-4 space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                        <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-500 font-medium">Sale Date</span>
+                          <span className="font-bold text-slate-800">{formatDate(fData.saleDate || saleDetails.saleDate)}</span>
+                        </div>
+                        <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-500 font-medium">Vehicle Sale Amount</span>
+                          <span className="font-bold text-[#006052]">{formatCurrency(saleAmt)}</span>
+                        </div>
+                        <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-500 font-medium">Buyer Name</span>
+                          <span className="font-bold text-slate-800 truncate max-w-[150px] text-right">{fData.buyerName || saleDetails.buyerName || 'Direct Sale / Auction'}</span>
+                        </div>
+                        <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-500 font-medium">Buyer Mobile</span>
+                          <span className="font-bold text-slate-800">{fData.buyerPhone || saleDetails.buyerPhone || 'Not recorded'}</span>
+                        </div>
+                        <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-500 font-medium">Sale Method</span>
+                          <span className="font-bold text-slate-800">{fData.saleMethod || saleDetails.saleMethod || 'Direct Sale'}</span>
+                        </div>
+                        <div className="py-1.5 border-b border-slate-100 flex items-center justify-between sm:col-span-2">
+                          <span className="text-slate-500 font-medium">Loan Account Status</span>
+                          <span className="font-bold text-purple-700">Foreclosed (Account Closed)</span>
+                        </div>
+                      </div>
+
+                      {/* Optional Sale Notes */}
+                      {(fData.notes || saleDetails.notes) && (
+                        <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 text-xs text-slate-700">
+                          <span className="font-semibold text-slate-600 block text-[11px] mb-0.5">Sale Notes:</span>
+                          <p className="text-slate-700 text-xs leading-relaxed">{fData.notes || saleDetails.notes}</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
-            </div>
 
-            {/* =========================================================
-                RIGHT COLUMN (~48% width)
-                1. Settlement & Recovery
-                2. Cost Breakdown (collapsed by default)
-                3. Accounting & Ledger Transaction References
-            ========================================================= */}
-            <div className="w-full lg:w-[48%] space-y-4">
+              {/* =========================================================
+                  RIGHT COLUMN (~56% width)
+                  1. Settlement & Recovery
+                  2. Cost Breakdown (collapsed by default)
+                  3. Accounting & Ledger Transaction References
+              ========================================================= */}
+              <div className="w-full lg:w-[56%] space-y-4">
               {/* 1. SETTLEMENT & RECOVERY */}
               <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
@@ -1257,14 +1481,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                 </div>
 
                 <div className="p-4 space-y-3.5">
-                  <p className="text-xs text-slate-500">
-                    {isLoss
-                      ? 'Manage shortfall recovery from customer or choose not to collect'
-                      : isProfit
-                        ? 'Manage customer profit payment or choose not to pay customer profit'
-                        : 'Foreclosure sale proceeds matched total foreclosure cost'}
-                  </p>
-
                   {/* Feedback Messages */}
                   {settlementSuccessAlert && (
                     <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-center gap-2 animate-in fade-in duration-150">
@@ -1367,9 +1583,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                                 />
                                 <span className="font-bold text-slate-900">Collect Shortfall from Customer</span>
                               </div>
-                              <p className="text-[11px] text-slate-500 font-normal">
-                                Record the amount actually received from the customer as income in the Ledger.
-                              </p>
                             </label>
 
                             {/* Option 2: Do Not Collect from Customer */}
@@ -1390,9 +1603,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                                 />
                                 <span className="font-bold text-slate-900">Do Not Collect from Customer</span>
                               </div>
-                              <p className="text-[11px] text-slate-500 font-normal">
-                                The company will not collect the remaining shortfall from the customer. No income transaction will be created.
-                              </p>
                             </label>
                           </div>
 
@@ -1422,9 +1632,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                                     Full Shortfall
                                   </button>
                                 </div>
-                                <p className="text-[11px] text-slate-500 mt-1">
-                                  Record the amount actually received from the customer as income in the Ledger. Maximum recoverable shortfall: {formatCurrency(shortfall)}.
-                                </p>
                               </div>
 
                               <div>
@@ -1473,11 +1680,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                           {/* Option 2 Sub-form: Do Not Collect from Customer */}
                           {settlementMode === 'waive_loss' && (
                             <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/20 space-y-3 text-xs animate-in fade-in duration-150">
-                              <div className="p-2.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-xs">
-                                <span className="font-bold block mb-0.5">Do Not Collect from Customer Confirmation:</span>
-                                The company will not collect the remaining shortfall of {formatCurrency(shortfall)} from the customer. No income transaction will be created.
-                              </div>
-
                               <div>
                                 <label className="block font-semibold text-slate-700 mb-1">
                                   Notes / Reason <span className="text-slate-400 font-normal">(Optional)</span>
@@ -1602,9 +1804,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                                 />
                                 <span className="font-bold text-slate-900">Pay Customer Profit</span>
                               </div>
-                              <p className="text-[11px] text-slate-500 font-normal">
-                                Pay the agreed amount to the customer and record the actual payment as an expense in the Ledger.
-                              </p>
                             </label>
 
                             {/* Option 2: Do Not Pay Customer Profit */}
@@ -1625,9 +1824,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                                 />
                                 <span className="font-bold text-slate-900">Do Not Pay Customer Profit</span>
                               </div>
-                              <p className="text-[11px] text-slate-500 font-normal">
-                                The company will not pay the profit amount to the customer. No expense transaction will be created.
-                              </p>
                             </label>
                           </div>
 
@@ -1657,9 +1853,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                                     Full Surplus
                                   </button>
                                 </div>
-                                <p className="text-[11px] text-slate-500 mt-1">
-                                  Pay the agreed amount to the customer and record the actual payment as an expense in the Ledger. Maximum payable profit: {formatCurrency(profitLoss)}.
-                                </p>
                               </div>
 
                               <div>
@@ -1708,11 +1901,6 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                           {/* Option 2 Sub-form: Do Not Pay Customer Profit */}
                           {settlementMode === 'waive_profit' && (
                             <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/20 space-y-3 text-xs animate-in fade-in duration-150">
-                              <div className="p-2.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-xs">
-                                <span className="font-bold block mb-0.5">Do Not Pay Customer Profit Confirmation:</span>
-                                The company will not pay the profit amount of {formatCurrency(profitLoss)} to the customer. No expense transaction will be created.
-                              </div>
-
                               <div>
                                 <label className="block font-semibold text-slate-700 mb-1">
                                   Notes / Reason <span className="text-slate-400 font-normal">(Optional)</span>
@@ -1785,7 +1973,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
-                    <span>{showSoldCalcBreakdown ? 'Hide Breakdown' : 'View Breakdown'}</span>
+                    <span>{showSoldCalcBreakdown ? 'Close' : 'View Breakdown'}</span>
                     {showSoldCalcBreakdown ? (
                       <ChevronUp className="h-3.5 w-3.5 text-slate-500" />
                     ) : (
@@ -1878,412 +2066,474 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
                 )}
               </div>
 
-              {/* 3. ACCOUNTING & LEDGER TRANSACTION REFERENCES */}
+              {/* 3. ACCOUNTING & LEDGER REFERENCES (Collapsible: Default Closed) */}
               <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <FileCheck className="h-4 w-4 text-[#006052]" />
                     <h3 className="text-xs sm:text-sm font-bold text-slate-900">
-                      Accounting &amp; Ledger Transaction References
+                      Accounting &amp; Ledger References
                     </h3>
                   </div>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    Auditable Records
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAccountingReferences((prev) => !prev)}
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+                  >
+                    <span>{showAccountingReferences ? 'Close' : 'View'}</span>
+                    {showAccountingReferences ? <ChevronUp className="h-3.5 w-3.5 text-slate-500" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-500" />}
+                  </button>
                 </div>
 
-                <div className="p-3.5 sm:p-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    {/* 1. Vehicle Sale Income */}
-                    <div className="p-3 bg-slate-50/70 rounded-lg border border-slate-200/80 shadow-2xs space-y-1 flex flex-col justify-between min-h-[96px]">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-bold text-slate-800">Vehicle Sale Proceeds</span>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                            Ledger Income
-                          </span>
-                        </div>
-                        <p className="text-slate-600 font-medium">
-                          Ref: <code className="bg-white px-1 py-0.5 rounded text-[11px] font-mono font-bold text-slate-800 border border-slate-200">{saleTxId}</code>
-                        </p>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-200/60 mt-1">
-                        <span>Amount: <strong className="text-slate-800">{formatCurrency(saleAmt)}</strong></span>
-                        <span>{formatDate(fData.saleDate || saleDetails.saleDate)}</span>
-                      </div>
-                    </div>
-
-                    {/* 2. Foreclosure Settlement Transaction */}
-                    <div className="p-3 bg-slate-50/70 rounded-lg border border-slate-200/80 shadow-2xs space-y-1 flex flex-col justify-between min-h-[96px]">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-bold text-slate-800">Settlement Transaction</span>
-                          {settlement.status === 'Completed' ? (
+                {showAccountingReferences && (
+                  <div className="p-3.5 sm:p-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      {/* 1. Vehicle Sale Income */}
+                      <div className="p-3 bg-slate-50/70 rounded-lg border border-slate-200/80 shadow-2xs space-y-1 flex flex-col justify-between min-h-[96px]">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-slate-800">Vehicle Sale Proceeds</span>
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                              {settlement.type === 'payout' ? 'Ledger Expense' : 'Ledger Income'}
+                              Ledger Income
                             </span>
-                          ) : settlement.status === 'Waived' || settlement.status === 'Retained' ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
-                              {isLoss ? 'Do Not Collect' : 'Do Not Pay'}
-                            </span>
+                          </div>
+                          <p className="text-slate-600 font-medium">
+                            Ref: <code className="bg-white px-1 py-0.5 rounded text-[11px] font-mono font-bold text-slate-800 border border-slate-200">{saleTxId}</code>
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-200/60 mt-1">
+                          <span>Amount: <strong className="text-slate-800">{formatCurrency(saleAmt)}</strong></span>
+                          <span>{formatDate(fData.saleDate || saleDetails.saleDate)}</span>
+                        </div>
+                      </div>
+
+                      {/* 2. Foreclosure Settlement Transaction */}
+                      <div className="p-3 bg-slate-50/70 rounded-lg border border-slate-200/80 shadow-2xs space-y-1 flex flex-col justify-between min-h-[96px]">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-slate-800">Settlement Transaction</span>
+                            {settlement.status === 'Completed' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {settlement.type === 'payout' ? 'Ledger Expense' : 'Ledger Income'}
+                              </span>
+                            ) : settlement.status === 'Waived' || settlement.status === 'Retained' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                                {isLoss ? 'Do Not Collect' : 'Do Not Pay'}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                Pending
+                              </span>
+                            )}
+                          </div>
+
+                          {settlement.status === 'Completed' ? (
+                            <p className="text-slate-600 font-medium">
+                              Ref: <code className="bg-white px-1 py-0.5 rounded text-[11px] font-mono font-bold text-slate-800 border border-slate-200">
+                                {settlement.type === 'payout' ? payoutTxId : recoveryTxId}
+                              </code>
+                            </p>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                              Pending
-                            </span>
+                            <p className="text-slate-600 text-[11px] line-clamp-2">
+                              {settlement.notes || (isLoss ? 'Shortfall will not be collected. No income transaction.' : isProfit ? 'Profit will not be paid. No expense transaction.' : 'Pending decision.')}
+                            </p>
                           )}
                         </div>
 
-                        {settlement.status === 'Completed' ? (
-                          <p className="text-slate-600 font-medium">
-                            Ref: <code className="bg-white px-1 py-0.5 rounded text-[11px] font-mono font-bold text-slate-800 border border-slate-200">
-                              {settlement.type === 'payout' ? payoutTxId : recoveryTxId}
-                            </code>
-                          </p>
-                        ) : (
-                          <p className="text-slate-600 text-[11px] line-clamp-2">
-                            {settlement.notes || (isLoss ? 'Shortfall will not be collected. No income transaction.' : isProfit ? 'Profit will not be paid. No expense transaction.' : 'Pending decision.')}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-200/60 mt-1">
-                        {settlement.status === 'Completed' ? (
-                          <>
-                            <span>
-                              {settlement.type === 'payout' ? 'Paid: ' : 'Collected: '}
-                              <strong className="text-slate-800">{formatCurrency(settlement.amount)}</strong>
-                            </span>
-                            <span>{formatDate(settlement.timestamp)}</span>
-                          </>
-                        ) : (
-                          <span className="text-slate-400">No financial entries created</span>
-                        )}
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-200/60 mt-1">
+                          {settlement.status === 'Completed' ? (
+                            <>
+                              <span>
+                                {settlement.type === 'payout' ? 'Paid: ' : 'Collected: '}
+                                <strong className="text-slate-800">{formatCurrency(settlement.amount)}</strong>
+                              </span>
+                              <span>{formatDate(settlement.timestamp)}</span>
+                            </>
+                          ) : (
+                            <span className="text-slate-400">No financial entries created</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
-        );
-      })()}
+
+          {/* =========================================================
+              SHORTFALL SUMMARY (Displayed ONLY when actual loss exists)
+              Placed below the two columns spanning full width
+          ========================================================= */}
+          {/* =========================================================
+              SHORTFALL SUMMARY (Displayed ONLY when actual loss exists)
+              4 Status Cards Grid matching Reference Image 1
+          ========================================================= */}
+          {isLoss && (
+            <div className="w-full bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-rose-500" />
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                    Shortfall Summary
+                  </h3>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-600 border border-rose-200/70">
+                  Loss
+                </span>
+              </div>
+
+              <div className="p-4 sm:p-5 space-y-4">
+                {/* 4 Status Cards Row matching Reference Image 1 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {shortfallComponents.map((comp, idx) => {
+                    const isSatisfied = comp.status === 'Satisfied';
+                    const displayAmount = isSatisfied
+                      ? (comp.due > 0 ? comp.due : comp.satisfied)
+                      : comp.remaining;
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`rounded-2xl border p-3.5 sm:p-4 flex items-center gap-3.5 transition-all ${
+                          isSatisfied
+                            ? 'bg-[#f0fbf7] border-emerald-200/80 shadow-2xs'
+                            : 'bg-[#fff5f5] border-rose-200/80 shadow-2xs'
+                        }`}
+                      >
+                        {/* Circular Icon Container */}
+                        <div
+                          className={`h-11 w-11 rounded-full flex items-center justify-center shrink-0 ${
+                            isSatisfied
+                              ? 'bg-emerald-100/90 text-emerald-600'
+                              : 'bg-rose-100/90 text-rose-500'
+                          }`}
+                        >
+                          {isSatisfied ? (
+                            <Check className="h-5 w-5 stroke-[2.5]" />
+                          ) : (
+                            <AlertCircle className="h-5 w-5 stroke-[2.5]" />
+                          )}
+                        </div>
+
+                        {/* Text Information */}
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-semibold text-slate-500 truncate block">
+                            {comp.name}
+                          </span>
+                          <p
+                            className={`text-lg sm:text-xl font-black mt-0.5 tracking-tight truncate ${
+                              isSatisfied ? 'text-emerald-700' : 'text-rose-600'
+                            }`}
+                          >
+                            {formatCurrency(displayAmount)}
+                          </p>
+                          <div className="mt-1.5">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                isSatisfied
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/80'
+                                  : 'bg-rose-100 text-rose-700 border border-rose-200/80'
+                              }`}
+                            >
+                              {isSatisfied ? 'Satisfied' : 'Not Satisfied'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Recovery distinction (if any recovery recorded) */}
+                {recoveredAmt > 0 && (
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-slate-600">
+                    <span>
+                      Total Loss: <strong className="text-slate-800">{formatCurrency(shortfall)}</strong> • Amount Recovered: <strong className="text-emerald-700">{formatCurrency(recoveredAmt)}</strong>
+                    </span>
+                    <span>
+                      Net Outstanding Shortfall: <strong className="text-red-700">{formatCurrency(remainingShortfall)}</strong>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    })()}
 
 
       {/* =========================================================
           2 & 3. SEIZURE DETAILS & OVERDUE SECTION (For Seized Status)
       ========================================================= */}
       {isSeized && (
-        <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
-          {/* Section Header */}
-          <div className="px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-lg bg-orange-100 text-[#EA580C] flex items-center justify-center">
-                <ShieldAlert className="h-4.5 w-4.5" />
+        <div className="space-y-4">
+          {/* Four Compact Financial KPI Cards Row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {/* KPI 1: Principal Outstanding */}
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3.5 sm:p-4 flex flex-col justify-between min-h-[96px]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Principal Outstanding
+                </span>
+                <Banknote className="h-4 w-4 text-slate-400" />
               </div>
-              <div>
-                <h2 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">
-                  Seizure Details
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Current repossession status, overdue metrics, and storage info
+              <div className="mt-2">
+                <p className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
+                  {formatCurrency(loanOutstandingInfo?.remainingPrincipal || 0)}
                 </p>
+                <span className="text-[11px] text-slate-500">Remaining unpaid principal</span>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleOpenEditSeizure}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+            {/* KPI 2: Interest Outstanding */}
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3.5 sm:p-4 flex flex-col justify-between min-h-[96px]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Interest Outstanding
+                </span>
+                <TrendingUp className="h-4 w-4 text-slate-400" />
+              </div>
+              <div className="mt-2">
+                <p className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
+                  {formatCurrency(loanOutstandingInfo?.remainingInterest || 0)}
+                </p>
+                <span className="text-[11px] text-slate-500">Remaining unpaid interest</span>
+              </div>
+            </div>
+
+            {/* KPI 3: Total Outstanding (Primary Metric with Green Accent) */}
+            <div className="bg-emerald-50/50 rounded-xl border border-emerald-200/90 shadow-2xs p-3.5 sm:p-4 flex flex-col justify-between min-h-[96px]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] sm:text-xs font-bold text-[#006052] uppercase tracking-wider">
+                  Total Outstanding
+                </span>
+                <Scale className="h-4 w-4 text-[#006052]" />
+              </div>
+              <div className="mt-2">
+                <p className="text-base sm:text-xl font-extrabold text-[#006052] tracking-tight">
+                  {formatCurrency(loanOutstandingInfo?.outstandingAmount || 0)}
+                </p>
+                <span className="text-[11px] text-emerald-800 font-medium">Principal + Interest</span>
+              </div>
+            </div>
+
+            {/* KPI 4: View Schedule Action Card */}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setActiveModal('schedule')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setActiveModal('schedule');
+                }
+              }}
+              className="bg-white rounded-xl border border-slate-200/90 hover:border-[#006052]/50 hover:bg-slate-50/80 shadow-2xs p-3.5 sm:p-4 flex flex-col justify-between min-h-[96px] cursor-pointer transition-all group"
             >
-              <Edit className="h-3.5 w-3.5 text-slate-500" />
-              <span>Edit Details</span>
-            </button>
-          </div>
-
-          <div className="p-5 sm:p-6 space-y-6">
-            {/* 2-Column Responsive Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
-              <FieldItem
-                label="Seizure Date"
-                value={formatDate(seizureDetails.seizureDate || seizureDetails.date)}
-              />
-              <FieldItem
-                label="Reason for Seizure"
-                value={seizureDetails.reason || 'Payment Default'}
-              />
-
-              {/* Overdue Installments: Strictly calculated from loan schedule */}
-              <div className="py-2.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-xs sm:text-sm">
-                <span className="text-slate-500 font-medium">Overdue Installments</span>
-                {overdueInfo.isDataMissing ? (
-                  <span className="font-semibold text-amber-600 text-left sm:text-right">
-                    {overdueInfo.missingReason || 'Schedule data unavailable'}
-                  </span>
-                ) : overdueInfo.hasOverdue ? (
-                  <span className="font-bold text-red-600 text-left sm:text-right">
-                    {overdueInfo.overdueCount} {overdueInfo.overdueCount === 1 ? 'installment' : 'installments'} overdue
-                  </span>
-                ) : (
-                  <span className="font-semibold text-emerald-700 text-left sm:text-right">
-                    No overdue
-                  </span>
-                )}
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] sm:text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                  Repayment Schedule
+                </span>
+                <Calendar className="h-4 w-4 text-[#006052] group-hover:scale-110 transition-transform" />
               </div>
-
-              {/* Overdue Amount: Strictly calculated from unpaid balance */}
-              <div className="py-2.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-xs sm:text-sm">
-                <span className="text-slate-500 font-medium">Overdue Amount</span>
-                {overdueInfo.isDataMissing ? (
-                  <span className="font-semibold text-amber-600 text-left sm:text-right">
-                    Unavailable
-                  </span>
-                ) : overdueInfo.hasOverdue ? (
-                  <span className="font-extrabold text-red-600 text-left sm:text-right">
-                    {formatCurrency(overdueInfo.overdueAmount)}
-                  </span>
-                ) : (
-                  <span className="font-bold text-emerald-700 text-left sm:text-right">
-                    ₹0
-                  </span>
-                )}
-              </div>
-
-              <FieldItem
-                label="Storage Location"
-                value={seizureDetails.storageLocation || 'Central Yard / Warehouse'}
-              />
-              <FieldItem
-                label="Vehicle Condition"
-                value={seizureDetails.condition || 'Good'}
-              />
-            </div>
-
-            {/* Seizure Notes Callout */}
-            <div className="pt-2">
-              <span className="text-xs font-semibold text-slate-500 block mb-1">
-                Seizure Notes
-              </span>
-              <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200/80 text-xs text-slate-700 leading-relaxed">
-                {seizureDetails.notes || 'No specific notes recorded for this seizure.'}
-              </div>
-            </div>
-
-            {/* =========================================================
-                4. VEHICLE ACTIONS (Release, Sold, Edit, History)
-            ========================================================= */}
-            <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
-                {/* Release Vehicle - Primary Green Button */}
-                <button
-                  type="button"
-                  onClick={handleOpenRelease}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-[#006052] hover:bg-[#004d42] text-white text-xs sm:text-sm font-bold shadow-xs hover:shadow transition-all cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <KeyRound className="h-4 w-4" />
-                  <span>Release Vehicle</span>
-                </button>
-
-                {/* Mark as Sold - Outlined Secondary Button */}
-                <button
-                  type="button"
-                  onClick={handleOpenSold}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-semibold shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <DollarSign className="h-4 w-4 text-slate-500" />
-                  <span>Mark as Sold</span>
-                </button>
-
-                {/* Edit Seizure Details - Outlined Secondary Button with Edit Icon */}
-                <button
-                  type="button"
-                  onClick={handleOpenEditSeizure}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-semibold shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <Edit className="h-4 w-4 text-slate-500" />
-                  <span>Edit Seizure Details</span>
-                </button>
-              </div>
-
-              {/* View Status History - Accessible Action */}
-              <button
-                type="button"
-                onClick={() => setActiveModal('history')}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-[#006052] bg-white hover:bg-emerald-50/70 text-[#006052] text-xs sm:text-sm font-bold shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-2"
-              >
-                <History className="h-4 w-4 text-[#006052]" />
-                <span>View Status History</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================
-          5. VEHICLE STATUS HISTORY (Chronological Timeline)
-          Hidden from main page on Sold Vehicles per redesign
-      ========================================================= */}
-      {!isSold && (
-        <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
-          <div className="px-5 sm:px-6 py-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3 font-bold text-slate-900 text-sm">
-          <div className="flex items-center gap-2">
-            <History className="h-4 w-4 text-[#006052]" />
-            <span>Vehicle Status History</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setActiveModal('history')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#006052] bg-white hover:bg-emerald-50/70 text-[#006052] text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-          >
-            <History className="h-3.5 w-3.5" />
-            <span>View Full Timeline Modal</span>
-          </button>
-        </div>
-
-        <div className="p-5 sm:p-6">
-          {(() => {
-            const timelineEvents = getChronologicalVehicleHistory(record);
-            if (timelineEvents.length === 0) {
-              return (
-                <div className="py-8 text-center rounded-xl bg-slate-50/80 border border-slate-100">
-                  <div className="h-10 w-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2.5">
-                    <History className="h-5 w-5" />
-                  </div>
-                  <h4 className="text-sm font-bold text-slate-700">No status changes recorded</h4>
-                  <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-                    Vehicle currently holds its initial Active status.
+              <div className="mt-2 flex items-center justify-between">
+                <div>
+                  <p className="text-sm sm:text-base font-bold text-slate-900 group-hover:text-[#006052] transition-colors">
+                    View Schedule
                   </p>
+                  <span className="text-[11px] text-slate-500">
+                    {loanOutstandingInfo?.effectiveSchedule?.length || record.loan?.tenure || 0} installments plan
+                  </span>
                 </div>
-              );
-            }
+                <span className="p-1.5 rounded-lg bg-emerald-50 text-[#006052] group-hover:bg-[#006052] group-hover:text-white transition-colors">
+                  <ArrowRight className="h-4 w-4" />
+                </span>
+              </div>
+            </div>
+          </div>
 
-            return (
-              <div className="relative pl-6 border-l-2 border-slate-200 space-y-5">
-                {timelineEvents.map((item, idx) => (
-                  <div key={item.id || idx} className="relative">
-                    {/* Timeline Bullet */}
-                    <div
-                      className={`absolute -left-[31px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-white shadow-xs ${item.eventType === 'seizure' || item.toStatus === 'Seized'
-                        ? 'bg-[#EA580C]'
-                        : item.eventType === 'release' || item.statusBadge?.includes('Released')
-                          ? 'bg-[#006052]'
-                          : item.eventType === 'sale' || item.toStatus === 'Sold'
-                            ? 'bg-slate-700'
-                            : item.eventType === 'settlement'
-                              ? 'bg-emerald-600'
-                              : item.eventType === 'foreclosure_completed'
-                                ? 'bg-purple-600'
-                                : item.eventType === 'expense'
-                                  ? 'bg-amber-600'
-                                  : 'bg-[#2563EB]'
-                        }`}
-                    />
+          {/* Two-Column Layout: Left (~40%) Financial Summary, Right (~60%) Seizure Details */}
+          <div className="flex flex-col lg:flex-row items-start gap-4 lg:gap-5 w-full">
+            {/* LEFT COLUMN: ~40% width */}
+            <div className="w-full lg:w-[40%] space-y-4">
+              <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Banknote className="h-4 w-4 text-[#006052]" />
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                      Loan &amp; Overdue Summary
+                    </h3>
+                  </div>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    {record.loanId || 'Active Loan'}
+                  </span>
+                </div>
 
-                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-1.5 text-xs">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-900">
-                            {item.title || (item.fromStatus ? `${item.fromStatus} → ${item.toStatus}` : item.toStatus)}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.badgeColor || 'bg-slate-600 text-white'
-                              }`}
-                          >
-                            {item.statusBadge || item.toStatus}
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-slate-500 font-medium">
-                          {formatDateTime(item.date, item)}
+                <div className="p-4 space-y-3">
+                  <div className="space-y-2 text-xs">
+                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Original Loan Amount</span>
+                      <span className="font-bold text-slate-800">
+                        {formatCurrency(loanOutstandingInfo?.principal || record.loanAmount || 0)}
+                      </span>
+                    </div>
+
+                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Total Repaid So Far</span>
+                      <span className="font-bold text-slate-800">
+                        {formatCurrency(loanOutstandingInfo?.totalRepaid || 0)}
+                      </span>
+                    </div>
+
+                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Overdue Installments</span>
+                      {overdueInfo.isDataMissing ? (
+                        <span className="font-semibold text-amber-600">
+                          {overdueInfo.missingReason || 'Schedule data unavailable'}
                         </span>
-                      </div>
-
-                      {item.fromStatus && item.eventType !== 'sale' && item.eventType !== 'settlement' && item.eventType !== 'foreclosure_completed' && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Transition:</span> {item.fromStatus} → {item.toStatus}
-                        </p>
-                      )}
-                      {item.salePrice && (
-                        <p className="text-slate-700 font-semibold">
-                          <span className="text-slate-500 font-medium">Sale Price:</span> {formatCurrency(item.salePrice)}
-                        </p>
-                      )}
-                      {item.totalForeclosureCost !== undefined && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Total Foreclosure Cost:</span> {formatCurrency(item.totalForeclosureCost)}
-                        </p>
-                      )}
-                      {item.totalCost !== undefined && item.eventType === 'foreclosure_completed' && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Foreclosure Final Cost:</span> {formatCurrency(item.totalCost)}
-                        </p>
-                      )}
-                      {item.profitLoss !== undefined && (
-                        <p className={item.isProfit ? 'text-emerald-700 font-bold' : 'text-red-700 font-bold'}>
-                          <span className="text-slate-500 font-medium">Foreclosure Result:</span>{' '}
-                          {item.isProfit
-                            ? `Profit: +${formatCurrency(item.profitLoss)}`
-                            : item.profitLoss < 0
-                              ? `Shortfall: -${formatCurrency(Math.abs(item.profitLoss))}`
-                              : 'Break-even'}
-                        </p>
-                      )}
-                      {item.settlementType && (
-                        <p className="text-slate-700 font-semibold">
-                          <span className="text-slate-500 font-medium">Settlement Resolution:</span>{' '}
-                          {item.settlementType === 'payout'
-                            ? `Customer Payout (${formatCurrency(item.amount)})`
-                            : item.settlementType === 'retained'
-                              ? 'Profit Retained by Company'
-                              : item.settlementType === 'recovery'
-                                ? `Shortfall Recovery Received (${formatCurrency(item.amount)})`
-                                : item.settlementType === 'waiver'
-                                  ? 'Customer Settlement Waived'
-                                  : item.settlementType}
-                        </p>
-                      )}
-                      {item.releasedTo && (
-                        <p className="text-slate-700 font-semibold">
-                          <span className="text-slate-500 font-medium">Released To / Recipient:</span> {item.releasedTo}
-                        </p>
-                      )}
-                      {item.clearedAmount && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Settlement Amount:</span> {formatCurrency(item.clearedAmount)}
-                        </p>
-                      )}
-                      {item.buyerName && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Buyer:</span> {item.buyerName}{' '}
-                          {item.buyerPhone ? `(${item.buyerPhone})` : ''}
-                        </p>
-                      )}
-                      {item.storageLocation && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Storage Location:</span> {item.storageLocation}
-                        </p>
-                      )}
-                      {item.condition && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Condition:</span> {item.condition}
-                        </p>
-                      )}
-                      {item.reason && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Details / Remarks:</span> {item.reason}
-                        </p>
-                      )}
-                      {item.notes && item.notes !== item.reason && (
-                        <p className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Notes:</span> {item.notes}
-                        </p>
+                      ) : overdueInfo.hasOverdue ? (
+                        <span className="font-bold text-red-600">
+                          {overdueInfo.overdueCount} {overdueInfo.overdueCount === 1 ? 'installment' : 'installments'} overdue
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-emerald-700">No overdue</span>
                       )}
                     </div>
+
+                    <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Overdue Amount</span>
+                      {overdueInfo.isDataMissing ? (
+                        <span className="font-semibold text-amber-600">Unavailable</span>
+                      ) : overdueInfo.hasOverdue ? (
+                        <span className="font-extrabold text-red-600">
+                          {formatCurrency(overdueInfo.overdueAmount)}
+                        </span>
+                      ) : (
+                        <span className="font-bold text-emerald-700">₹0</span>
+                      )}
+                    </div>
+
+                    {Number(loanOutstandingInfo?.advanceBalance || 0) > 0 && (
+                      <div className="py-1.5 border-b border-slate-100 flex items-center justify-between">
+                        <span className="text-slate-500 font-medium">Advance Balance</span>
+                        <span className="font-bold text-emerald-700">
+                          {formatCurrency(loanOutstandingInfo.advanceBalance)}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                ))}
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveModal('schedule')}
+                    className="w-full mt-2 py-2 px-3 rounded-lg border border-slate-200 hover:border-[#006052]/40 bg-slate-50 hover:bg-slate-100/80 text-slate-700 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Calendar className="h-3.5 w-3.5 text-[#006052]" />
+                    <span>View Full Repayment Schedule</span>
+                  </button>
+                </div>
               </div>
-            );
-          })()}
+            </div>
+
+            {/* RIGHT COLUMN: ~60% width */}
+            <div className="w-full lg:w-[60%] space-y-4">
+              <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                {/* Header */}
+                <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-7 w-7 rounded-lg bg-orange-100 text-[#EA580C] flex items-center justify-center">
+                      <ShieldAlert className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h2 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">
+                        Seizure Details
+                      </h2>
+                      <p className="text-[11px] text-slate-500">
+                        Repossession record, storage location, and vehicle condition
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleOpenEditSeizure}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Edit className="h-3.5 w-3.5 text-slate-500" />
+                    <span>Edit Details</span>
+                  </button>
+                </div>
+
+                <div className="p-4 sm:p-5 space-y-4">
+                  {/* 2-Column Responsive Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+                    <FieldItem
+                      label="Seizure Date"
+                      value={formattedSeizureDate}
+                    />
+                    <FieldItem
+                      label="Reason for Seizure"
+                      value={seizureDetails.reason || 'Payment Default'}
+                    />
+                    <FieldItem
+                      label="Storage Location"
+                      value={seizureDetails.storageLocation || 'Central Yard / Warehouse'}
+                    />
+                    <FieldItem
+                      label="Vehicle Condition"
+                      value={seizureDetails.condition || 'Good'}
+                    />
+                  </div>
+
+                  {/* Seizure Notes */}
+                  <div className="pt-1">
+                    <span className="text-[11px] font-semibold text-slate-500 block mb-1">
+                      Seizure Notes
+                    </span>
+                    <div className="p-3 rounded-lg bg-slate-50 border border-slate-200/80 text-xs text-slate-700 leading-relaxed">
+                      {seizureDetails.notes || 'No specific notes recorded for this seizure.'}
+                    </div>
+                  </div>
+
+                  {/* Actions Footer - duplicate View Status History removed */}
+                  <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2.5">
+                    {/* Release Vehicle - Primary Green Button */}
+                    <button
+                      type="button"
+                      onClick={handleOpenRelease}
+                      className="px-4 py-2 rounded-lg bg-[#006052] hover:bg-[#004d42] text-white text-xs font-bold shadow-xs hover:shadow transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                      <span>Release Vehicle</span>
+                    </button>
+
+                    {/* Mark as Sold - Outlined Secondary Button */}
+                    <button
+                      type="button"
+                      onClick={handleOpenSold}
+                      className="px-4 py-2 rounded-lg border border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <DollarSign className="h-3.5 w-3.5 text-slate-500" />
+                      <span>Mark as Sold</span>
+                    </button>
+
+                    {/* Edit Seizure Details */}
+                    <button
+                      type="button"
+                      onClick={handleOpenEditSeizure}
+                      className="px-3.5 py-2 rounded-lg border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Edit className="h-3.5 w-3.5 text-slate-500" />
+                      <span>Edit Seizure Details</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
       )}
 
       {/* =========================================================
@@ -2861,6 +3111,13 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
         isOpen={activeModal === 'history'}
         onClose={() => setActiveModal(null)}
         vehicleRecord={record}
+      />
+
+      {/* 5. REPAYMENT SCHEDULE MODAL */}
+      <RepaymentScheduleModal
+        isOpen={activeModal === 'schedule'}
+        onClose={() => setActiveModal(null)}
+        loanDetails={loanDetailsForModal}
       />
     </div>
   );

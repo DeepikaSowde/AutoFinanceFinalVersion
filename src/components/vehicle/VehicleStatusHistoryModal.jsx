@@ -64,8 +64,8 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
       statusBadge: 'Active',
       badgeColor: 'bg-[#2563EB] text-white',
       title: 'Vehicle Registered & Activated',
-      eventDate: initialDate,
-      date: vehicleRecord.createdAt || loan.disbursementDate || '1970-01-01T00:00:00.000Z',
+      eventDate: initialDate !== 'Initial Onboarding' ? initialDate : null,
+      date: vehicleRecord.createdAt || loan.disbursementDate || vehicle.regDate || null,
       reason: 'Vehicle onboarding completed and initial status set to Active',
       notes: vehicleRecord.loanId ? `Linked with Loan ID: ${vehicleRecord.loanId}` : 'Vehicle active in fleet',
       customerName: customer.name || 'Customer',
@@ -132,8 +132,8 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
       statusBadge,
       badgeColor,
       title,
-      eventDate: item.seizureDate || item.releaseDate || item.saleDate || item.closureDate || item.date,
-      date: item.date || item.seizureDate || item.releaseDate || item.saleDate || item.closureDate || new Date().toISOString(),
+      eventDate: item.seizureDate || item.releaseDate || item.saleDate || item.closureDate || item.date || item.timestamp || null,
+      date: item.timestamp || item.date || item.recordedAt || item.createdAt || item.seizureDate || item.releaseDate || item.saleDate || item.closureDate || null,
       reason: item.reason,
       storageLocation: item.storageLocation,
       condition: item.condition,
@@ -151,7 +151,7 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
   // 3. If currently Inactive due to loan closure/midway closure but no explicit Inactive entry in rawHistory
   if (currentStatus === 'Inactive' && !timeline.some((e) => e.toStatus === 'Inactive')) {
     const isMidway = vehicleRecord.isMidwayClosed || (vehicleRecord.status || '').toLowerCase() === 'midway closed';
-    const closureDate = vehicleRecord.closureDate || vehicleRecord.midwayClosure?.date || vehicleRecord.midwayClosure?.closedAt || vehicleRecord.updatedAt || new Date().toISOString();
+    const closureDate = vehicleRecord.closureDate || vehicleRecord.midwayClosure?.date || vehicleRecord.midwayClosure?.closedAt || vehicleRecord.updatedAt || null;
     timeline.push({
       id: 'evt-inactive-auto',
       eventType: 'closure',
@@ -395,7 +395,16 @@ const VehicleStatusHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
                         </div>
 
                         <span className="text-[11px] font-medium text-slate-500">
-                          {formatDateTime(event.date, event)}
+                          {(() => {
+                            const t = event.date || event.eventDate;
+                            if (!t || t === '1970-01-01T00:00:00.000Z' || t === 'Initial Onboarding') {
+                              return event.eventDate && event.eventDate !== 'Initial Onboarding'
+                                ? formatDate(event.eventDate)
+                                : 'Timestamp unavailable';
+                            }
+                            const formatted = formatDateTime(t, event);
+                            return !formatted || formatted === '—' ? 'Timestamp unavailable' : formatted;
+                          })()}
                         </span>
                       </div>
 
