@@ -25,6 +25,7 @@ import {
   COLOURS,
   FUEL_TYPES,
   MANUFACTURING_YEARS,
+  VEHICLE_OWNERSHIP_TYPES,
   RTO_LOCATIONS,
   FINANCIERS,
   NOC_STATUSES,
@@ -266,6 +267,15 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
                   placeholder={t("vehicle.selectYear")}
                   value={data.year || ""}
                   onChange={set("year")}
+                />
+              </Field>
+
+              <Field label="Vehicle Ownership Type" required>
+                <Select
+                  options={VEHICLE_OWNERSHIP_TYPES}
+                  placeholder="Select Ownership Type"
+                  value={data.ownershipType || ""}
+                  onChange={set("ownershipType")}
                 />
               </Field>
 

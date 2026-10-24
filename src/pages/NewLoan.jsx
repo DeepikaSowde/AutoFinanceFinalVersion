@@ -39,7 +39,7 @@ const initialForm = () => ({
     dlNo: '', dlFile: null, voterNo: '', voterFile: null,
   },
   vehicle: {
-    type: '', brand: '', model: '', variant: '', colour: '', year: '', fuelType: '', amount: '', photo: null,
+    type: '', brand: '', model: '', variant: '', colour: '', year: '', fuelType: '', amount: '', ownershipType: '', photo: null,
     regNo: '', rto: '', regDate: '', chassisNo: '', engineNo: '',
     hypothecation: 'No', financier: '', nocStatus: '', nocFile: null,
     taxExpiry: '', insuranceCompany: '', policyNo: '', insuranceExpiry: '',

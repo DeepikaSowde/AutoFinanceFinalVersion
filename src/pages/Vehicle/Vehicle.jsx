@@ -8,6 +8,7 @@ import SoldVehiclesTable from '../../components/vehicle/SoldVehiclesTable';
 import VehicleDetailsView from './VehicleDetailsView';
 import ActiveVehicleModal from '../../components/vehicle/ActiveVehicleModal';
 import VehicleExpenseHistoryModal from '../../components/vehicle/VehicleExpenseHistoryModal';
+import ForeclosureAnalyticsTab from './ForeclosureAnalyticsTab';
 import { getEffectiveVehicleStatus, syncVehiclesWithClosedLoans } from '../../utils/vehicleStatusHelper';
 
 /**
@@ -212,41 +213,51 @@ const Vehicle = () => {
           onTabChange={setActiveTab}
         />
 
-        {/* =========================================================
-            3. SEARCH BAR AND VEHICLE-TYPE FILTER
-        ========================================================= */}
-        <VehicleSearchAndFilter
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          selectedType={selectedType}
-          onTypeChange={setSelectedType}
-        />
-
-        {/* =========================================================
-            4. SUMMARY KPI CARDS (Real data counts)
-        ========================================================= */}
-        <VehicleSummaryCards
-          totalCount={summaryCounts.totalCount}
-          seizedCount={summaryCounts.seizedCount}
-          soldCount={summaryCounts.soldCount}
-        />
-
-        {/* =========================================================
-            5. VEHICLE CARD GRID / SOLD VEHICLES TABLE
-        ========================================================= */}
-        {activeTab === 'sold' ? (
-          <SoldVehiclesTable
-            vehicles={filteredVehicles}
+        {activeTab === 'foreclosure_analytics' ? (
+          <ForeclosureAnalyticsTab
+            allVehicles={allVehicles}
+            rawRecords={rawRecords}
             onViewDetails={handleViewDetails}
-            onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
           />
         ) : (
-          <VehicleCardGrid
-            vehicles={filteredVehicles}
-            onViewDetails={handleViewDetails}
-            onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
-            onAddVehicle={() => navigate('/newloan')}
-          />
+          <>
+            {/* =========================================================
+                3. SEARCH BAR AND VEHICLE-TYPE FILTER
+            ========================================================= */}
+            <VehicleSearchAndFilter
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              selectedType={selectedType}
+              onTypeChange={setSelectedType}
+            />
+
+            {/* =========================================================
+                4. SUMMARY KPI CARDS (Real data counts)
+            ========================================================= */}
+            <VehicleSummaryCards
+              totalCount={summaryCounts.totalCount}
+              seizedCount={summaryCounts.seizedCount}
+              soldCount={summaryCounts.soldCount}
+            />
+
+            {/* =========================================================
+                5. VEHICLE CARD GRID / SOLD VEHICLES TABLE
+            ========================================================= */}
+            {activeTab === 'sold' ? (
+              <SoldVehiclesTable
+                vehicles={filteredVehicles}
+                onViewDetails={handleViewDetails}
+                onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
+              />
+            ) : (
+              <VehicleCardGrid
+                vehicles={filteredVehicles}
+                onViewDetails={handleViewDetails}
+                onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
+                onAddVehicle={() => navigate('/newloan')}
+              />
+            )}
+          </>
         )}
 
         {/* =========================================================

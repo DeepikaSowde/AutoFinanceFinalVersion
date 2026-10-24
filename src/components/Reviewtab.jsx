@@ -278,6 +278,11 @@ const ReviewTab = ({
             />
 
             <Row
+              label="Vehicle Ownership Type"
+              value={dash(vehicle.ownershipType)}
+            />
+
+            <Row
               label={t('review.hypothecation')}
               value={
                 vehicle.hypothecation

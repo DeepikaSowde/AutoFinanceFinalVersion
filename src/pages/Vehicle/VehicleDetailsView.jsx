@@ -47,6 +47,7 @@ import { getPenaltySettings, PENALTY_UPDATE_EVENT } from '../../utils/penaltyRul
 import { calculateForeclosureSale, syncForeclosureSettlementAccounting } from '../../utils/foreclosureCalculations';
 
 import { formatDate, formatDateTime, isDateOnlyString } from '../../utils/dateUtils';
+import ForeclosureDetailsView from './ForeclosureDetailsView';
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(Number(val))) return '₹0';
@@ -930,6 +931,34 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
     setSettlementSuccessAlert(`Decision confirmed: Customer profit will not be paid. Vehicle history updated without creating any Ledger financial transaction.`);
     setTimeout(() => setSettlementSuccessAlert(''), 6000);
   };
+
+  if (isSold) {
+    return (
+      <>
+        <ForeclosureDetailsView
+          record={record}
+          loanOutstandingInfo={loanOutstandingInfo}
+          allPayments={allPayments}
+          onBack={onBack}
+          onViewExpenseHistory={onViewExpenseHistory}
+          onOpenStatusHistory={() => setActiveModal('history')}
+          handleConfirmRecovery={handleConfirmRecovery}
+          handleConfirmLossWaiver={handleConfirmLossWaiver}
+          handleConfirmProfitPayout={handleConfirmProfitPayout}
+          handleConfirmProfitWaiver={handleConfirmProfitWaiver}
+          imageSrc={imageSrc}
+          handleImageError={handleImageError}
+          refreshData={refreshData}
+        />
+        <VehicleStatusHistoryModal
+          isOpen={activeModal === 'history'}
+          onClose={() => setActiveModal(null)}
+          vehicleRecord={record}
+          allPayments={allPayments}
+        />
+      </>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in-50 duration-200">
