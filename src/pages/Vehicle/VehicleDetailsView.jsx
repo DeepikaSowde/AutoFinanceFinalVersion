@@ -71,7 +71,7 @@ const FieldItem = ({ label, value }) => (
   </div>
 );
 
-const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => {
+const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory, backLabel }) => {
   // Current live vehicle data
   const [record, setRecord] = useState(vehicleRecord);
   const [allPayments, setAllPayments] = useState([]);
@@ -940,6 +940,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
           loanOutstandingInfo={loanOutstandingInfo}
           allPayments={allPayments}
           onBack={onBack}
+          backLabel={backLabel}
           onViewExpenseHistory={onViewExpenseHistory}
           onOpenStatusHistory={() => setActiveModal('history')}
           handleConfirmRecovery={handleConfirmRecovery}
@@ -970,7 +971,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory }) => 
           className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-[#006052] hover:text-[#004d42] transition-colors cursor-pointer w-fit"
         >
           <ArrowLeft className="h-4 w-4" />
-          <span>Back to Vehicle Management</span>
+          <span>{backLabel || 'Back to Vehicle Management'}</span>
         </button>
 
         {/* Current Status Pill & Action */}

@@ -46,6 +46,7 @@ const ForeclosureDetailsView = ({
   record,
   loanOutstandingInfo,
   onBack,
+  backLabel,
   onViewExpenseHistory,
   imageSrc,
   handleImageError,
@@ -554,7 +555,7 @@ const ForeclosureDetailsView = ({
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
             >
               <ArrowLeft className="h-3.5 w-3.5 text-slate-500" />
-              <span>Back</span>
+              <span>{backLabel || 'Back'}</span>
             </button>
             <div className="h-4 w-px bg-slate-300 hidden sm:block" />
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">

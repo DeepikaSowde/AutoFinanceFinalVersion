@@ -314,7 +314,15 @@ const Collection = () => {
         (s) => s.status !== "Collected" && s.status !== "Paid" && s.emi - (s.amountPaid || 0) > 0.01
       );
 
-      const isForeclosed = c.status === "Foreclosed" || c.isForeclosed || c.loan?.status === "Foreclosed" || c.loan?.isForeclosed;
+      const isForeclosed = Boolean(
+        c.status === "Foreclosed" ||
+        c.status === "Sold · Foreclosed" ||
+        c.isForeclosed ||
+        c.loan?.status === "Foreclosed" ||
+        c.loan?.status === "Sold · Foreclosed" ||
+        c.loan?.isForeclosed ||
+        c.foreclosure
+      );
 
       const isDueToday = isForeclosed ? false : todayInstalls.length > 0;
       const isOverdue = isForeclosed ? false : overdueInstalls.length > 0;
@@ -368,10 +376,10 @@ const Collection = () => {
         date ? new Date(date) : new Date()
       );
 
-      const hasFrozenPenalty = penaltySummary.frozenPenalties.length > 0;
-      const totalFrozenPenaltyAmount = penaltySummary.totalFrozenPenalty;
-      const hasPendingPenalty = penaltySummary.pendingPenalties.length > 0;
-      const totalPendingPenaltyAmount = penaltySummary.totalPendingPenalty;
+      const hasFrozenPenalty = isForeclosed ? false : penaltySummary.frozenPenalties.length > 0;
+      const totalFrozenPenaltyAmount = isForeclosed ? 0 : penaltySummary.totalFrozenPenalty;
+      const hasPendingPenalty = isForeclosed ? false : penaltySummary.pendingPenalties.length > 0;
+      const totalPendingPenaltyAmount = isForeclosed ? 0 : penaltySummary.totalPendingPenalty;
 
       // Dedicated Penalty status:
       // If loan has a frozen penalty and no regular overdue installments (or active collection is 0)
@@ -414,12 +422,12 @@ const Collection = () => {
   }, [customers, date]);
 
   const processedCustomers = useMemo(() => {
-    return allProcessedCustomers.filter((c) => c.isDueToday || c.isOverdue || c.hasFrozenPenalty || c.hasPendingPenalty);
+    return allProcessedCustomers.filter((c) => !c.isForeclosed && (c.isDueToday || c.isOverdue || c.hasFrozenPenalty || c.hasPendingPenalty));
   }, [allProcessedCustomers]);
 
-  const todayList = useMemo(() => allProcessedCustomers.filter((c) => c.isDueToday), [allProcessedCustomers]);
+  const todayList = useMemo(() => allProcessedCustomers.filter((c) => !c.isForeclosed && c.isDueToday), [allProcessedCustomers]);
   const overdueList = useMemo(
-    () => allProcessedCustomers.filter((c) => c.isOverdue || c.hasFrozenPenalty || c.hasPendingPenalty),
+    () => allProcessedCustomers.filter((c) => !c.isForeclosed && (c.isOverdue || c.hasFrozenPenalty || c.hasPendingPenalty)),
     [allProcessedCustomers]
   );
 
@@ -427,9 +435,10 @@ const Collection = () => {
   // When a search term is entered, search dynamically across ALL customer and loan records
   // by customer name, customer ID, or loan ID (including customers with multiple loans).
   const getFilteredList = (list) => {
-    const baseList = search.trim() ? allProcessedCustomers : list;
+    const baseList = search.trim() ? allProcessedCustomers.filter((c) => !c.isForeclosed) : list;
 
     return baseList.filter((c) => {
+      if (c.isForeclosed) return false;
       if (!search.trim() && activeTab === "Overdue" && overdueFilter !== "All") {
         if (overdueFilter === "1" && c.overdueCount !== 1) return false;
         if (overdueFilter === "2" && c.overdueCount !== 2) return false;
@@ -604,7 +613,15 @@ const Collection = () => {
   }, [filteredHistoryList, currentHistoryPage, historyPageSize]);
 
   const handleCollectClick = (c, penaltyOnly = false) => {
-    if (c.status === "Foreclosed" || c.isForeclosed || c.loan?.status === "Foreclosed" || c.loan?.isForeclosed) {
+    if (
+      c.status === "Foreclosed" ||
+      c.status === "Sold · Foreclosed" ||
+      c.isForeclosed ||
+      c.loan?.status === "Foreclosed" ||
+      c.loan?.status === "Sold · Foreclosed" ||
+      c.loan?.isForeclosed ||
+      c.foreclosure
+    ) {
       alert("This loan has been Foreclosed. Further normal collections are blocked.");
       return;
     }
@@ -891,6 +908,19 @@ const Collection = () => {
     }
 
     if (!selectedCustomer) return;
+
+    if (
+      selectedCustomer.status === "Foreclosed" ||
+      selectedCustomer.status === "Sold · Foreclosed" ||
+      selectedCustomer.isForeclosed ||
+      selectedCustomer.loan?.status === "Foreclosed" ||
+      selectedCustomer.loan?.status === "Sold · Foreclosed" ||
+      selectedCustomer.loan?.isForeclosed ||
+      selectedCustomer.foreclosure
+    ) {
+      alert("This loan has been Foreclosed. Further normal collections are blocked.");
+      return;
+    }
 
     submittingRef.current = true;
     setIsSubmitting(true);

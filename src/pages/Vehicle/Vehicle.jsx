@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import VehicleStatusTabs from '../../components/vehicle/VehicleStatusTabs';
 import VehicleSummaryCards from '../../components/vehicle/VehicleSummaryCards';
 import VehicleSearchAndFilter from '../../components/vehicle/VehicleSearchAndFilter';
@@ -23,9 +23,55 @@ import { getEffectiveVehicleStatus, syncVehiclesWithClosedLoans } from '../../ut
  */
 const Vehicle = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  // Selected vehicle for details view
-  const [selectedVehicle, setSelectedVehicle] = useState(null);
+  // Customer/loan raw records from localStorage (lazily initialized to eliminate navigation freeze)
+  const [rawRecords, setRawRecords] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('motoLendCustomersList_data') || '[]');
+      return syncVehiclesWithClosedLoans(stored) || stored;
+    } catch {
+      return [];
+    }
+  });
+
+  // Selected vehicle for details view (lazily matched from URL params for instant transition)
+  const [selectedVehicle, setSelectedVehicle] = useState(() => {
+    const loanIdParam = searchParams.get('loanId');
+    const vehicleIdParam = searchParams.get('vehicleId');
+    const regNoParam = searchParams.get('regNo');
+    if (!loanIdParam && !vehicleIdParam && !regNoParam) return null;
+    try {
+      const stored = JSON.parse(localStorage.getItem('motoLendCustomersList_data') || '[]');
+      const synced = syncVehiclesWithClosedLoans(stored) || stored;
+      const match = synced.find((v) => {
+        const vLoanId = (v.loanId || v.loan?.loanId || '').toLowerCase().trim();
+        const vId = (v.vehicleId || v.id || '').toLowerCase().trim();
+        const vReg = (v.vehicle?.regNo || v.regNo || '').toLowerCase().replace(/[\s-]/g, '');
+        if (loanIdParam && vLoanId === loanIdParam.toLowerCase().trim()) return true;
+        if (vehicleIdParam && vId === vehicleIdParam.toLowerCase().trim()) return true;
+        if (regNoParam && vReg === regNoParam.toLowerCase().replace(/[\s-]/g, '')) return true;
+        return false;
+      });
+      if (match) {
+        const normalizedStatus = getEffectiveVehicleStatus(match);
+        return {
+          ...match,
+          vehicleId: match.loanId || 'VEH',
+          vehicleStatus: normalizedStatus,
+          customer: match.customer || {},
+          vehicle: {
+            ...(match.vehicle || {}),
+            status: normalizedStatus,
+          },
+        };
+      }
+    } catch (err) {
+      console.error('Failed to pre-match vehicle on initialization:', err);
+    }
+    return null;
+  });
 
   // Selected vehicle for expense history modal
   const [expenseHistoryVehicle, setExpenseHistoryVehicle] = useState(null);
@@ -38,9 +84,6 @@ const Vehicle = () => {
 
   // Vehicle type filter
   const [selectedType, setSelectedType] = useState('All Vehicle Types');
-
-  // Customer/loan raw records from localStorage
-  const [rawRecords, setRawRecords] = useState([]);
 
   // Load from localStorage and listen to updates
   useEffect(() => {
@@ -55,7 +98,6 @@ const Vehicle = () => {
       }
     };
 
-    loadData();
     window.addEventListener('storage', loadData);
     window.addEventListener('customersDataUpdated', loadData);
     return () => {
@@ -148,6 +190,31 @@ const Vehicle = () => {
     });
   }, [allVehicles, activeTab, selectedType, searchQuery]);
 
+  // Auto-open vehicle details when navigated to with loanId, vehicleId, or regNo query parameters
+  useEffect(() => {
+    const loanIdParam = searchParams.get('loanId');
+    const vehicleIdParam = searchParams.get('vehicleId');
+    const regNoParam = searchParams.get('regNo');
+
+    if (!loanIdParam && !vehicleIdParam && !regNoParam) return;
+    if (allVehicles.length === 0) return;
+
+    const match = allVehicles.find((v) => {
+      const vLoanId = (v.loanId || v.loan?.loanId || '').toLowerCase().trim();
+      const vId = (v.vehicleId || v.id || '').toLowerCase().trim();
+      const vReg = (v.vehicle?.regNo || v.regNo || '').toLowerCase().replace(/[\s-]/g, '');
+
+      if (loanIdParam && vLoanId === loanIdParam.toLowerCase().trim()) return true;
+      if (vehicleIdParam && vId === vehicleIdParam.toLowerCase().trim()) return true;
+      if (regNoParam && vReg === regNoParam.toLowerCase().replace(/[\s-]/g, '')) return true;
+      return false;
+    });
+
+    if (match) {
+      setSelectedVehicle(match);
+    }
+  }, [searchParams, allVehicles]);
+
   // Active vehicle popup modal state
   const [activeVehicleForModal, setActiveVehicleForModal] = useState(null);
 
@@ -173,6 +240,16 @@ const Vehicle = () => {
             onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
             onBack={() => {
               setSelectedVehicle(null);
+              if (location.state?.from) {
+                navigate(location.state.from, { replace: true });
+                return;
+              }
+              const hasParam = searchParams.get('loanId') || searchParams.get('vehicleId') || searchParams.get('regNo');
+              if (hasParam) {
+                navigate(-1);
+                return;
+              }
+              setSearchParams({}, { replace: true });
               try {
                 const stored = JSON.parse(localStorage.getItem('motoLendCustomersList_data') || '[]');
                 setRawRecords(stored);
@@ -180,6 +257,7 @@ const Vehicle = () => {
                 console.error(e);
               }
             }}
+            backLabel={location.state?.fromLabel ? `Back to ${location.state.fromLabel}` : 'Back to Vehicle Management'}
           />
         </div>
 

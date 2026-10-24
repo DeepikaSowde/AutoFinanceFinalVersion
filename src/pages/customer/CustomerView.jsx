@@ -30,6 +30,8 @@ const StatusBadge = ({ status }) => {
     Closed: "bg-slate-100 text-slate-600 border-slate-200",
     "Midway Closed": "bg-amber-100 text-amber-800 border-amber-300",
     Overdue: "bg-red-100 text-red-700 border-red-200",
+    Foreclosed: "bg-purple-100 text-purple-800 border-purple-300",
+    "Sold · Foreclosed": "bg-purple-100 text-purple-800 border-purple-300",
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider border ${styles[status] || styles.Closed}`}>
@@ -270,15 +272,29 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
       .map(({ d, lId, cId }) => {
         const loanCalc = calculateLoanOutstanding(d, allPayments);
         const loanAmount = loanCalc.principal;
-        const outstandingAmount = loanCalc.outstandingAmount;
-        const isMidway = Boolean(
+        const isForeclosed = Boolean(
+          d.status === 'Foreclosed' ||
+          d.status === 'Sold · Foreclosed' ||
+          d.isForeclosed ||
+          d.loan?.status === 'Foreclosed' ||
+          d.loan?.isForeclosed ||
+          d.foreclosure
+        );
+        const isVehicleSold = d.vehicle?.status === 'Sold' || d.vehicleStatus === 'Sold';
+        const outstandingAmount = isForeclosed ? 0 : loanCalc.outstandingAmount;
+        const overdueAmount = isForeclosed ? 0 : (loanCalc.overdueAmount || 0);
+        const isMidway = !isForeclosed && Boolean(
           d.isMidwayClosed ||
           d.midwayClosure ||
           String(d.status || '').toLowerCase() === 'midway closed' ||
           String(d.closureType || '').toLowerCase() === 'midway closure' ||
           loanCalc.status === 'Midway Closed'
         );
-        const status = isMidway ? "Midway Closed" : (d.status || loanCalc.status);
+        const status = isForeclosed
+          ? (isVehicleSold ? "Sold · Foreclosed" : "Foreclosed")
+          : isMidway
+            ? "Midway Closed"
+            : (d.status || loanCalc.status);
         const totalPaidForLoan = loanCalc.totalRepaid;
 
         return {
@@ -286,8 +302,10 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
           customerId: cId,
           loanAmount,
           outstandingAmount,
+          overdueAmount,
           loanId: lId,
           status,
+          isForeclosed,
           totalPaidForLoan,
           loanCalculations: loanCalc,
         };
@@ -411,14 +429,39 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
   // Effective authoritative schedule reconciled with actual recorded transactions
   const effectiveCustomerLoanSchedule = useMemo(() => {
-    const isMidway = Boolean(
+    const isForeclosed = Boolean(
+      selectedLoanData?.status === 'Foreclosed' ||
+      selectedLoanData?.status === 'Sold · Foreclosed' ||
+      selectedLoanData?.isForeclosed ||
+      selectedLoanData?.loan?.status === 'Foreclosed' ||
+      selectedLoanData?.loan?.isForeclosed ||
+      selectedLoanData?.foreclosure
+    );
+
+    const isMidway = !isForeclosed && Boolean(
       selectedLoanData?.isMidwayClosed ||
       selectedLoanData?.midwayClosure ||
       String(selectedLoanData?.status || "").toLowerCase() === "midway closed" ||
       String(selectedLoanData?.closureType || "").toLowerCase() === "midway closure"
     );
 
-    const computed = computeEffectiveSchedule(selectedLoanBaseSchedule, selectedLoanPayments);
+    const computed = computeEffectiveSchedule(selectedLoanBaseSchedule, selectedLoanPayments, { isForeclosed });
+
+    if (isForeclosed) {
+      return computed.map((item) => {
+        const isPaid = item.status === "Paid" || item.status === "Collected";
+        if (isPaid) return item;
+        return {
+          ...item,
+          amountPaid: item.amountPaid || 0,
+          principalOutstanding: 0,
+          balance: 0,
+          status: "Foreclosed",
+          isForeclosed: true,
+          closureAdjusted: true,
+        };
+      });
+    }
 
     if (!isMidway) {
       return computed;
@@ -660,20 +703,35 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     </div>
                     <div>
                       <p className="text-[10px] font-semibold text-slate-500 uppercase">Next Due Date</p>
-                      <p className="font-bold text-slate-900 mt-0.5">{formatDate(loan.loan?.firstDueDate || loan.nextDueDate)}</p>
+                      <p className="font-bold text-slate-900 mt-0.5">{loan.isForeclosed ? '—' : formatDate(loan.loan?.firstDueDate || loan.nextDueDate)}</p>
                     </div>
                     <div>
                       <p className="text-[10px] font-semibold text-slate-500 uppercase">Overdue</p>
                       <p className="font-bold text-red-600 mt-0.5">{formatCurrency(loan.overdueAmount || 0)}</p>
                     </div>
                     <div className="col-span-2 md:col-span-5 mt-1">
-                      <div className="flex justify-between text-[10px] font-semibold mb-1">
-                        <span className="text-emerald-700">{pct}% Paid</span>
-                        <span className="text-slate-500">{pendingPct}% Pending</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }}></div>
-                      </div>
+                      {loan.isForeclosed ? (
+                        <>
+                          <div className="flex justify-between text-[10px] font-semibold mb-1">
+                            <span className="text-emerald-700">{pct}% Paid</span>
+                            <span className="text-purple-700 font-bold">Foreclosed</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                            <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${pct}%` }}></div>
+                            <div className="h-full bg-purple-600 transition-all duration-300" style={{ width: `${Math.max(0, 100 - pct)}%` }}></div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex justify-between text-[10px] font-semibold mb-1">
+                            <span className="text-emerald-700">{pct}% Paid</span>
+                            <span className="text-slate-500">{pendingPct}% Pending</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }}></div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -891,15 +949,30 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                       <div className="px-5 py-3 border-b border-slate-100 font-bold text-slate-900 flex items-center justify-between">
                         <span>Repayment Progress</span>
-                        {Boolean(selectedLoanData.isMidwayClosed || selectedLoanData.midwayClosure) && (
+                        {Boolean(
+                          selectedLoanData.status === 'Foreclosed' ||
+                          selectedLoanData.status === 'Sold · Foreclosed' ||
+                          selectedLoanData.isForeclosed ||
+                          selectedLoanData.foreclosure
+                        ) ? (
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-300">
+                            Foreclosed
+                          </span>
+                        ) : Boolean(selectedLoanData.isMidwayClosed || selectedLoanData.midwayClosure) ? (
                           <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
                             Midway Settled
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <div className="p-5 flex-1 flex flex-col justify-center">
                         {(() => {
-                          const isMidway = Boolean(selectedLoanData.isMidwayClosed || selectedLoanData.midwayClosure);
+                          const isForeclosed = Boolean(
+                            selectedLoanData.status === 'Foreclosed' ||
+                            selectedLoanData.status === 'Sold · Foreclosed' ||
+                            selectedLoanData.isForeclosed ||
+                            selectedLoanData.foreclosure
+                          );
+                          const isMidway = !isForeclosed && Boolean(selectedLoanData.isMidwayClosed || selectedLoanData.midwayClosure);
                           const totalRepay = effectiveCustomerLoanSchedule.length > 0
                             ? effectiveCustomerLoanSchedule.reduce((sum, s) => sum + Number(s.emi || 0), 0)
                             : (loanSummary?.totalAmount || selectedLoanData.loanAmount || 0);
@@ -919,7 +992,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
                           // Percentages out of totalRepay
                           const regularPct = totalRepay > 0 ? Math.min(100, Math.round((regularPaidAmount / totalRepay) * 100)) : 0;
-                          const closurePct = totalRepay > 0
+                          const closurePct = isMidway && totalRepay > 0
                             ? Math.min(100 - regularPct, Math.round((closureAdjustedAmount / totalRepay) * 100))
                             : 0;
                           const totalSettledPct = Math.min(100, regularPct + closurePct);
@@ -943,7 +1016,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                             <>
                               <div className="text-center mb-6">
                                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">
-                                  {isMidway ? "Total Settled" : "Total Paid"}
+                                  {isForeclosed ? "Total Paid (Prior to Foreclosure)" : isMidway ? "Total Settled" : "Total Paid"}
                                 </p>
                                 <p className="text-3xl font-black text-emerald-700">{formatCurrency(paid)}</p>
                                 <p className="text-xs text-slate-500 mt-1">out of {formatCurrency(totalRepay)}</p>
@@ -951,7 +1024,18 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
                               <div className="space-y-2">
                                 <div className="flex justify-between text-xs font-semibold">
-                                  {isMidway ? (
+                                  {isForeclosed ? (
+                                    <>
+                                      <span className="text-emerald-700 flex items-center gap-1">
+                                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
+                                        {regularPct}% Paid
+                                      </span>
+                                      <span className="text-purple-700 font-bold flex items-center gap-1">
+                                        <span className="inline-block h-2 w-2 rounded-full bg-purple-600"></span>
+                                        Foreclosed
+                                      </span>
+                                    </>
+                                  ) : isMidway ? (
                                     <>
                                       <div className="flex items-center gap-2">
                                         <span className="text-emerald-700 flex items-center gap-1">
@@ -981,6 +1065,14 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                                     style={{ width: `${regularPct}%` }}
                                     title={`Regular Paid: ${regularPct}% (${formatCurrency(regularPaidAmount)})`}
                                   ></div>
+                                  {/* Foreclosed portion in purple */}
+                                  {isForeclosed && (
+                                    <div
+                                      className="h-full bg-purple-600 transition-all duration-300"
+                                      style={{ width: `${100 - regularPct}%` }}
+                                      title={`Foreclosed & Closed: ${100 - regularPct}%`}
+                                    ></div>
+                                  )}
                                   {/* Closure-adjusted portion in orange */}
                                   {isMidway && closurePct > 0 && (
                                     <div
@@ -995,7 +1087,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                               <div className="grid grid-cols-2 gap-4 mt-6">
                                 <div className="bg-slate-50 rounded-lg p-3 text-center">
                                   <p className="text-[10px] text-slate-500 uppercase font-semibold">
-                                    {isMidway ? "Paid Prior" : "Paid Inst."}
+                                    {isForeclosed ? "Paid Prior" : isMidway ? "Paid Prior" : "Paid Inst."}
                                   </p>
                                   <p className="text-lg font-bold text-slate-900 mt-0.5">
                                     {regularPaidInstCount}
@@ -1003,10 +1095,10 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                                 </div>
                                 <div className="bg-slate-50 rounded-lg p-3 text-center">
                                   <p className="text-[10px] text-slate-500 uppercase font-semibold">
-                                    {isMidway ? "Closure Settled" : "Pending Inst."}
+                                    {isForeclosed ? "Foreclosed" : isMidway ? "Closure Settled" : "Pending Inst."}
                                   </p>
-                                  <p className="text-lg font-bold text-amber-700 mt-0.5">
-                                    {isMidway ? closureAdjustedInstCount : pendingInst}
+                                  <p className={`text-lg font-bold mt-0.5 ${isForeclosed ? 'text-purple-700' : 'text-amber-700'}`}>
+                                    {isForeclosed ? Math.max(0, totalInstCount - regularPaidInstCount) : isMidway ? closureAdjustedInstCount : pendingInst}
                                   </p>
                                 </div>
                               </div>
@@ -1021,6 +1113,12 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-emerald-600" /> Repayment Schedule</h3>
                     <RepaymentScheduleTable
                       schedule={effectiveCustomerLoanSchedule}
+                      isForeclosed={Boolean(
+                        selectedLoanData.status === 'Foreclosed' ||
+                        selectedLoanData.status === 'Sold · Foreclosed' ||
+                        selectedLoanData.isForeclosed ||
+                        selectedLoanData.foreclosure
+                      )}
                       loanDetails={{
                         ...selectedLoanData.loan,
                         loanAmount: selectedLoanData.loanAmount,
@@ -1028,6 +1126,12 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                         customerId: displayCustomerId,
                         customerName: primaryCustomer.name,
                         paymentFrequency: selectedLoanData.loan?.paymentFrequency || selectedLoanData.paymentFrequency || 'Monthly',
+                        isForeclosed: Boolean(
+                          selectedLoanData.status === 'Foreclosed' ||
+                          selectedLoanData.status === 'Sold · Foreclosed' ||
+                          selectedLoanData.isForeclosed ||
+                          selectedLoanData.foreclosure
+                        ),
                       }}
                     />
                   </div>

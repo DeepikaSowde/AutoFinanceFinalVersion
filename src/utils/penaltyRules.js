@@ -166,11 +166,11 @@ export const checkInstallmentPenaltyEligibility = (
 ) => {
   if (!installment) return { isEligible: false, eligibleOverdueDays: 0, penaltyAmount: 0 };
 
-  // If already fully paid under existing collection logic, no penalty
+  // If already fully paid under existing collection logic or foreclosed, no penalty
   const emi = Number(installment.emi || 0);
   const amountPaid = Number(installment.amountPaid || 0);
   const remainingBal = Math.max(0, emi - amountPaid);
-  if (remainingBal <= 0.01 || installment.status === 'Paid' || installment.status === 'Collected') {
+  if (remainingBal <= 0.01 || installment.status === 'Paid' || installment.status === 'Collected' || installment.status === 'Foreclosed') {
     return { isEligible: false, eligibleOverdueDays: 0, penaltyAmount: 0 };
   }
 
@@ -1028,41 +1028,65 @@ export const getLoanPenaltySummary = (
     recordsByInstallment[String(Number(r.installmentNumber))] = r;
   });
 
+  // Check if loan is foreclosed
+  let isLoanForeclosed = false;
+  if (schedule.length > 0 && schedule.every((s) => s.status === 'Paid' || s.status === 'Collected' || s.status === 'Foreclosed')) {
+    isLoanForeclosed = schedule.some((s) => s.status === 'Foreclosed');
+  }
+  if (!isLoanForeclosed && typeof window !== 'undefined') {
+    try {
+      const customers = JSON.parse(localStorage.getItem('motoLendCustomersList_data') || '[]');
+      const cleanId = String(loanId || '').trim().toLowerCase();
+      const found = customers.find((c) => (c.loanId || c.loan?.loanId || '').trim().toLowerCase() === cleanId);
+      if (found) {
+        isLoanForeclosed = Boolean(found.isForeclosed || found.foreclosure || found.status === 'Foreclosed' || found.loan?.status === 'Foreclosed');
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const pendingPenaltyRecords = [];
   const frozenPenaltyRecords = [];
   const collectedPenaltyRecords = [];
   const cancelledPenaltyRecords = [];
 
-  // Check each installment in schedule
+  // Check each installment in schedule (skip pending/frozen generation if loan is foreclosed)
   schedule.forEach((inst) => {
     const instNumStr = String(Number(inst.installmentNumber));
     const existing = recordsByInstallment[instNumStr];
 
     if (existing) {
       if (existing.status === 'Frozen') {
-        frozenPenaltyRecords.push(existing);
+        if (!isLoanForeclosed) {
+          frozenPenaltyRecords.push(existing);
+        }
       } else if (existing.status === 'Collected') {
         collectedPenaltyRecords.push(existing);
       } else if (existing.status === 'Cancelled') {
         cancelledPenaltyRecords.push(existing);
       } else if (existing.status === 'Pending') {
-        // Re-evaluate pending penalty against current settings, frequency, and reference date
-        const rec = getOrCalculatePenaltyRecord(
-          loanId,
-          customerId,
-          customerName,
-          inst,
-          frequency,
-          existingRecords,
-          settings,
-          referenceDate
-        );
-        if (rec && rec.status === 'Pending' && Number(rec.calculatedAmount) > 0) {
-          pendingPenaltyRecords.push(rec);
+        if (!isLoanForeclosed) {
+          // Re-evaluate pending penalty against current settings, frequency, and reference date
+          const rec = getOrCalculatePenaltyRecord(
+            loanId,
+            customerId,
+            customerName,
+            inst,
+            frequency,
+            existingRecords,
+            settings,
+            referenceDate
+          );
+          if (rec && rec.status === 'Pending' && Number(rec.calculatedAmount) > 0) {
+            pendingPenaltyRecords.push(rec);
+          }
         }
       }
       return;
     }
+
+    if (isLoanForeclosed) return;
 
     // If no existing record, check if eligible under grace-period rules
     const eligibility = checkInstallmentPenaltyEligibility(inst, frequency, settings, referenceDate);
@@ -1089,18 +1113,22 @@ export const getLoanPenaltySummary = (
     const instStr = String(Number(r.installmentNumber));
     if (!visitedInstNumbers.has(instStr)) {
       if (r.status === 'Frozen') {
-        frozenPenaltyRecords.push(r);
+        if (!isLoanForeclosed) {
+          frozenPenaltyRecords.push(r);
+        }
       } else if (r.status === 'Collected') {
         collectedPenaltyRecords.push(r);
       } else if (r.status === 'Cancelled') {
         cancelledPenaltyRecords.push(r);
       } else if (r.status === 'Pending') {
-        const normFreq = normalizeFrequency(frequency);
-        const rule = settings[normFreq] || DEFAULT_PENALTY_SETTINGS[normFreq];
-        const isFreqEnabled = normFreq === 'Monthly' ? (rule.enabled !== false) : Boolean(rule.enabled);
-        const isGloballyEnabled = settings?.enabled !== false && settings?.isGloballyEnabled !== false && settings?.globalEnabled !== false;
-        if (isFreqEnabled && isGloballyEnabled && Number(r.calculatedAmount) > 0) {
-          pendingPenaltyRecords.push(r);
+        if (!isLoanForeclosed) {
+          const normFreq = normalizeFrequency(frequency);
+          const rule = settings[normFreq] || DEFAULT_PENALTY_SETTINGS[normFreq];
+          const isFreqEnabled = normFreq === 'Monthly' ? (rule.enabled !== false) : Boolean(rule.enabled);
+          const isGloballyEnabled = settings?.enabled !== false && settings?.isGloballyEnabled !== false && settings?.globalEnabled !== false;
+          if (isFreqEnabled && isGloballyEnabled && Number(r.calculatedAmount) > 0) {
+            pendingPenaltyRecords.push(r);
+          }
         }
       }
     }

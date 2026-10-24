@@ -24,8 +24,14 @@ import {
   ShieldCheck,
   FileText,
   Receipt,
+  IndianRupee,
 } from "lucide-react";
-import RepaymentScheduleTable, { generateSchedule, computeEffectiveSchedule, getRepaymentColumnLabel } from "../../components/RepaymentScheduleTable";
+import RepaymentScheduleTable, {
+  generateSchedule,
+  computeEffectiveSchedule,
+  getRepaymentColumnLabel,
+  ForeclosureScheduleLock,
+} from "../../components/RepaymentScheduleTable";
 import InstallmentTimeline from "../../components/InstallmentTimeline";
 import MidwayClosureModal from "../../components/MidwayClosureModal";
 import { getVehicleDisplayImage } from "../../utils/vehicleImageHelper";
@@ -89,6 +95,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
   const [showMidwayModal, setShowMidwayModal] = useState(false);
   const [penaltyToCancel, setPenaltyToCancel] = useState(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [isNavigatingToForeclosure, setIsNavigatingToForeclosure] = useState(false);
 
   // Read target IDs from prop, route params (/loans/:loanId), or query string (?loanId=...)
   const selectedLoanId = (propLoanId || params.loanId || searchParams.get("loanId") || "").trim();
@@ -163,7 +170,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
   const foreclosureData = loanRecord?.foreclosure || {};
 
   // Midway Closure detection
-  const isMidwayClosed = Boolean(
+  const isMidwayClosed = !isForeclosed && Boolean(
     loanRecord?.isMidwayClosed ||
     loanRecord?.midwayClosure ||
     rawStatus.toLowerCase() === "midway closed" ||
@@ -234,7 +241,25 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
 
   // Derive authoritative schedule reconciled with actual recorded transactions
   const schedule = useMemo(() => {
-    const computed = computeEffectiveSchedule(rawSchedule, loanPayments);
+    const computed = computeEffectiveSchedule(rawSchedule, loanPayments, { isForeclosed });
+    if (isForeclosed) {
+      return computed.map((item) => {
+        const wasCustomerPaid = Boolean(
+          item.wasCustomerPaid !== undefined
+            ? item.wasCustomerPaid
+            : ((item.amountPaid >= item.emi - 0.01 || item.status === "Paid" || item.status === "Collected") && (item.paymentsList?.length > 0 || loanPayments.length > 0))
+        );
+        return {
+          ...item,
+          amountPaid: Math.round(Number(item.amountPaid ?? item.emi ?? 0) * 100) / 100,
+          principalOutstanding: 0,
+          balance: 0,
+          status: "Paid",
+          isForeclosed: true,
+          wasCustomerPaid,
+        };
+      });
+    }
     if (!isMidwayClosed) {
       return computed;
     }
@@ -303,10 +328,29 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
         closureAdjusted: false,
       };
     });
-  }, [rawSchedule, loanPayments, isMidwayClosed, midwayClosureData]);
+  }, [rawSchedule, loanPayments, isMidwayClosed, midwayClosureData, isForeclosed]);
+
+  // Dynamic determination of foreclosure effective start installment
+  const foreclosureEffectiveStartNum = useMemo(() => {
+    if (!isForeclosed) return null;
+    const explicitStart = Number(
+      foreclosureData.effectiveInstallment ||
+      foreclosureData.fromInstallment ||
+      foreclosureData.startInstallment ||
+      foreclosureData.installmentNumber ||
+      loanRecord?.foreclosureStartInstallment ||
+      0
+    );
+    if (explicitStart > 0) return explicitStart;
+    const firstUnpaid = schedule.find((s) => !s.wasCustomerPaid);
+    return firstUnpaid ? Number(firstUnpaid.installmentNumber) : null;
+  }, [isForeclosed, foreclosureData, loanRecord, schedule]);
 
   // Combine recorded penalties and active eligible pending penalties for this loan
   const combinedPenaltyRecords = useMemo(() => {
+    if (isForeclosed) {
+      return [];
+    }
     try {
       const existing = getPenaltyRecords().filter(
         (p) => (p.loanId && p.loanId === effectiveLoanId) || (p.customerId && p.customerId === effectiveCustomerId)
@@ -412,28 +456,30 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
         recordsMap.set(Number(r.installmentNumber), r);
       });
 
-      // Also identify active eligible overdue installments from schedule if not already recorded
-      schedule.forEach((inst) => {
-        const num = Number(inst.installmentNumber);
-        if (!coveredInstallmentNums.has(num) && !recordsMap.has(num)) {
-          const eligibility = checkInstallmentPenaltyEligibility(inst, normFreq, settings, new Date());
-          if (eligibility.isEligible) {
-            const calculated = getOrCalculatePenaltyRecord(
-              effectiveLoanId,
-              effectiveCustomerId,
-              customer?.name || "Customer",
-              inst,
-              normFreq,
-              existing,
-              settings,
-              new Date()
-            );
-            if (calculated && calculated.status === "Pending") {
-              recordsMap.set(num, calculated);
+      // Also identify active eligible overdue installments from schedule if not already recorded and loan is not foreclosed
+      if (!isForeclosed) {
+        schedule.forEach((inst) => {
+          const num = Number(inst.installmentNumber);
+          if (!coveredInstallmentNums.has(num) && !recordsMap.has(num)) {
+            const eligibility = checkInstallmentPenaltyEligibility(inst, normFreq, settings, new Date());
+            if (eligibility.isEligible) {
+              const calculated = getOrCalculatePenaltyRecord(
+                effectiveLoanId,
+                effectiveCustomerId,
+                customer?.name || "Customer",
+                inst,
+                normFreq,
+                existing,
+                settings,
+                new Date()
+              );
+              if (calculated && calculated.status === "Pending") {
+                recordsMap.set(num, calculated);
+              }
             }
           }
-        }
-      });
+        });
+      }
 
       Array.from(recordsMap.values()).forEach((r) => {
         const num = Number(r.installmentNumber);
@@ -445,6 +491,10 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
         let finalStatus = r.status || "Pending";
         if (finalStatus === "Unfrozen" || finalStatus === "UNFROZEN") {
           finalStatus = "Pending";
+        }
+
+        if (isForeclosed && finalStatus !== "Collected" && finalStatus !== "Cancelled") {
+          finalStatus = "Foreclosed";
         }
 
         // If status is Collected:
@@ -473,8 +523,11 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
           relevantDate = r.cancellationDate;
         }
 
-        const dueAmt = Number(r.calculatedAmount || r.configuredAmount || 0);
-        if (dueAmt > 0 || finalStatus === "Cancelled") {
+        const dueAmt = (isForeclosed && finalStatus === "Foreclosed")
+          ? 0
+          : Number(r.calculatedAmount || r.configuredAmount || 0);
+
+        if (dueAmt > 0 || finalStatus === "Cancelled" || finalStatus === "Foreclosed") {
           items.push({
             id: r.id || `PEN-${effectiveLoanId}-${r.installmentNumber}`,
             date: relevantDate,
@@ -573,15 +626,30 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
     ? 0
     : Math.max(totalInterest - totalInterestCollected, 0);
 
+  // Foreclosure metrics
+  const finalizedForeclosureCalc = foreclosureData.finalizedCalculation || {};
+  const foreclosureSaleDetails = loanRecord?.vehicle?.saleDetails || loanRecord?.saleDetails || {};
+  const foreclosureDate = foreclosureData.saleDate || foreclosureData.completedAt || loanRecord?.foreclosedDate || foreclosureSaleDetails.saleDate || loanRecord?.updatedAt;
+  const foreclosureSalePrice = Number(foreclosureData.salePrice || foreclosureSaleDetails.salePrice || foreclosureSaleDetails.saleAmount || 0);
+  const outstandingPrincipalAtForeclosure = finalizedForeclosureCalc.outstandingPrincipal !== undefined
+    ? Number(finalizedForeclosureCalc.outstandingPrincipal)
+    : (finalizedForeclosureCalc.principalOutstanding !== undefined ? Number(finalizedForeclosureCalc.principalOutstanding) : Math.max(0, principalAmount - totalPrincipalRepaid));
+  const outstandingInterestAtForeclosure = finalizedForeclosureCalc.unpaidInterest !== undefined
+    ? Number(finalizedForeclosureCalc.unpaidInterest)
+    : (finalizedForeclosureCalc.interestOutstanding !== undefined ? Number(finalizedForeclosureCalc.interestOutstanding) : Math.max(0, totalInterest - totalInterestCollected));
+
   // Next Due Date
   const todayTs = parseToDayTimestamp(new Date());
-  let nextDueDate = loanRecord?.nextDueDate || loan.firstDueDate || "";
-  let upcomingInstallment = schedule.find(
-    (s) =>
-      s.status !== "Collected" &&
-      s.status !== "Paid" &&
-      s.emi - (s.amountPaid || 0) > 0.01
-  );
+  let nextDueDate = isForeclosed ? "—" : (loanRecord?.nextDueDate || loan.firstDueDate || "");
+  let upcomingInstallment = isForeclosed
+    ? null
+    : schedule.find(
+      (s) =>
+        s.status !== "Collected" &&
+        s.status !== "Paid" &&
+        s.status !== "Foreclosed" &&
+        s.emi - (s.amountPaid || 0) > 0.01
+    );
   if (upcomingInstallment && upcomingInstallment.dueDate) {
     nextDueDate = upcomingInstallment.dueDate;
   }
@@ -591,23 +659,24 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
   const installmentsPaidCount = schedule.filter(
     (s) => s.status === "Collected" || s.status === "Paid"
   ).length;
-  const installmentsPendingCount = Math.max(
-    totalInstallmentsCount - installmentsPaidCount,
-    0
-  );
-  const overdueInstallmentsCount = schedule.filter((s) => {
-    const isNotPaid = s.status !== "Collected" && s.status !== "Paid";
-    const hasBal = s.emi - (s.amountPaid || 0) > 0.01;
-    const dueTs = parseToDayTimestamp(s.dueDate);
-    return isNotPaid && hasBal && dueTs !== null && dueTs < todayTs;
-  }).length;
+  const installmentsPendingCount = isForeclosed
+    ? 0
+    : Math.max(totalInstallmentsCount - installmentsPaidCount, 0);
+  const overdueInstallmentsCount = isForeclosed
+    ? 0
+    : schedule.filter((s) => {
+      const isNotPaid = s.status !== "Collected" && s.status !== "Paid" && s.status !== "Foreclosed";
+      const hasBal = s.emi - (s.amountPaid || 0) > 0.01;
+      const dueTs = parseToDayTimestamp(s.dueDate);
+      return isNotPaid && hasBal && dueTs !== null && dueTs < todayTs;
+    }).length;
 
   // Status
   let loanStatus = "Active";
-  if (isMidwayClosed) {
-    loanStatus = "Midway Closed";
-  } else if (isForeclosed) {
+  if (isForeclosed) {
     loanStatus = "Foreclosed";
+  } else if (isMidwayClosed) {
+    loanStatus = "Midway Closed";
   } else if (outstandingBalance <= 0 || loanRecord?.status === "Closed") {
     loanStatus = "Closed";
   } else if (overdueInstallmentsCount > 0) {
@@ -742,32 +811,32 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
             {/* Edit Loan Button */}
             <button
               type="button"
-              disabled={isMidwayClosed}
+              disabled={isMidwayClosed || isForeclosed}
               onClick={() => {
-                if (isMidwayClosed) return;
+                if (isMidwayClosed || isForeclosed) return;
                 if (onEditLoan) onEditLoan(loanRecord);
                 else alert("Edit Loan initiated for " + effectiveLoanId);
               }}
-              title={isMidwayClosed ? "Editing is disabled for midway-closed loans" : "Edit Loan"}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${isMidwayClosed
+              title={isForeclosed ? "Loan already foreclosed" : isMidwayClosed ? "Editing is disabled for midway-closed loans" : "Edit Loan"}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${isMidwayClosed || isForeclosed
                 ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-60 pointer-events-none"
                 : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer"
                 }`}
             >
-              <Edit className={`h-3.5 w-3.5 ${isMidwayClosed ? "text-slate-400" : "text-slate-500"}`} strokeWidth={2} />
+              <Edit className={`h-3.5 w-3.5 ${isMidwayClosed || isForeclosed ? "text-slate-400" : "text-slate-500"}`} strokeWidth={2} />
               <span>Edit Loan</span>
             </button>
 
             {/* Midway Closure Button (orange accent beside Edit Loan) */}
             <button
               type="button"
-              disabled={isMidwayClosed}
+              disabled={isMidwayClosed || isForeclosed}
               onClick={() => {
-                if (isMidwayClosed) return;
+                if (isMidwayClosed || isForeclosed) return;
                 setShowMidwayModal(true);
               }}
-              title={isMidwayClosed ? "This loan is already midway closed" : "Midway Closure"}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${isMidwayClosed
+              title={isForeclosed ? "Loan already foreclosed" : isMidwayClosed ? "This loan is already midway closed" : "Midway Closure"}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-2xs transition-all whitespace-nowrap ${isMidwayClosed || isForeclosed
                 ? "bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60 pointer-events-none"
                 : "bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
                 }`}
@@ -959,56 +1028,6 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
         {/* TAB 1: LOAN DETAILS */}
         {activeTab === "loanDetails" && (
           <div className="space-y-5 w-full">
-            {/* Foreclosure Information Banner (if foreclosed) */}
-            {isForeclosed && (
-              <div className="p-4 sm:p-5 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 shadow-2xs">
-                <div className="flex items-start gap-3.5">
-                  <div className="p-2.5 rounded-xl bg-purple-100 text-purple-700 shrink-0">
-                    <ShieldCheck className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-bold text-base text-purple-950">
-                        Loan Foreclosed &amp; Settled
-                      </h3>
-                      <span className="px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-purple-200/80 text-purple-800 border border-purple-300">
-                        Foreclosed
-                      </span>
-                    </div>
-                    <p className="text-xs sm:text-sm text-purple-700 mt-1">
-                      This loan was closed early via foreclosure settlement. All loan terms, schedules, vehicle records, and historical payment receipts remain preserved below.
-                    </p>
-                    <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-purple-200/80 text-xs">
-                      <div>
-                        <span className="text-purple-600 font-medium block">Foreclosure Date</span>
-                        <span className="font-bold text-purple-900 mt-0.5 block">
-                          {formatDate(foreclosureData.date || loanRecord?.foreclosedDate || loanRecord?.updatedAt)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-purple-600 font-medium block">Settlement Amount</span>
-                        <span className="font-bold text-purple-900 mt-0.5 block">
-                          {formatCurrency(foreclosureData.settlementAmount || foreclosureData.amount || totalCollected)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-purple-600 font-medium block">Waived / Concession</span>
-                        <span className="font-bold text-purple-900 mt-0.5 block">
-                          {formatCurrency(foreclosureData.waivedAmount || 0)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-purple-600 font-medium block">Remarks</span>
-                        <span className="font-bold text-purple-900 mt-0.5 block truncate" title={foreclosureData.remarks || loanRecord?.foreclosureRemarks || "Foreclosure settlement complete"}>
-                          {foreclosureData.remarks || loanRecord?.foreclosureRemarks || "Foreclosure settlement complete"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Loan Overview: Loan Information Column + 3 Summary Cards */}
             <div className="loan-overview-grid items-stretch w-full">
               {/* Left Column: Loan Information Section */}
@@ -1130,78 +1149,257 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 </div>
               </div>
 
-              {/* Right Column: Three Vertically Stacked Summary Cards */}
-              <div className="loan-summary-col flex flex-col justify-between gap-3.5 sm:gap-4 h-full">
-                {/* 1. Total Amount Card */}
-                <div className="bg-emerald-50/50 rounded-2xl border border-emerald-200/80 p-4 sm:p-5 shadow-2xs flex-1 flex flex-col justify-between transition-all duration-200 hover:shadow-xs min-h-[120px]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <span className="text-xs font-bold uppercase tracking-wider text-emerald-800/80 block">
-                        Total Amount
-                      </span>
-                      <p className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1 leading-snug break-words">
-                        {formatCurrency(totalRepayable)}
-                      </p>
-                    </div>
-                    <div className="h-11 w-11 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-200/90 flex items-center justify-center shrink-0 shadow-2xs">
-                      <Wallet className="h-5 w-5" strokeWidth={2.2} />
-                    </div>
-                  </div>
-                  <div className="pt-2 mt-auto border-t border-emerald-100/70">
-                    <span className="text-[11px] text-emerald-700/90 font-medium block">
-                      Principal + Interest
-                    </span>
-                  </div>
-                </div>
+              {/* Right Column: Three Vertically Stacked Summary Cards or Foreclosed State */}
+              {isForeclosed ? (() => {
+                const fData = loanRecord?.foreclosure || {};
+                const calc = fData.finalizedCalculation || {};
+                const saleDetails = loanRecord?.vehicle?.saleDetails || loanRecord?.saleDetails || {};
+                const salePrice = Number(fData.salePrice || saleDetails.salePrice || saleDetails.saleAmount || 0);
+                const profitLoss = calc.profitLoss !== undefined
+                  ? Number(calc.profitLoss)
+                  : ((fData.profitLoss !== undefined)
+                    ? Number(fData.profitLoss)
+                    : (salePrice - Number(calc.totalForeclosureCost || 0)));
+                const isProfit = profitLoss > 0;
+                const isLoss = profitLoss < 0;
 
-                {/* 2. Total Collected Card */}
-                <div className="bg-sky-50/50 rounded-2xl border border-sky-200/80 p-4 sm:p-5 shadow-2xs flex-1 flex flex-col justify-between transition-all duration-200 hover:shadow-xs min-h-[120px]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <span className="text-xs font-bold uppercase tracking-wider text-sky-800/80 block">
-                        Total Collected
-                      </span>
-                      <p className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1 leading-snug break-words">
-                        {formatCurrency(totalCollected)}
-                      </p>
-                    </div>
-                    <div className="h-11 w-11 rounded-xl bg-sky-100 text-sky-700 border border-sky-200/90 flex items-center justify-center shrink-0 shadow-2xs">
-                      <Coins className="h-5 w-5" strokeWidth={2.2} />
-                    </div>
-                  </div>
-                  <div className="pt-2 mt-auto border-t border-sky-100/70">
-                    <span className="text-[11px] text-sky-700/90 font-medium block">
-                      Total amount received so far
-                    </span>
-                  </div>
-                </div>
+                const rawForeclosureDate =
+                  fData.saleDate ||
+                  saleDetails.saleDate ||
+                  fData.completedAt ||
+                  loanRecord?.foreclosedDate ||
+                  loanRecord?.foreclosureDate ||
+                  loanRecord?.closedDate ||
+                  foreclosureDate ||
+                  loanRecord?.updatedAt;
+                const formattedForeclosureDate = (rawForeclosureDate ? formatDate(rawForeclosureDate) : "") || "—";
 
-                {/* 3. Total Outstanding Card */}
-                <div className={`${isForeclosed ? "bg-purple-50/50 border-purple-200/80" : isMidwayClosed ? "bg-amber-50/50 border-amber-200/80" : "bg-amber-50/50 border-amber-200/80"} rounded-2xl border p-4 sm:p-5 shadow-2xs flex-1 flex flex-col justify-between transition-all duration-200 hover:shadow-xs min-h-[120px]`}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <span className={`text-xs font-bold uppercase tracking-wider ${isForeclosed ? "text-purple-800/80" : isMidwayClosed ? "text-amber-800/80" : "text-amber-800/80"} block`}>
-                        Total Outstanding
-                      </span>
-                      <p className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1 leading-snug break-words">
-                        {formatCurrency(outstandingBalance)}
-                      </p>
-                    </div>
-                    <div className={`h-11 w-11 rounded-xl ${isForeclosed ? "bg-purple-100 text-purple-700 border-purple-200/90" : isMidwayClosed ? "bg-amber-100 text-amber-700 border-amber-200/90" : "bg-amber-100 text-amber-700 border-amber-200/90"} border flex items-center justify-center shrink-0 shadow-2xs`}>
-                      {isForeclosed ? <ShieldCheck className="h-5 w-5" strokeWidth={2.2} /> : isMidwayClosed ? <CheckCircle className="h-5 w-5" strokeWidth={2.2} /> : <Landmark className="h-5 w-5" strokeWidth={2.2} />}
+                return (
+                  <div className="loan-summary-col h-full flex flex-col justify-between">
+                    <div className="rounded-2xl border border-purple-200 bg-gradient-to-b from-purple-50/40 via-white to-purple-50/20 p-5 sm:p-6 shadow-2xs flex flex-col justify-between h-full space-y-4">
+                      {/* Top Header Row: Lock Icon + Title + Foreclosed Badge + View Details Action */}
+                      <div className="flex items-start justify-between gap-3 pb-3 border-b border-purple-100">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-10 w-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                            <Lock className="h-5 w-5" strokeWidth={2.2} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight leading-tight">
+                                Vehicle Foreclosure
+                              </h3>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-purple-100 text-purple-900 border border-purple-300">
+                                <ShieldCheck className="h-3 w-3 text-purple-700" />
+                                Foreclosed
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500 font-medium mt-0.5">
+                              Loan Account Closed
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isNavigatingToForeclosure}
+                          onClick={() => {
+                            if (isNavigatingToForeclosure) return;
+                            setIsNavigatingToForeclosure(true);
+                            setTimeout(() => {
+                              navigate(`/vehicle?loanId=${encodeURIComponent(effectiveLoanId)}&type=foreclosure`, {
+                                state: { from: location.pathname + location.search, fromLabel: 'Loan Details' }
+                              });
+                            }, 50);
+                          }}
+                          className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-white text-xs font-bold shadow-xs transition-all duration-150 shrink-0 ${
+                            isNavigatingToForeclosure
+                              ? "bg-purple-800 opacity-90 cursor-wait"
+                              : "bg-purple-700 hover:bg-purple-800 active:scale-95 cursor-pointer"
+                          }`}
+                          title="View Vehicle Foreclosure Details"
+                        >
+                          {isNavigatingToForeclosure ? (
+                            <>
+                              <span className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                              <span>Loading...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>View Details</span>
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      {/* Stacked Financial Rows: 1st FORECLOSED DATE, 2nd VEHICLE SALE AMOUNT, 3rd FORECLOSURE PROFIT/LOSS */}
+                      <div className="flex flex-col gap-3 flex-1 justify-between py-0.5">
+                        {/* Row 1: Foreclosed Date (Populated with real foreclosure data) */}
+                        <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-purple-100/90 shadow-2xs transition-all hover:border-purple-200 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                              FORECLOSED DATE
+                            </span>
+                            <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-none mt-1.5">
+                              {formattedForeclosureDate}
+                            </p>
+                            <span className="text-xs font-medium text-slate-500 block mt-1.5">
+                              Date marked as foreclosed
+                            </span>
+                          </div>
+                          <div className="h-10 w-10 rounded-xl bg-purple-50 text-purple-700 border border-purple-200/80 flex items-center justify-center shrink-0">
+                            <Calendar className="h-5 w-5" />
+                          </div>
+                        </div>
+
+                        {/* Row 2: Vehicle Sale Amount */}
+                        <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-purple-100/90 shadow-2xs transition-all hover:border-purple-200 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                              VEHICLE SALE AMOUNT
+                            </span>
+                            <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-none mt-1.5">
+                              {formatCurrency(salePrice)}
+                            </p>
+                            <span className="text-xs font-medium text-slate-500 block mt-1.5">
+                              Recorded sale proceeds
+                            </span>
+                          </div>
+                          <div className="h-10 w-10 rounded-xl bg-purple-50 text-purple-700 border border-purple-200/80 flex items-center justify-center shrink-0">
+                            <IndianRupee className="h-5 w-5" />
+                          </div>
+                        </div>
+
+                        {/* Row 3: Foreclosure Profit / Loss (Dynamic Label) */}
+                        <div className={`rounded-xl p-3.5 sm:p-4 border shadow-2xs transition-all flex items-center justify-between gap-3 ${
+                          isLoss
+                            ? "bg-rose-50/50 border-rose-200/90 hover:border-rose-300"
+                            : isProfit
+                              ? "bg-emerald-50/50 border-emerald-200/90 hover:border-emerald-300"
+                              : "bg-purple-50/50 border-purple-200/90 hover:border-purple-300"
+                        }`}>
+                          <div className="min-w-0">
+                            <span className={`text-[11px] font-bold uppercase tracking-wider block ${
+                              isLoss ? "text-rose-700" : isProfit ? "text-emerald-700" : "text-purple-700"
+                            }`}>
+                              {isLoss ? "FORECLOSURE LOSS" : isProfit ? "FORECLOSURE PROFIT" : "FORECLOSURE SETTLEMENT"}
+                            </span>
+                            <p className={`text-xl sm:text-2xl font-black tracking-tight leading-none mt-1.5 ${
+                              isLoss ? "text-rose-600" : isProfit ? "text-emerald-700" : "text-slate-900"
+                            }`}>
+                              {isLoss
+                                ? `-${formatCurrency(Math.abs(profitLoss))}`
+                                : isProfit
+                                  ? `+${formatCurrency(profitLoss)}`
+                                  : "₹0"}
+                            </p>
+                            <span className={`text-xs font-medium block mt-1.5 ${
+                              isLoss ? "text-rose-600/90" : isProfit ? "text-emerald-600/90" : "text-slate-500"
+                            }`}>
+                              {isLoss ? "Loss absorbed on closure" : isProfit ? "Surplus realized on sale" : "Break-even foreclosure"}
+                            </span>
+                          </div>
+                          <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                            isLoss
+                              ? "bg-rose-100 text-rose-700 border-rose-300"
+                              : isProfit
+                                ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                                : "bg-purple-100 text-purple-700 border-purple-300"
+                          }`}>
+                            {isLoss ? (
+                              <TrendingUp className="h-5 w-5 rotate-180" />
+                            ) : isProfit ? (
+                              <TrendingUp className="h-5 w-5" />
+                            ) : (
+                              <ShieldCheck className="h-5 w-5" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card Footer: Status details */}
+                      <div className="pt-2.5 border-t border-purple-100/80 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                        <span className="flex items-center gap-1.5 text-purple-900 font-medium truncate">
+                          <span className="h-1.5 w-1.5 rounded-full bg-purple-600"></span>
+                          Settled via Vehicle Foreclosure
+                        </span>
+                        <span className="text-[10px] text-slate-500 shrink-0 font-medium">
+                          All collections closed
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <div className={`pt-2 mt-auto border-t ${isForeclosed ? "border-purple-100/70" : isMidwayClosed ? "border-amber-100/70" : "border-amber-100/70"}`}>
-                    <span className={`text-[11px] ${isForeclosed ? "text-purple-700 font-semibold" : isMidwayClosed ? "text-amber-700 font-semibold" : "text-amber-700/90 font-medium"} block`}>
-                      {isForeclosed
-                        ? "Settled via Foreclosure (₹0 balance)"
-                        : isMidwayClosed
+                );
+              })() : (
+                <div className="loan-summary-col flex flex-col justify-between gap-3.5 sm:gap-4 h-full">
+                  {/* 1. Total Amount Card */}
+                  <div className="bg-emerald-50/50 rounded-2xl border border-emerald-200/80 p-4 sm:p-5 shadow-2xs flex-1 flex flex-col justify-between transition-all duration-200 hover:shadow-xs min-h-[120px]">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-800/80 block">
+                          Total Amount
+                        </span>
+                        <p className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1 leading-snug break-words">
+                          {formatCurrency(totalRepayable)}
+                        </p>
+                      </div>
+                      <div className="h-11 w-11 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-200/90 flex items-center justify-center shrink-0 shadow-2xs">
+                        <Wallet className="h-5 w-5" strokeWidth={2.2} />
+                      </div>
+                    </div>
+                    <div className="pt-2 mt-auto border-t border-emerald-100/70">
+                      <span className="text-[11px] text-emerald-700/90 font-medium block">
+                        Principal + Interest
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 2. Total Collected Card */}
+                  <div className="bg-sky-50/50 rounded-2xl border border-sky-200/80 p-4 sm:p-5 shadow-2xs flex-1 flex flex-col justify-between transition-all duration-200 hover:shadow-xs min-h-[120px]">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold uppercase tracking-wider text-sky-800/80 block">
+                          Total Collected
+                        </span>
+                        <p className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1 leading-snug break-words">
+                          {formatCurrency(totalCollected)}
+                        </p>
+                      </div>
+                      <div className="h-11 w-11 rounded-xl bg-sky-100 text-sky-700 border border-sky-200/90 flex items-center justify-center shrink-0 shadow-2xs">
+                        <Coins className="h-5 w-5" strokeWidth={2.2} />
+                      </div>
+                    </div>
+                    <div className="pt-2 mt-auto border-t border-sky-100/70">
+                      <span className="text-[11px] text-sky-700/90 font-medium block">
+                        Total amount received so far
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 3. Total Outstanding Card */}
+                  <div className={`${isMidwayClosed ? "bg-amber-50/50 border-amber-200/80" : "bg-amber-50/50 border-amber-200/80"} rounded-2xl border p-4 sm:p-5 shadow-2xs flex-1 flex flex-col justify-between transition-all duration-200 hover:shadow-xs min-h-[120px]`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className={`text-xs font-bold uppercase tracking-wider ${isMidwayClosed ? "text-amber-800/80" : "text-amber-800/80"} block`}>
+                          Total Outstanding
+                        </span>
+                        <p className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-1 leading-snug break-words">
+                          {formatCurrency(outstandingBalance)}
+                        </p>
+                      </div>
+                      <div className={`h-11 w-11 rounded-xl ${isMidwayClosed ? "bg-amber-100 text-amber-700 border-amber-200/90" : "bg-amber-100 text-amber-700 border-amber-200/90"} border flex items-center justify-center shrink-0 shadow-2xs`}>
+                        {isMidwayClosed ? <CheckCircle className="h-5 w-5" strokeWidth={2.2} /> : <Landmark className="h-5 w-5" strokeWidth={2.2} />}
+                      </div>
+                    </div>
+                    <div className={`pt-2 mt-auto border-t ${isMidwayClosed ? "border-amber-100/70" : "border-amber-100/70"}`}>
+                      <span className={`text-[11px] ${isMidwayClosed ? "text-amber-700 font-semibold" : "text-amber-700/90 font-medium"} block`}>
+                        {isMidwayClosed
                           ? "Settled via Midway Closure (₹0 balance)"
                           : "Remaining payable balance"}
-                    </span>
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -1225,12 +1423,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
               </div>
             </div>
 
-            {isForeclosed && (
-              <div className="p-3 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-purple-700 shrink-0" />
-                <span>This loan is foreclosed and settled. Historical schedule records are maintained for audit integrity.</span>
-              </div>
-            )}
+            {isForeclosed && <ForeclosureScheduleLock />}
 
             {isMidwayClosed && !isForeclosed && (
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
@@ -1260,8 +1453,12 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {schedule.map((row) => {
-                      const isMidwaySettled = Boolean(row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed");
-                      const isOverdue = !isMidwaySettled && row.status === "Overdue";
+                      const isMidwaySettled = !isForeclosed && Boolean(row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed");
+                      const isForeclosedRow = isForeclosed && (
+                        foreclosureEffectiveStartNum !== null &&
+                        Number(row.installmentNumber) >= foreclosureEffectiveStartNum
+                      );
+                      const isOverdue = !isMidwaySettled && !isForeclosed && row.status === "Overdue";
                       const penaltyAmount = isOverdue
                         ? getInstallmentPenaltySupportingAmount(row, {
                           loanId: effectiveLoanId,
@@ -1271,20 +1468,28 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                         })
                         : null;
 
+                      const displayBalance = isForeclosed ? 0 : (row.balance !== undefined ? row.balance : Math.max(0, row.emi - (row.amountPaid || 0)));
+                      const displayPrinOutstanding = isForeclosed ? 0 : (row.principalOutstanding !== undefined ? row.principalOutstanding : 0);
+
                       return (
                         <tr
                           key={row.installmentNumber}
                           onClick={() => setSelectedInstallmentForHistory(row)}
-                          className={`transition-colors cursor-pointer group ${isMidwaySettled
-                            ? "bg-amber-50/70 hover:bg-amber-100/60"
-                            : "hover:bg-emerald-50/40"
-                            }`}
-                          title="Click to view collection history"
+                          className={`transition-colors cursor-pointer group ${
+                            isMidwaySettled
+                              ? "bg-amber-50/70 hover:bg-amber-100/60"
+                              : isForeclosedRow
+                                ? "bg-[#F3E8FF] hover:bg-[#EBD5FF] border-b border-purple-200/50"
+                                : "bg-white hover:bg-emerald-50/40"
+                          }`}
+                          style={isForeclosedRow ? { backgroundColor: "#F3E8FF" } : undefined}
+                          title={isForeclosedRow ? "Closed via vehicle foreclosure" : "Click to view collection history"}
                         >
-                          <td className={`whitespace-nowrap px-3.5 py-3 font-semibold ${isMidwaySettled
-                            ? "text-amber-950 group-hover:text-amber-900"
-                            : "text-slate-700 group-hover:text-emerald-800"
-                            }`}>
+                          <td className={`whitespace-nowrap px-3.5 py-3 font-semibold ${
+                            isMidwaySettled
+                              ? "text-amber-950 group-hover:text-amber-900"
+                              : "text-slate-700 group-hover:text-emerald-800"
+                          }`}>
                             {row.installmentNumber}
                           </td>
                           <td className="whitespace-nowrap px-3.5 py-3 font-semibold text-slate-900">
@@ -1300,26 +1505,21 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                             {formatCurrency(row.emi)}
                           </td>
                           <td className="whitespace-nowrap px-3.5 py-3 text-right text-slate-700 font-medium">
-                            {formatCurrency(row.principalOutstanding !== undefined ? row.principalOutstanding : 0)}
+                            {formatCurrency(displayPrinOutstanding)}
                           </td>
                           <td className="whitespace-nowrap px-3.5 py-3 text-right font-bold text-slate-900">
-                            {formatCurrency(row.balance !== undefined ? row.balance : Math.max(0, row.emi - (row.amountPaid || 0)))}
+                            {formatCurrency(displayBalance)}
                           </td>
                           <td className="whitespace-nowrap px-3.5 py-3 text-center">
                             <div className="flex flex-col items-center justify-center gap-0.5">
                               <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${isMidwaySettled
-                                  ? "bg-orange-100/90 text-amber-900 border border-amber-300 ring-1 ring-amber-500/20"
-                                  : row.status === "Collected" || row.status === "Paid"
-                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                    : row.status === "Partial"
-                                      ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                      : row.status === "Overdue"
-                                        ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                        : "bg-slate-100 text-slate-700 border border-slate-200"
-                                  }`}
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                  isMidwaySettled
+                                    ? "bg-orange-100/90 text-amber-900 border border-amber-300 ring-1 ring-amber-500/20"
+                                    : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                }`}
                               >
-                                {isMidwaySettled ? "Paid" : (row.status || "Due")}
+                                {isMidwaySettled ? "Paid" : "Paid"}
                               </span>
                               {isOverdue && penaltyAmount > 0 && (
                                 <span className="text-[10px] font-semibold text-[#006052] whitespace-nowrap leading-tight">
@@ -1378,7 +1578,51 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
               </div>
             </div>
 
-            {loanPayments.length === 0 ? (
+            {/* Foreclosure Event Banner in Collection History */}
+            {isForeclosed && (
+              <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Lock className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-purple-950">
+                        Activity: Loan Foreclosed
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-purple-200 text-purple-900 border border-purple-300">
+                        Foreclosure Event
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-purple-800/90 mt-1 flex-wrap">
+                      <span><strong>Date:</strong> {formatDateTime(foreclosureDate || loanRecord.updatedAt).date}</span>
+                      <span>•</span>
+                      <span><strong>Vehicle Reg:</strong> {vehicle.regNo || "—"}</span>
+                      <span>•</span>
+                      <span><strong>Loan ID:</strong> {effectiveLoanId}</span>
+                      {foreclosureSalePrice > 0 && (
+                        <>
+                          <span>•</span>
+                          <span><strong>Vehicle Sale:</strong> {formatCurrency(foreclosureSalePrice)}</span>
+                        </>
+                      )}
+                      {foreclosureData.buyerName && (
+                        <>
+                          <span>•</span>
+                          <span><strong>Buyer:</strong> {foreclosureData.buyerName}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white border border-purple-200 text-purple-900 text-xs font-bold shadow-2xs shrink-0">
+                  <ShieldCheck className="h-3.5 w-3.5 text-purple-600" />
+                  Account Closed
+                </span>
+              </div>
+            )}
+
+            {loanPayments.length === 0 && !isForeclosed ? (
               <div className="py-12 text-center text-xs text-slate-400 space-y-2">
                 <Receipt className="h-8 w-8 mx-auto text-slate-300" />
                 <p>No collections recorded yet for this loan.</p>
@@ -1388,17 +1632,61 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 <table className="min-w-full divide-y divide-slate-200 text-xs sm:text-sm">
                   <thead className="bg-slate-50/80">
                     <tr>
-                      <th className="px-3.5 py-3 text-left font-bold text-slate-700">Receipt ID</th>
+                      <th className="px-3.5 py-3 text-left font-bold text-slate-700">Receipt ID / Ref</th>
                       <th className="px-3.5 py-3 text-left font-bold text-slate-700">Collection Date &amp; Time</th>
-                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">Amount Collected</th>
+                      <th className="px-3.5 py-3 text-right font-bold text-slate-700">Amount</th>
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Principal</th>
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Interest</th>
-                      <th className="px-3.5 py-3 text-center font-bold text-slate-700">Payment Mode</th>
-                      <th className="px-3.5 py-3 text-center font-bold text-slate-700">Installment Ref</th>
-                      <th className="px-3.5 py-3 text-left font-bold text-slate-700">Remarks</th>
+                      <th className="px-3.5 py-3 text-center font-bold text-slate-700">Type / Mode</th>
+                      <th className="px-3.5 py-3 text-center font-bold text-slate-700">Reference</th>
+                      <th className="px-3.5 py-3 text-left font-bold text-slate-700">Activity &amp; Remarks</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
+                    {/* Distinct Foreclosure History Row */}
+                    {isForeclosed && (
+                      <tr className="bg-purple-50/80 border-l-4 border-l-purple-600 font-medium">
+                        <td className="whitespace-nowrap px-3.5 py-3 font-bold text-purple-900">
+                          <div className="flex items-center gap-1.5">
+                            <Lock className="h-3.5 w-3.5 text-purple-700" />
+                            <span>FORECLOSURE</span>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-3 text-purple-900">
+                          <span className="font-bold">{formatDateTime(foreclosureDate || loanRecord.updatedAt).date}</span>
+                          {formatDateTime(foreclosureDate || loanRecord.updatedAt).time && (
+                            <span className="text-[11px] text-purple-600 ml-1.5 font-normal">
+                              {formatDateTime(foreclosureDate || loanRecord.updatedAt).time}
+                            </span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-3 text-right font-bold text-purple-900">
+                          {foreclosureSalePrice > 0 ? formatCurrency(foreclosureSalePrice) : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-3 text-right text-purple-800">
+                          {formatCurrency(outstandingPrincipalAtForeclosure)}
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-3 text-right text-purple-800">
+                          {formatCurrency(outstandingInterestAtForeclosure)}
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-3 text-center">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-purple-200 text-purple-900 border border-purple-300">
+                            Foreclosed
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-3 text-center text-purple-800 font-semibold">
+                          {vehicle.regNo || effectiveLoanId}
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-3 text-purple-900">
+                          <span className="font-semibold">Loan Foreclosed</span>
+                          {foreclosureData.buyerName && (
+                            <span className="text-purple-700 text-xs ml-1 font-normal">
+                              · Sold to {foreclosureData.buyerName}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    )}
                     {loanPayments.map((p) => {
                       const { date, time } = formatDateTime(p.date, p);
                       return (
@@ -1532,14 +1820,14 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                         <td className="px-4 py-2.5 text-center whitespace-nowrap">
                           <span
                             className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase ${r.status === 'Collected'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : r.status === 'Frozen'
-                                  ? 'bg-sky-50 text-sky-700 border border-sky-200'
-                                  : r.status === 'Cancelled'
-                                    ? 'bg-slate-100 text-slate-600 border border-slate-200'
-                                    : r.status === 'Partial'
-                                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : r.status === 'Frozen'
+                                ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                                : r.status === 'Cancelled'
+                                  ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                                  : r.status === 'Partial'
+                                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
                               }`}
                           >
                             {r.status}
@@ -1636,14 +1924,83 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                         </div>
                         <div>
                           <span className="text-slate-500 block">Balance Remaining</span>
-                          <span className="font-bold text-slate-800">{formatCurrency(activeInst.balance !== undefined ? activeInst.balance : Math.max(0, activeInst.emi - (activeInst.amountPaid || 0)))}</span>
+                          <span className="font-bold text-slate-800">{formatCurrency(isForeclosed && activeInst.status === "Foreclosed" ? 0 : (activeInst.balance !== undefined ? activeInst.balance : Math.max(0, activeInst.emi - (activeInst.amountPaid || 0))))}</span>
                         </div>
                       </div>
 
-                      {matchingCollections.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-slate-400">
-                          No collections recorded specifically for this installment yet.
+                      {/* Foreclosure Information Panel (only for foreclosed loans) */}
+                      {isForeclosed && (
+                        <div className="rounded-xl border border-purple-200 bg-purple-50/70 p-4 space-y-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-7 w-7 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0">
+                              <Lock className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-xs sm:text-sm text-purple-950">
+                                The loan is foreclosed.
+                              </p>
+                              <p className="text-[11px] text-purple-800">
+                                Remaining installments and operational balances have been permanently closed through vehicle foreclosure.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-purple-200/80 text-xs">
+                            <div className="bg-white/90 p-2.5 rounded-lg border border-purple-100">
+                              <span className="text-[10px] uppercase font-semibold text-slate-500 block">Foreclosure Date</span>
+                              <span className="font-bold text-slate-900 mt-0.5 block">
+                                {(() => {
+                                  const fData = loanRecord?.foreclosure || {};
+                                  const saleDetails = loanRecord?.vehicle?.saleDetails || loanRecord?.saleDetails || {};
+                                  const fDate = fData.saleDate || fData.completedAt || loanRecord?.foreclosedDate || saleDetails.saleDate || loanRecord?.updatedAt;
+                                  return fDate ? formatDate(fDate) : "—";
+                                })()}
+                              </span>
+                            </div>
+                            <div className="bg-white/90 p-2.5 rounded-lg border border-purple-100">
+                              <span className="text-[10px] uppercase font-semibold text-slate-500 block">Vehicle Sale Amount</span>
+                              <span className="font-bold text-slate-900 mt-0.5 block">
+                                {(() => {
+                                  const fData = loanRecord?.foreclosure || {};
+                                  const saleDetails = loanRecord?.vehicle?.saleDetails || loanRecord?.saleDetails || {};
+                                  const salePrice = Number(fData.salePrice || saleDetails.salePrice || saleDetails.saleAmount || 0);
+                                  return formatCurrency(salePrice);
+                                })()}
+                              </span>
+                            </div>
+                            <div className="bg-white/90 p-2.5 rounded-lg border border-purple-100">
+                              <span className="text-[10px] uppercase font-semibold text-slate-500 block">Result</span>
+                              <span className="font-bold mt-0.5 block">
+                                {(() => {
+                                  const fData = loanRecord?.foreclosure || {};
+                                  const calc = fData.finalizedCalculation || {};
+                                  const saleDetails = loanRecord?.vehicle?.saleDetails || loanRecord?.saleDetails || {};
+                                  const salePrice = Number(fData.salePrice || saleDetails.salePrice || saleDetails.saleAmount || 0);
+                                  const profitLoss = calc.profitLoss !== undefined
+                                    ? Number(calc.profitLoss)
+                                    : ((fData.profitLoss !== undefined)
+                                      ? Number(fData.profitLoss)
+                                      : (salePrice - Number(calc.totalForeclosureCost || 0)));
+                                  const isProfit = profitLoss > 0;
+                                  const isLoss = profitLoss < 0;
+                                  return (
+                                    <span className={isProfit ? "text-emerald-700" : isLoss ? "text-rose-700" : "text-slate-800"}>
+                                      {isProfit ? `Profit ${formatCurrency(profitLoss)}` : isLoss ? `Loss ${formatCurrency(Math.abs(profitLoss))}` : "₹0"}
+                                    </span>
+                                  );
+                                })()}
+                              </span>
+                            </div>
+                          </div>
                         </div>
+                      )}
+
+                      {matchingCollections.length === 0 ? (
+                        !isForeclosed && (
+                          <div className="py-8 text-center text-xs text-slate-400">
+                            No collections recorded specifically for this installment yet.
+                          </div>
+                        )
                       ) : (
                         <div className="overflow-x-auto rounded-xl border border-slate-200">
                           <table className="min-w-full divide-y divide-slate-200 text-xs sm:text-sm">
