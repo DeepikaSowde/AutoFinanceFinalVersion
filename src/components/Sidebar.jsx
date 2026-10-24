@@ -22,11 +22,34 @@ import {
   Settings
 } from 'lucide-react'
 
+import {
+  getCurrentUser,
+  hasPathPermission,
+  SESSION_UPDATE_EVENT,
+  PERMISSION_UPDATE_EVENT,
+  setCurrentUser,
+} from '../utils/userManagementStorage'
+
 const Sidebar = ({ onCollapsedChange }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(true)
+  const [currentUser, setCurrentUserState] = useState(() => getCurrentUser())
   const { t } = useTranslation()
   const location = useLocation()
+
+  // Listen to session and permission changes
+  useEffect(() => {
+    const handleSession = (e) => setCurrentUserState(e.detail || getCurrentUser())
+    const handlePerm = () => setCurrentUserState(getCurrentUser())
+    window.addEventListener(SESSION_UPDATE_EVENT, handleSession)
+    window.addEventListener(PERMISSION_UPDATE_EVENT, handlePerm)
+    window.addEventListener('storage', handlePerm)
+    return () => {
+      window.removeEventListener(SESSION_UPDATE_EVENT, handleSession)
+      window.removeEventListener(PERMISSION_UPDATE_EVENT, handlePerm)
+      window.removeEventListener('storage', handlePerm)
+    }
+  }, [])
 
   useEffect(() => {
     const getBreakpoint = (width) => {
@@ -114,6 +137,17 @@ const Sidebar = ({ onCollapsedChange }) => {
     { name: 'Reminder', path: '/reminders', icon: BellRing },
   ]
 
+  // Filter items by role-based permissions
+  const filterByPerm = (items) => {
+    if (!currentUser || currentUser.role === 'Admin') return items;
+    return items.filter((item) => hasPathPermission(currentUser, item.path));
+  };
+
+  const visibleMainItems = filterByPerm(mainItems);
+  const visibleModuleItems = filterByPerm(moduleItems);
+  const visibleUserItems = filterByPerm(userItems);
+  const visibleNotificationItems = filterByPerm(notificationItems);
+
   return (
     <>
       {/* Edge Sidebar Toggle for Mobile */}
@@ -171,101 +205,119 @@ const Sidebar = ({ onCollapsedChange }) => {
         <div className="flex-1 flex flex-col justify-between overflow-hidden pb-2">
           {/* Top Navigation */}
           <div className="flex flex-col space-y-0.5 xl:space-y-1">
-            <SectionLabel label="MAIN" />
-            <div className="space-y-0.5 xl:space-y-1">
-              {mainItems.map((item) => (
-                <NavLink
-                  key={item.name}
-                  to={item.path}
-                  onClick={() => setIsOpen(false)}
-                  className={getNavLinkClasses(item)}
-                  title={isCollapsed ? item.name : undefined}
-                >
-                  {({ isActive }) => (
-                    <>
-                      {renderIcon(item.icon, isLinkActive(item, isActive))}
-                      <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
+            {visibleMainItems.length > 0 && (
+              <>
+                <SectionLabel label="MAIN" />
+                <div className="space-y-0.5 xl:space-y-1">
+                  {visibleMainItems.map((item) => (
+                    <NavLink
+                      key={item.name}
+                      to={item.path}
+                      onClick={() => setIsOpen(false)}
+                      className={getNavLinkClasses(item)}
+                      title={isCollapsed ? item.name : undefined}
+                    >
+                      {({ isActive }) => (
+                        <>
+                          {renderIcon(item.icon, isLinkActive(item, isActive))}
+                          <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
+                        </>
+                      )}
+                    </NavLink>
+                  ))}
+                </div>
+              </>
+            )}
 
-            <SectionLabel label="MODULES" />
-            <div className={`space-y-0.5 xl:space-y-1 ${isCollapsed ? '' : 'pl-3'}`}>
-              {moduleItems.map((item) => (
-                <NavLink
-                  key={item.name}
-                  to={item.path}
-                  onClick={() => setIsOpen(false)}
-                  className={getNavLinkClasses(item)}
-                  title={isCollapsed ? item.name : undefined}
-                >
-                  {({ isActive }) => (
-                    <>
-                      {renderIcon(item.icon, isLinkActive(item, isActive))}
-                      <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
+            {visibleModuleItems.length > 0 && (
+              <>
+                <SectionLabel label="MODULES" />
+                <div className={`space-y-0.5 xl:space-y-1 ${isCollapsed ? '' : 'pl-3'}`}>
+                  {visibleModuleItems.map((item) => (
+                    <NavLink
+                      key={item.name}
+                      to={item.path}
+                      onClick={() => setIsOpen(false)}
+                      className={getNavLinkClasses(item)}
+                      title={isCollapsed ? item.name : undefined}
+                    >
+                      {({ isActive }) => (
+                        <>
+                          {renderIcon(item.icon, isLinkActive(item, isActive))}
+                          <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
+                        </>
+                      )}
+                    </NavLink>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Bottom Area */}
           <div className="shrink-0 flex flex-col gap-1 xl:gap-2 pt-2">
-            <SectionLabel label="NOTIFICATIONS" />
-            <div className="space-y-0.5 xl:space-y-1 mb-1">
-              {notificationItems.map((item) => (
-                <NavLink
-                  key={item.name}
-                  to={item.path}
-                  onClick={() => setIsOpen(false)}
-                  className={getNavLinkClasses(item)}
-                  title={isCollapsed ? item.name : undefined}
-                >
-                  {({ isActive }) => (
-                    <>
-                      {renderIcon(item.icon, isLinkActive(item, isActive))}
-                      <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
+            {visibleNotificationItems.length > 0 && (
+              <>
+                <SectionLabel label="NOTIFICATIONS" />
+                <div className="space-y-0.5 xl:space-y-1 mb-1">
+                  {visibleNotificationItems.map((item) => (
+                    <NavLink
+                      key={item.name}
+                      to={item.path}
+                      onClick={() => setIsOpen(false)}
+                      className={getNavLinkClasses(item)}
+                      title={isCollapsed ? item.name : undefined}
+                    >
+                      {({ isActive }) => (
+                        <>
+                          {renderIcon(item.icon, isLinkActive(item, isActive))}
+                          <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
+                        </>
+                      )}
+                    </NavLink>
+                  ))}
+                </div>
+              </>
+            )}
 
             <div className="mt-1 xl:mt-2 pt-2 xl:pt-3 border-t border-[#145247] flex flex-col gap-2 xl:gap-3">
-              <SectionLabel label="USER" />
+              {visibleUserItems.length > 0 && (
+                <>
+                  <SectionLabel label="USER" />
+                  <div className="-mt-1 space-y-0.5 xl:space-y-1">
+                    {visibleUserItems.map((item) => (
+                      <NavLink
+                        key={item.name}
+                        to={item.path}
+                        onClick={() => setIsOpen(false)}
+                        className={getNavLinkClasses(item)}
+                        title={isCollapsed ? item.name : undefined}
+                      >
+                        {({ isActive }) => (
+                          <>
+                            {renderIcon(item.icon, isLinkActive(item, isActive))}
+                            <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
+                          </>
+                        )}
+                      </NavLink>
+                    ))}
+                  </div>
+                </>
+              )}
 
-              {/* User Management & Settings Items */}
-              <div className="-mt-1 space-y-0.5 xl:space-y-1">
-                {userItems.map((item) => (
-                  <NavLink
-                    key={item.name}
-                    to={item.path}
-                    onClick={() => setIsOpen(false)}
-                    className={getNavLinkClasses(item)}
-                    title={isCollapsed ? item.name : undefined}
-                  >
-                    {({ isActive }) => (
-                      <>
-                        {renderIcon(item.icon, isLinkActive(item, isActive))}
-                        <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
-                      </>
-                    )}
-                  </NavLink>
-                ))}
-              </div>
-
-              {/* Admin Profile Card */}
+              {/* Active Profile Card */}
               <div className={`flex items-center gap-3 rounded-xl bg-[#005344] border border-[#145247] p-2.5 transition-all duration-300 ${isCollapsed ? 'justify-center' : ''}`}>
-                <div className="h-8 w-8 rounded-full bg-[#006B52] flex items-center justify-center shrink-0 shadow-inner">
-                  <UserRound className="h-4 w-4 text-[#39D6A3]" />
+                <div className="h-8 w-8 rounded-full bg-[#006B52] flex items-center justify-center shrink-0 shadow-inner text-[#39D6A3] font-bold text-xs">
+                  {currentUser?.name ? currentUser.name[0].toUpperCase() : <UserRound className="h-4 w-4 text-[#39D6A3]" />}
                 </div>
                 {!isCollapsed && (
                   <div className="flex flex-col overflow-hidden">
-                    <span className="text-[12px] font-bold text-[#E8F5F1] leading-tight truncate">Admin</span>
-                    <span className="text-[10px] font-medium text-[#A8D5C8] truncate">Administrator</span>
+                    <span className="text-[12px] font-bold text-[#E8F5F1] leading-tight truncate">
+                      {currentUser?.name || 'Admin'}
+                    </span>
+                    <span className="text-[10px] font-medium text-[#A8D5C8] truncate">
+                      {currentUser?.role === 'Admin' ? 'Administrator' : 'Staff Member'}
+                    </span>
                   </div>
                 )}
               </div>
@@ -273,9 +325,21 @@ const Sidebar = ({ onCollapsedChange }) => {
               {/* Sign Out Button */}
               <button
                 type="button"
-                className={`flex items-center rounded-lg bg-[#EF1111] hover:bg-red-700 text-[#FFFFFF] transition-colors duration-200 shadow-sm ${isCollapsed ? 'justify-center p-2 mx-auto w-10 h-10' : 'justify-center px-3 py-2 w-full'
+                onClick={() => {
+                  // Reset session to default primary admin on sign out
+                  const admin = {
+                    id: 'usr-admin-01',
+                    name: 'Admin User',
+                    phone: '9876543210',
+                    role: 'Admin',
+                    status: 'Active',
+                    isPrimaryAdmin: true,
+                  };
+                  setCurrentUser(admin);
+                }}
+                className={`flex items-center rounded-lg bg-[#EF1111] hover:bg-red-700 text-[#FFFFFF] transition-colors duration-200 shadow-sm cursor-pointer ${isCollapsed ? 'justify-center p-2 mx-auto w-10 h-10' : 'justify-center px-3 py-2 w-full'
                   }`}
-                title={isCollapsed ? 'Sign Out' : undefined}
+                title={isCollapsed ? 'Sign Out / Reset Session' : undefined}
               >
                 {isCollapsed ? (
                   <LogOut className="h-[16px] w-[16px] shrink-0 text-[#FFFFFF]" />

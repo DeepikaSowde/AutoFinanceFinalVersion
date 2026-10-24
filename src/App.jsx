@@ -24,6 +24,55 @@ import ForeclosureVehicleSaleSettings from './pages/Settings/ForeclosureVehicleS
 import SmartSearch from './pages/SmartSearch'
 import SmartSearchFloatingButton from './components/SmartSearchFloatingButton'
 
+import { useEffect } from 'react'
+import { ShieldAlert } from 'lucide-react'
+import {
+  getCurrentUser,
+  hasPathPermission,
+  SESSION_UPDATE_EVENT,
+  PERMISSION_UPDATE_EVENT,
+} from './utils/userManagementStorage'
+
+function ProtectedRoute({ path, children }) {
+  const [currentUser, setCurrentUser] = useState(() => getCurrentUser())
+
+  useEffect(() => {
+    const handleUpdate = () => setCurrentUser(getCurrentUser())
+    window.addEventListener(SESSION_UPDATE_EVENT, handleUpdate)
+    window.addEventListener(PERMISSION_UPDATE_EVENT, handleUpdate)
+    window.addEventListener('storage', handleUpdate)
+    return () => {
+      window.removeEventListener(SESSION_UPDATE_EVENT, handleUpdate)
+      window.removeEventListener(PERMISSION_UPDATE_EVENT, handleUpdate)
+      window.removeEventListener('storage', handleUpdate)
+    }
+  }, [])
+
+  if (currentUser && currentUser.role === 'Staff' && !hasPathPermission(currentUser, path)) {
+    return (
+      <div className="flex-1 min-h-[80vh] flex flex-col items-center justify-center p-6 text-center font-sans">
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm max-w-md w-full space-y-4">
+          <div className="h-16 w-16 bg-rose-50 rounded-2xl border border-rose-100 flex items-center justify-center mx-auto text-rose-600">
+            <ShieldAlert className="h-8 w-8" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800">Access Restricted</h2>
+          <p className="text-sm text-slate-500 leading-relaxed">
+            Your Staff account does not have permission to access this module. Please contact your system administrator to request access.
+          </p>
+          <a
+            href="/dashboard"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#006B52] hover:bg-[#005344] text-white text-sm font-semibold transition-all shadow-xs"
+          >
+            Return to Dashboard
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  return children
+}
+
 function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
 
@@ -37,27 +86,27 @@ function App() {
           </header>
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard" element={<ProtectedRoute path="/dashboard"><Dashboard /></ProtectedRoute>} />
             <Route path="/smart-search" element={<SmartSearch />} />
-            <Route path="/loans" element={<Loans />} />
-            <Route path="/loans/:loanId" element={<Loans />} />
-            <Route path="/newloan" element={<NewLoan />} />
-            <Route path="/customers" element={<Customer />} />
-            <Route path="/guarantor-referral" element={<GuarantorReferral />} />
-            <Route path="/customers/guarantor-referral" element={<GuarantorReferral />} />
-            <Route path="/referral-commission" element={<ReferralCommission />} />
-            <Route path="/customers/referral-commission" element={<ReferralCommission />} />
-            <Route path="/investors" element={<Investors />} />
-            <Route path="/ledger" element={<Ledger />} />
-            <Route path="/collection" element={<Collection />} />
-            <Route path="/vehicle" element={<Vehicle />} />
-            <Route path="/users" element={<UserManagement />} />
-            <Route path="/settings" element={<SettingsOverview />} />
-            <Route path="/settings/penalty-grace" element={<PenaltyGraceSettings />} />
-            <Route path="/settings/foreclosure-vehicle-sale" element={<ForeclosureVehicleSaleSettings />} />
-            <Route path="/reminders" element={<Reminder />} />
-            <Route path="/chit-investment" element={<ChitInvestment />} />
-            <Route path="*" element={<Navigate to="/newloan" replace />} />
+            <Route path="/loans" element={<ProtectedRoute path="/loans"><Loans /></ProtectedRoute>} />
+            <Route path="/loans/:loanId" element={<ProtectedRoute path="/loans"><Loans /></ProtectedRoute>} />
+            <Route path="/newloan" element={<ProtectedRoute path="/loans"><NewLoan /></ProtectedRoute>} />
+            <Route path="/customers" element={<ProtectedRoute path="/customers"><Customer /></ProtectedRoute>} />
+            <Route path="/guarantor-referral" element={<ProtectedRoute path="/customers"><GuarantorReferral /></ProtectedRoute>} />
+            <Route path="/customers/guarantor-referral" element={<ProtectedRoute path="/customers"><GuarantorReferral /></ProtectedRoute>} />
+            <Route path="/referral-commission" element={<ProtectedRoute path="/customers"><ReferralCommission /></ProtectedRoute>} />
+            <Route path="/customers/referral-commission" element={<ProtectedRoute path="/customers"><ReferralCommission /></ProtectedRoute>} />
+            <Route path="/investors" element={<ProtectedRoute path="/investors"><Investors /></ProtectedRoute>} />
+            <Route path="/ledger" element={<ProtectedRoute path="/ledger"><Ledger /></ProtectedRoute>} />
+            <Route path="/collection" element={<ProtectedRoute path="/collection"><Collection /></ProtectedRoute>} />
+            <Route path="/vehicle" element={<ProtectedRoute path="/vehicle"><Vehicle /></ProtectedRoute>} />
+            <Route path="/users" element={<ProtectedRoute path="/users"><UserManagement /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute path="/settings"><SettingsOverview /></ProtectedRoute>} />
+            <Route path="/settings/penalty-grace" element={<ProtectedRoute path="/settings"><PenaltyGraceSettings /></ProtectedRoute>} />
+            <Route path="/settings/foreclosure-vehicle-sale" element={<ProtectedRoute path="/settings"><ForeclosureVehicleSaleSettings /></ProtectedRoute>} />
+            <Route path="/reminders" element={<ProtectedRoute path="/reminders"><Reminder /></ProtectedRoute>} />
+            <Route path="/chit-investment" element={<ProtectedRoute path="/investors"><ChitInvestment /></ProtectedRoute>} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
           <SmartSearchFloatingButton />
         </main>
