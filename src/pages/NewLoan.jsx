@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 
 import CustomerTab from '../components/CustomerTab'
 import VehicleTab from '../components/Vehicletab'
@@ -18,7 +18,7 @@ import {
 } from '../utils/customerOnboardingStorage'
 
 import { calculateRepayment } from '../components/Loantab'
-import { CheckCircle2, X } from 'lucide-react'
+import { CheckCircle2, X, RefreshCw } from 'lucide-react'
 import { recordPersonRelationship, syncDocumentChargeIncome } from '../utils/guarantorReferralStorage'
 import { getVehicleModelImage, getVehicleDisplayImage } from '../utils/vehicleImageHelper'
 import { formatDate } from '../utils/dateUtils'
@@ -269,17 +269,24 @@ const NewLoan = () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
-      // 1. Generate Loan ID
+      // 1. Generate Unique Loan ID
       const customersList = JSON.parse(localStorage.getItem("motoLendCustomersList_data") || "[]")
-      const loanCount = customersList.length + 1
-      const loanId = `LN${loanCount.toString().padStart(5, '0')}`
+      let nextNum = customersList.length + 1
+      let candidateId = `LN${nextNum.toString().padStart(5, '0')}`
+      while (customersList.some(c => (c.loanId || c.loan?.loanId) === candidateId)) {
+        nextNum++
+        candidateId = `LN${nextNum.toString().padStart(5, '0')}`
+      }
+      const loanId = candidateId
       
       const rawMobile = form.customer.mobile ? form.customer.mobile.trim() : "";
-      let customerId = "";
-      if (rawMobile.length >= 5 && !/^0+$/.test(rawMobile.slice(-5))) {
-        customerId = `CUS-${rawMobile.slice(-5)}`;
-      } else {
-        customerId = `CUS-${String(customersList.length + 1).padStart(5, '0')}`;
+      let customerId = form.customer.customerId || "";
+      if (!customerId) {
+        if (rawMobile.length >= 5 && !/^0+$/.test(rawMobile.slice(-5))) {
+          customerId = `CUS-${rawMobile.slice(-5)}`;
+        } else {
+          customerId = `CUS-${String(customersList.length + 1).padStart(5, '0')}`;
+        }
       }
 
       // 2. Calculate EMI & Due Date
@@ -508,6 +515,8 @@ const NewLoan = () => {
   const handleFetchVehicle = () => console.log('Fetch vehicle details', form.vehicle.regNo)
 
   const navigate = useNavigate()
+  const location = useLocation()
+  const isReLoan = Boolean(location.state?.isReLoan || form.customer?.isReLoanCustomer || form.loan?.isReLoan)
 
   const outlineBtn = 'rounded-md border border-slate-300 bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-slate-800 hover:border-emerald-700 hover:text-emerald-800 transition-colors'
   const primaryBtn = 'inline-flex items-center justify-center gap-1.5 sm:gap-2 rounded-md bg-emerald-800 px-4 sm:px-5 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50 transition-colors'
@@ -518,11 +527,11 @@ const NewLoan = () => {
       <div className="shrink-0 mb-1.5 flex items-center justify-between">
         <button
           type="button"
-          onClick={() => navigate('/loans')}
+          onClick={() => navigate(isReLoan ? '/re-loan' : '/loans')}
           className="group inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-emerald-800 transition-colors focus:outline-none"
         >
           <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
-          <span>Back to Loans</span>
+          <span>{isReLoan ? 'Back to Re-Loan' : 'Back to Loans'}</span>
         </button>
       </div>
 
@@ -535,6 +544,21 @@ const NewLoan = () => {
           </div>
           <Stepper current={step} onStepClick={setStep} t={t} />
         </div>
+
+        {/* Re-Loan Banner if in Re-Loan workflow */}
+        {isReLoan && (
+          <div className="shrink-0 px-4 py-2 bg-emerald-50 border-b border-emerald-200/80 text-emerald-950 text-xs flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <RefreshCw className="h-4 w-4 text-[#006052] shrink-0" />
+              <span className="truncate">
+                <strong>Re-Loan Application</strong> for existing customer <strong>{form.customer?.name || location.state?.customerName}</strong> ({form.customer?.customerId || location.state?.customerId}). A new independent Loan ID will be assigned.
+              </span>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 ml-2">
+              Re-Loan Mode
+            </span>
+          </div>
+        )}
 
         {/* Consistent content area with fixed available height based on viewport */}
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 sm:px-5 sm:py-3.5 bg-white">

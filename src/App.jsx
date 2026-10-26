@@ -23,6 +23,9 @@ import SettingsOverview from './pages/Settings/SettingsOverview'
 import PenaltyGraceSettings from './pages/Settings/PenaltyGraceSettings'
 import ForeclosureVehicleSaleSettings from './pages/Settings/ForeclosureVehicleSaleSettings'
 import PaymentAllocationSettings from './pages/Settings/PaymentAllocationSettings'
+import ReLoanSettings from './pages/Settings/ReLoanSettings'
+import ReLoanSearch from './pages/reloan/ReLoanSearch'
+import ReLoanDetails from './pages/reloan/ReLoanDetails'
 import SmartSearch from './pages/SmartSearch'
 import SmartSearchFloatingButton from './components/SmartSearchFloatingButton'
 
@@ -138,6 +141,10 @@ function App() {
           <Route path="/settings/penalty-grace" element={<ProtectedRoute path="/settings"><PenaltyGraceSettings /></ProtectedRoute>} />
           <Route path="/settings/foreclosure-vehicle-sale" element={<ProtectedRoute path="/settings"><ForeclosureVehicleSaleSettings /></ProtectedRoute>} />
           <Route path="/settings/payment-allocation" element={<ProtectedRoute path="/settings"><PaymentAllocationSettings /></ProtectedRoute>} />
+          <Route path="/settings/re-loan" element={<ProtectedRoute path="/settings"><ReLoanSettings /></ProtectedRoute>} />
+          <Route path="/re-loan" element={<ProtectedRoute path="/customers"><ReLoanSearch /></ProtectedRoute>} />
+          <Route path="/re-loan/:customerId" element={<ProtectedRoute path="/customers"><ReLoanDetails /></ProtectedRoute>} />
+          <Route path="/customers/re-loan" element={<ProtectedRoute path="/customers"><ReLoanSearch /></ProtectedRoute>} />
           <Route path="/reminders" element={<ProtectedRoute path="/reminders"><Reminder /></ProtectedRoute>} />
           <Route path="/chit-investment" element={<ProtectedRoute path="/investors"><ChitInvestment /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

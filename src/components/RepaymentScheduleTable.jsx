@@ -454,6 +454,7 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = [], optio
         continue;
       }
 
+      const alloc = Math.min(unassignedRemAmt, remDue);
       const intDue = Math.max(0, inst.interest - inst.interestPaid);
       const prinDue = Math.max(0, inst.principal - inst.principalPaid);
       const { interestPaid: intAlloc, principalPaid: prinAlloc } = allocateInstallmentPayment(
