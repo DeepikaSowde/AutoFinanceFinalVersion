@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Menu,
@@ -27,7 +27,7 @@ import {
   hasPathPermission,
   SESSION_UPDATE_EVENT,
   PERMISSION_UPDATE_EVENT,
-  setCurrentUser,
+  logoutUser,
 } from '../utils/userManagementStorage'
 
 const Sidebar = ({ onCollapsedChange }) => {
@@ -36,6 +36,7 @@ const Sidebar = ({ onCollapsedChange }) => {
   const [currentUser, setCurrentUserState] = useState(() => getCurrentUser())
   const { t } = useTranslation()
   const location = useLocation()
+  const navigate = useNavigate()
 
   // Listen to session and permission changes
   useEffect(() => {
@@ -326,20 +327,12 @@ const Sidebar = ({ onCollapsedChange }) => {
               <button
                 type="button"
                 onClick={() => {
-                  // Reset session to default primary admin on sign out
-                  const admin = {
-                    id: 'usr-admin-01',
-                    name: 'Admin User',
-                    phone: '9876543210',
-                    role: 'Admin',
-                    status: 'Active',
-                    isPrimaryAdmin: true,
-                  };
-                  setCurrentUser(admin);
+                  logoutUser()
+                  navigate('/login', { replace: true })
                 }}
                 className={`flex items-center rounded-lg bg-[#EF1111] hover:bg-red-700 text-[#FFFFFF] transition-colors duration-200 shadow-sm cursor-pointer ${isCollapsed ? 'justify-center p-2 mx-auto w-10 h-10' : 'justify-center px-3 py-2 w-full'
                   }`}
-                title={isCollapsed ? 'Sign Out / Reset Session' : undefined}
+                title={isCollapsed ? 'Sign Out' : undefined}
               >
                 {isCollapsed ? (
                   <LogOut className="h-[16px] w-[16px] shrink-0 text-[#FFFFFF]" />

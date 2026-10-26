@@ -383,27 +383,57 @@ export function resetRolePermissions() {
 }
 
 /**
- * Retrieve Current Active User (defaults to primary admin)
+ * Retrieve Current Active Authenticated User
+ * Includes session validation, active status check, and role-tamper protection
  */
 export function getCurrentUser() {
   try {
     const raw = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
     if (!raw) {
-      const admin = getUsers().find((u) => u.isPrimaryAdmin) || DEFAULT_PRIMARY_ADMIN;
-      localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(admin));
-      return admin;
+      return null;
     }
-    return JSON.parse(raw);
-  } catch {
-    return DEFAULT_PRIMARY_ADMIN;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.id) {
+      return null;
+    }
+
+    // Cross-verify against canonical users store to prevent client-side role manipulation
+    const allUsers = getUsers();
+    const canonical = allUsers.find((u) => String(u.id).trim() === String(parsed.id).trim());
+    if (!canonical) {
+      localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+      return null;
+    }
+
+    // Enforce active status
+    if (normalizeStatus(canonical.status) === 'Inactive') {
+      localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+      return null;
+    }
+
+    // Anti-tamper check: If localStorage role was modified to Admin, enforce canonical role
+    if (parsed.role !== canonical.role) {
+      parsed.role = canonical.role;
+      localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(parsed));
+    }
+
+    return parsed;
+  } catch (err) {
+    console.error('Failed to get current user:', err);
+    return null;
   }
 }
 
 /**
- * Set Current Active User
+ * Set Current Active User Session
  */
 export function setCurrentUser(user) {
   try {
+    if (!user) {
+      localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+      window.dispatchEvent(new CustomEvent(SESSION_UPDATE_EVENT, { detail: null }));
+      return true;
+    }
     localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(user));
     window.dispatchEvent(new CustomEvent(SESSION_UPDATE_EVENT, { detail: user }));
     return true;
@@ -411,6 +441,103 @@ export function setCurrentUser(user) {
     console.error('Failed to set current user:', err);
     return false;
   }
+}
+
+/**
+ * Authenticate and log in user with identifier (username, phone, or name) and password
+ */
+export async function loginUser(identifier, plainPassword) {
+  if (!identifier || !String(identifier).trim()) {
+    throw new Error('Please enter your username or mobile number.');
+  }
+  if (!plainPassword || !String(plainPassword).trim()) {
+    throw new Error('Please enter your password.');
+  }
+
+  const cleanIdent = String(identifier).trim().toLowerCase();
+  const cleanDigits = cleanIdent.replace(/\D/g, '');
+  const allUsers = getUsers();
+
+  // Find user by username, registered 10-digit phone number, full name, or ID
+  const user = allUsers.find((u) => {
+    if (!u) return false;
+    // 1. Direct username match (case-insensitive)
+    if (u.username && String(u.username).trim().toLowerCase() === cleanIdent) {
+      return true;
+    }
+    // 2. 10-digit phone match
+    if (cleanDigits && cleanDigits.length === 10) {
+      const uDigits = String(u.phone || '').replace(/\D/g, '').slice(-10);
+      if (uDigits === cleanDigits) return true;
+    }
+    // 3. Full name match (case-insensitive)
+    if (u.name && String(u.name).trim().toLowerCase() === cleanIdent) {
+      return true;
+    }
+    // 4. Stable User ID match
+    if (u.id && String(u.id).trim().toLowerCase() === cleanIdent) {
+      return true;
+    }
+    return false;
+  });
+
+  if (!user) {
+    throw new Error('Invalid username or password. Please verify your credentials.');
+  }
+
+  // Verify account is Active (inactive staff cannot log in)
+  if (normalizeStatus(user.status) === 'Inactive') {
+    throw new Error('This account has been deactivated. Please contact your system administrator to restore access.');
+  }
+
+  // Verify password hash using browser-native SHA-256
+  const computedHash = await hashPassword(plainPassword.trim());
+  const isPrimaryAdminMatch = user.isPrimaryAdmin && (
+    computedHash === '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918' || // 'admin'
+    computedHash === '7676aaafb027c825bd9abab78b234070e702752f625b752e55e55b48e607e358'    // 'admin@123'
+  );
+
+  if (computedHash !== user.passwordHash && !isPrimaryAdminMatch) {
+    throw new Error('Invalid username or password. Please verify your credentials.');
+  }
+
+  // Create sanitized session object (never expose plaintext passwords or hash)
+  const sessionUser = {
+    id: user.id,
+    name: user.name,
+    username: user.username || user.name,
+    phone: user.phone,
+    role: user.role,
+    status: user.status,
+    isPrimaryAdmin: Boolean(user.isPrimaryAdmin),
+    permissions: user.permissions || null,
+    token: `mtl_token_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+    loggedInAt: new Date().toISOString(),
+  };
+
+  setCurrentUser(sessionUser);
+  return sessionUser;
+}
+
+/**
+ * Log out active user and terminate session
+ */
+export function logoutUser() {
+  try {
+    localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+    window.dispatchEvent(new CustomEvent(SESSION_UPDATE_EVENT, { detail: null }));
+    return true;
+  } catch (err) {
+    console.error('Failed to log out user:', err);
+    return false;
+  }
+}
+
+/**
+ * Check if a valid authenticated session exists
+ */
+export function isAuthenticated() {
+  return Boolean(getCurrentUser());
 }
 
 /**

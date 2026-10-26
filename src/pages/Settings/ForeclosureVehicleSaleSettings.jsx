@@ -8,12 +8,8 @@ import {
   CheckCircle2,
   Lock,
   Calendar,
-  AlertCircle,
   Receipt,
-  Clock,
-  ShieldAlert,
   Coins,
-  Check,
 } from 'lucide-react';
 import {
   getForeclosureSettings,
@@ -99,7 +95,7 @@ const ForeclosureVehicleSaleSettings = () => {
                 Foreclosure &amp; Vehicle Sale Settings
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
-                Configure calculation components, seized-period interest basis, and profit/loss breakdown rules.
+                Configure calculation components and seized-period interest basis.
               </p>
             </div>
           </div>
@@ -152,7 +148,7 @@ const ForeclosureVehicleSaleSettings = () => {
           <button
             type="button"
             onClick={() => setToastMessage(null)}
-            className="text-xs font-bold text-emerald-700 hover:text-emerald-900 px-2 py-0.5"
+            className="text-xs font-bold text-emerald-700 hover:text-emerald-900 px-2 py-0.5 cursor-pointer"
           >
             Dismiss
           </button>
@@ -161,62 +157,52 @@ const ForeclosureVehicleSaleSettings = () => {
 
       {/* Main Settings Form */}
       <div className="max-w-4xl space-y-6">
-        {/* Section 1: Calculation Components */}
+        {/* Calculation Components Card */}
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
           <div className="px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/70">
             <h2 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">
               Foreclosure Calculation Components
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Choose which financial items contribute to the Total Foreclosure Cost and vehicle sale profit/loss.
-            </p>
           </div>
 
-          <div className="p-5 sm:p-6 divide-y divide-slate-100 space-y-4">
+          <div className="p-5 sm:p-6 divide-y divide-slate-100">
             {/* 1. Outstanding Principal + Interest at Sale (Always Enabled & Non-editable) */}
-            <div className="flex items-start justify-between gap-4 pt-1">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-slate-900">
-                    Outstanding Principal + Interest at Sale
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    <Lock className="h-3 w-3" />
-                    <span>Always Enabled (Non-Editable)</span>
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 max-w-xl leading-relaxed">
-                  The primary loan balance remaining at vehicle sale time. Always included in the foreclosure cost breakdown and cannot be excluded.
-                </p>
+            <div className="flex items-center justify-between gap-4 py-3.5 first:pt-0">
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm font-semibold text-slate-900">
+                  Outstanding Principal + Interest at Sale
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  <Lock className="h-3 w-3" />
+                  <span>Always Enabled (Non-Editable)</span>
+                </span>
               </div>
 
               {/* Locked Toggle Switch */}
-              <div className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent bg-[#006052] opacity-90">
+              <div
+                className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent bg-[#006052] opacity-90"
+                title="Always included in foreclosure calculation"
+              >
                 <span className="translate-x-5 inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out" />
               </div>
             </div>
 
             {/* 2. Vehicle Expenses */}
-            <div className="flex items-start justify-between gap-4 pt-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Receipt className="h-4 w-4 text-[#006052]" />
-                  <span className="text-sm font-bold text-slate-900">
-                    Vehicle Expenses
+            <div className="flex items-center justify-between gap-4 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <Receipt className="h-4 w-4 text-[#006052]" />
+                <span className="text-sm font-semibold text-slate-900">
+                  Vehicle Expenses
+                </span>
+                {settings.includeVehicleExpenses ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    Enabled
                   </span>
-                  {settings.includeVehicleExpenses ? (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      Enabled
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                      Disabled
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 max-w-xl leading-relaxed">
-                  Include recorded yard storage, towing, repossession fees, and maintenance costs in the foreclosure cost. When disabled, expenses are excluded from the foreclosure settlement breakdown.
-                </p>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                    Disabled
+                  </span>
+                )}
               </div>
 
               <button
@@ -237,27 +223,22 @@ const ForeclosureVehicleSaleSettings = () => {
             </div>
 
             {/* 3. Seized-Period Interest */}
-            <div className="pt-4 space-y-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-[#006052]" />
-                    <span className="text-sm font-bold text-slate-900">
-                      Seized-Period Interest
+            <div className="py-3.5 space-y-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2.5">
+                  <Calendar className="h-4 w-4 text-[#006052]" />
+                  <span className="text-sm font-semibold text-slate-900">
+                    Seized-Period Interest
+                  </span>
+                  {settings.includeSeizedPeriodInterest ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      Enabled
                     </span>
-                    {settings.includeSeizedPeriodInterest ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                        Enabled
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                        Disabled
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-500 max-w-xl leading-relaxed">
-                    Charge applicable interest during the period the vehicle was repossessed and stored before being sold.
-                  </p>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                      Disabled
+                    </span>
+                  )}
                 </div>
 
                 <button
@@ -277,132 +258,76 @@ const ForeclosureVehicleSaleSettings = () => {
                 </button>
               </div>
 
-              {/* Mutually Exclusive Configuration: Seized-Period Calculation Basis */}
+              {/* Seized-Period Calculation Basis */}
               {settings.includeSeizedPeriodInterest && (
-                <div className="mt-3 p-4 rounded-xl border border-emerald-100 bg-emerald-50/40 space-y-3.5 animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-950 uppercase tracking-wider">
-                      Seized-Period Calculation Basis
-                    </span>
-                    <span className="text-[11px] font-medium text-emerald-800">
-                      Mutually Exclusive Options
-                    </span>
-                  </div>
+                <div className="p-3.5 rounded-xl border border-emerald-100 bg-emerald-50/30 space-y-2.5 animate-in fade-in duration-150">
+                  <span className="text-xs font-bold text-emerald-950 uppercase tracking-wider block">
+                    Seized-Period Calculation Basis
+                  </span>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {/* Option A Card */}
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleBasisChange('Option A')}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleBasisChange('Option A');
-                        }
-                      }}
-                      className={`p-4 rounded-xl border text-left cursor-pointer transition-all flex flex-col justify-between ${
+                    <label
+                      className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
                         settings.seizedPeriodBasis === 'Option A'
-                          ? 'border-[#006052] bg-white ring-2 ring-[#006052]/20 shadow-xs'
-                          : 'border-slate-200 bg-white/70 hover:bg-white'
+                          ? 'border-[#006052] bg-white ring-1 ring-[#006052]/30 shadow-2xs'
+                          : 'border-slate-200 bg-white/80 hover:bg-white text-slate-700'
                       }`}
                     >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-bold text-xs sm:text-sm text-slate-900">
-                            Option A — Include Within-Tenure Period
-                          </span>
-                          <input
-                            type="radio"
-                            name="seizedPeriodBasis"
-                            value="Option A"
-                            checked={settings.seizedPeriodBasis === 'Option A'}
-                            onChange={() => handleBasisChange('Option A')}
-                            className="text-[#006052] focus:ring-[#006052]"
-                          />
-                        </div>
-                        <p className="text-xs text-slate-600 leading-relaxed">
-                          Includes the eligible overdue/seized period within the original loan tenure, <strong>plus</strong> the additional period after the original tenure expires until the vehicle is sold.
-                        </p>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] text-emerald-800 font-medium">
-                        Example: 5 within-tenure months + 4 post-tenure months = <strong>9 months total</strong>
-                      </div>
-                    </div>
+                      <span className="text-xs sm:text-sm font-semibold text-slate-800">
+                        Option A — Include Within-Tenure Period
+                      </span>
+                      <input
+                        type="radio"
+                        name="seizedPeriodBasis"
+                        value="Option A"
+                        checked={settings.seizedPeriodBasis === 'Option A'}
+                        onChange={() => handleBasisChange('Option A')}
+                        className="text-[#006052] focus:ring-[#006052] h-4 w-4 shrink-0 ml-2"
+                      />
+                    </label>
 
                     {/* Option B Card */}
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleBasisChange('Option B')}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleBasisChange('Option B');
-                        }
-                      }}
-                      className={`p-4 rounded-xl border text-left cursor-pointer transition-all flex flex-col justify-between ${
+                    <label
+                      className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
                         settings.seizedPeriodBasis === 'Option B'
-                          ? 'border-[#006052] bg-white ring-2 ring-[#006052]/20 shadow-xs'
-                          : 'border-slate-200 bg-white/70 hover:bg-white'
+                          ? 'border-[#006052] bg-white ring-1 ring-[#006052]/30 shadow-2xs'
+                          : 'border-slate-200 bg-white/80 hover:bg-white text-slate-700'
                       }`}
                     >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-bold text-xs sm:text-sm text-slate-900">
-                            Option B — Additional Post-Tenure Period Only
-                          </span>
-                          <input
-                            type="radio"
-                            name="seizedPeriodBasis"
-                            value="Option B"
-                            checked={settings.seizedPeriodBasis === 'Option B'}
-                            onChange={() => handleBasisChange('Option B')}
-                            className="text-[#006052] focus:ring-[#006052]"
-                          />
-                        </div>
-                        <p className="text-xs text-slate-600 leading-relaxed">
-                          Includes <strong>only</strong> the eligible additional period after the original loan tenure expires. Excludes the overdue/seized period falling within the original tenure.
-                        </p>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] text-emerald-800 font-medium">
-                        Example: Only the <strong>4 additional post-tenure months</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Context Note */}
-                  <div className="flex items-start gap-2 pt-1 text-[11px] text-slate-600 leading-relaxed">
-                    <AlertCircle className="h-3.5 w-3.5 text-emerald-700 shrink-0 mt-0.5" />
-                    <span>
-                      Uses actual dates: original tenure end date, seizure date, and sale date. Overlapping or duplicate periods are automatically prevented. Daily, weekly, and monthly repayment frequencies adhere to existing interest calculation rules.
-                    </span>
+                      <span className="text-xs sm:text-sm font-semibold text-slate-800">
+                        Option B — Additional Post-Tenure Period Only
+                      </span>
+                      <input
+                        type="radio"
+                        name="seizedPeriodBasis"
+                        value="Option B"
+                        checked={settings.seizedPeriodBasis === 'Option B'}
+                        onChange={() => handleBasisChange('Option B')}
+                        className="text-[#006052] focus:ring-[#006052] h-4 w-4 shrink-0 ml-2"
+                      />
+                    </label>
                   </div>
                 </div>
               )}
             </div>
 
             {/* 4. Applicable Penalty */}
-            <div className="flex items-start justify-between gap-4 pt-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Coins className="h-4 w-4 text-[#006052]" />
-                  <span className="text-sm font-bold text-slate-900">
-                    Applicable Penalty
+            <div className="flex items-center justify-between gap-4 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <Coins className="h-4 w-4 text-[#006052]" />
+                <span className="text-sm font-semibold text-slate-900">
+                  Applicable Penalty
+                </span>
+                {settings.includePenalty ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    Enabled
                   </span>
-                  {settings.includePenalty ? (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      Enabled
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                      Disabled
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 max-w-xl leading-relaxed">
-                  Include eligible overdue penalties in the foreclosure cost. Also respects the master <strong>Penalty &amp; Grace Period Settings</strong> (grace days, frequency, and Fixed/Daily Increasing method). If penalties are disabled or ineligible under Penalty Settings, they will be excluded automatically.
-                </p>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                    Disabled
+                  </span>
+                )}
               </div>
 
               <button
@@ -420,44 +345,6 @@ const ForeclosureVehicleSaleSettings = () => {
                   }`}
                 />
               </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 2: Active Rules Summary Card */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 sm:p-6 space-y-3">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-[#006052]" />
-            <h3 className="text-sm sm:text-base font-bold text-slate-900">
-              Active Foreclosure Formula
-            </h3>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 font-mono text-xs text-slate-800 leading-relaxed">
-            <span className="font-bold text-[#006052]">Total Foreclosure Cost</span> = Outstanding Principal + Unpaid Interest
-            {settings.includeVehicleExpenses && <span className="text-emerald-700"> + Vehicle Expenses</span>}
-            {settings.includeSeizedPeriodInterest && (
-              <span className="text-purple-700"> + Seized-Period Interest ({settings.seizedPeriodBasis})</span>
-            )}
-            {settings.includePenalty && <span className="text-amber-700"> + Applicable Penalty</span>}
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">
-            <div className="p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-100 text-center">
-              <span className="text-[11px] text-slate-500 block">Principal + Interest</span>
-              <span className="font-bold text-emerald-800">Always Enabled</span>
-            </div>
-            <div className={`p-2.5 rounded-lg border text-center ${settings.includeVehicleExpenses ? 'bg-emerald-50/60 border-emerald-100 text-emerald-800 font-bold' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
-              <span className="text-[11px] text-slate-500 block">Vehicle Expenses</span>
-              <span>{settings.includeVehicleExpenses ? 'Included' : 'Excluded'}</span>
-            </div>
-            <div className={`p-2.5 rounded-lg border text-center ${settings.includeSeizedPeriodInterest ? 'bg-purple-50/60 border-purple-100 text-purple-900 font-bold' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
-              <span className="text-[11px] text-slate-500 block">Seized-Period Int.</span>
-              <span>{settings.includeSeizedPeriodInterest ? settings.seizedPeriodBasis : 'Excluded'}</span>
-            </div>
-            <div className={`p-2.5 rounded-lg border text-center ${settings.includePenalty ? 'bg-amber-50/60 border-amber-100 text-amber-900 font-bold' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
-              <span className="text-[11px] text-slate-500 block">Penalty</span>
-              <span>{settings.includePenalty ? 'Included' : 'Excluded'}</span>
             </div>
           </div>
         </div>

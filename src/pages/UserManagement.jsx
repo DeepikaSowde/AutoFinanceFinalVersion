@@ -36,7 +36,6 @@ import {
   saveRolePermissions,
   resetRolePermissions,
   getCurrentUser,
-  setCurrentUser,
   NAVIGATION_ITEMS,
   USER_UPDATE_EVENT,
   PERMISSION_UPDATE_EVENT,
@@ -133,11 +132,6 @@ const UserManagement = () => {
     });
   }, [users, searchQuery, roleFilter, statusFilter]);
 
-  // Handle Switch User (for testing staff permissions vs admin)
-  const handleSwitchSession = (user) => {
-    setCurrentUser(user);
-    showToast(`Switched active session to: ${user.name} (${user.role})`, 'info');
-  };
 
   return (
     <div className="flex-1 min-h-screen bg-slate-50/60 p-4 sm:p-6 lg:p-8 font-sans">
@@ -428,17 +422,7 @@ const UserManagement = () => {
                                   <span>View</span>
                                 </button>
 
-                                {/* Simulate Login / Switch Account Button */}
-                                {currentUserSession?.id !== user.id && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSwitchSession(user)}
-                                    title={`Switch active session to ${user.name}`}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 text-[11px] font-semibold text-slate-500 transition-all cursor-pointer"
-                                  >
-                                    <span>Switch</span>
-                                  </button>
-                                )}
+
                               </div>
                             </td>
                           </tr>

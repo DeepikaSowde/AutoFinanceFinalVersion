@@ -46,6 +46,8 @@ import {
   collectPenaltyTransaction,
   getLoanPenaltySummary,
 } from "../../utils/penaltyRules";
+import { getCurrentUser, SESSION_UPDATE_EVENT } from "../../utils/userManagementStorage";
+import { getAuthorizedCollections, getCollectorInfo } from "../../services/collectionService";
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -209,6 +211,8 @@ const Collection = () => {
   const [historyCustomEnd, setHistoryCustomEnd] = useState(getLocalDateString(new Date()));
   const [historyPage, setHistoryPage] = useState(1);
   const [selectedHistoryTx, setSelectedHistoryTx] = useState(null);
+  const [collectorFilter, setCollectorFilter] = useState("ALL");
+  const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
 
   const [customers, setCustomers] = useState([]);
   const [paymentHistoryList, setPaymentHistoryList] = useState([]);
@@ -250,9 +254,13 @@ const Collection = () => {
     }
   };
 
+  // Option B: Load authorized collections based on authenticated user role
+  // Admin: Sees all collections (Admin + all Staff + legacy)
+  // Staff: Strictly sees only collections collected by this specific staff member
   const loadPaymentHistory = () => {
     try {
-      const hist = JSON.parse(localStorage.getItem("motoLendPaymentHistory") || "[]");
+      const user = getCurrentUser();
+      const hist = getAuthorizedCollections(user);
       setPaymentHistoryList(hist);
     } catch {
       setPaymentHistoryList([]);
@@ -265,9 +273,14 @@ const Collection = () => {
     const handleStorageChange = () => {
       loadCustomers();
       loadPaymentHistory();
+      setCurrentUser(getCurrentUser());
     };
     window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+    window.addEventListener(SESSION_UPDATE_EVENT, handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(SESSION_UPDATE_EVENT, handleStorageChange);
+    };
   }, []);
 
   // Lock background body scroll when any modal is open, and restore when closed
@@ -506,9 +519,35 @@ const Collection = () => {
     });
   }, [collectionTransactions, historyDateRange, isCustomRangeInvalid]);
 
+  // Distinct collectors list for Admin filter dropdown
+  const distinctCollectors = useMemo(() => {
+    const map = new Map();
+    (paymentHistoryList || []).forEach((p) => {
+      if (p.collectedByName && !map.has(p.collectedByName)) {
+        map.set(p.collectedByName, {
+          name: p.collectedByName,
+          role: p.collectedByRole || 'Staff',
+          id: p.collectedByUserId,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [paymentHistoryList]);
+
   // Collection History Search & Date Filtered List
   const filteredHistoryList = useMemo(() => {
     let list = dateRangeFilteredTransactions;
+
+    // Apply Admin collector filter if active
+    if (collectorFilter !== "ALL") {
+      list = list.filter((p) => {
+        if (collectorFilter === "Admin") return p.collectedByRole === "Admin";
+        if (collectorFilter === "Staff") return p.collectedByRole === "Staff";
+        if (collectorFilter === "Legacy") return !p.collectedByName && !p.collectedByUserId;
+        return p.collectedByName === collectorFilter || p.collectedByUserId === collectorFilter;
+      });
+    }
+
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter((p) => {
@@ -518,13 +557,17 @@ const Collection = () => {
         const mode = (p.mode || "").toLowerCase();
         const txId = (p.transactionId || p.transactionRef || p.id || "").toLowerCase();
         const instRef = String(p.installmentNumber || "").toLowerCase();
+        const colName = (p.collectedByName || "Legacy Record").toLowerCase();
+        const colRole = (p.collectedByRole || "").toLowerCase();
         return (
           name.includes(q) ||
           loanId.includes(q) ||
           custId.includes(q) ||
           mode.includes(q) ||
           txId.includes(q) ||
-          instRef.includes(q)
+          instRef.includes(q) ||
+          colName.includes(q) ||
+          colRole.includes(q)
         );
       });
     }
@@ -535,7 +578,7 @@ const Collection = () => {
       const tsA = getTransactionTimestamp(a.date) || 0;
       return tsB - tsA;
     });
-  }, [dateRangeFilteredTransactions, search]);
+  }, [dateRangeFilteredTransactions, search, collectorFilter]);
 
   // KPI Calculations for Today Collection & Overdue Collections sections:
   // - Today's Due: Total amount due for today's scheduled instalments
@@ -1165,6 +1208,7 @@ const Collection = () => {
         });
       }
 
+      const activeCollector = getCurrentUser() || { id: 'usr-admin-01', name: 'Admin User', role: 'Admin' };
       const paymentRecord = {
         id: txId,
         transactionRef: txnRef,
@@ -1190,6 +1234,10 @@ const Collection = () => {
         totalPrincipalOutstandingAfter: totalPrincipalOutstanding,
         totalInterestOutstandingAfter: totalInterestOutstanding,
         totalLoanOutstandingAfter: totalLoanOutstanding,
+        collectedByUserId: activeCollector.id,
+        collectedByName: activeCollector.name,
+        collectedByRole: activeCollector.role,
+        collectedAt: now.toISOString(),
       };
 
       const existingHistory = JSON.parse(localStorage.getItem("motoLendPaymentHistory") || "[]");
@@ -1457,6 +1505,29 @@ const Collection = () => {
                 </div>
               </div>
             )}
+
+            {/* Admin Collector Filter Dropdown */}
+            {currentUser?.role === 'Admin' && (
+              <div className="flex items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 sm:border-l border-slate-200 sm:pl-3">
+                <span className="text-xs font-bold text-slate-600 whitespace-nowrap">Collector:</span>
+                <select
+                  value={collectorFilter}
+                  onChange={(e) => {
+                    setCollectorFilter(e.target.value);
+                    setHistoryPage(1);
+                  }}
+                  className="h-8 sm:h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-800 shadow-2xs outline-none focus:border-[#006052] focus:ring-1 focus:ring-[#006052]"
+                >
+                  <option value="ALL">All Collectors</option>
+                  <option value="Admin">Admin Only</option>
+                  <option value="Staff">Staff Only</option>
+                  <option value="Legacy">Legacy Records</option>
+                  {distinctCollectors.map((c) => (
+                    <option key={c.id || c.name} value={c.name}>{c.name} ({c.role})</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Validation alert if custom start date is later than end date */}
@@ -1541,6 +1612,26 @@ const Collection = () => {
                         <span className="font-medium text-slate-700">{formatDateTime(tx.date, tx)}</span>
                       </div>
                     </div>
+
+                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100 text-slate-600">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Collected By</span>
+                        <span className="font-bold text-slate-800">
+                          {tx.collectedByName || "Legacy Record"}
+                        </span>
+                      </div>
+                      {tx.collectedByRole ? (
+                        <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                          tx.collectedByRole === 'Admin'
+                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                            : 'bg-teal-50 text-[#006B52] border border-teal-200'
+                        }`}>
+                          {tx.collectedByRole}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400">Legacy</span>
+                      )}
+                    </div>
                   </div>
                 );
               })
@@ -1574,6 +1665,9 @@ const Collection = () => {
                     <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm text-right">
                       Interest
                     </th>
+                    <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm">
+                      Collected By
+                    </th>
                     <th className="px-3 py-3.5 text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-50/95 backdrop-blur-sm text-center">
                       Payment Mode
                     </th>
@@ -1585,7 +1679,7 @@ const Collection = () => {
                 <tbody className="divide-y divide-slate-100">
                   {paginatedHistoryList.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-12 text-center">
+                      <td colSpan={10} className="py-12 text-center">
                         <div className="flex flex-col items-center justify-center text-slate-400">
                           <FileText className="h-9 w-9 text-slate-300 mb-2" />
                           <p className="text-[15px] font-semibold text-slate-700">No collection records found for this period.</p>
@@ -1637,6 +1731,22 @@ const Collection = () => {
                           </td>
                           <td className="px-4 py-3.5 whitespace-nowrap text-xs font-medium text-slate-600 text-right">
                             {formatCurrency(intr)}
+                          </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            <span className="font-bold text-xs text-slate-900 block">
+                              {tx.collectedByName || "Legacy Record"}
+                            </span>
+                            {tx.collectedByRole ? (
+                              <span className={`inline-flex items-center w-fit mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                                tx.collectedByRole === 'Admin'
+                                  ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                  : 'bg-teal-50 text-[#006B52] border border-teal-200'
+                              }`}>
+                                {tx.collectedByRole}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">Legacy</span>
+                            )}
                           </td>
                           <td className="px-3 py-3.5 whitespace-nowrap text-center">
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
@@ -3614,6 +3724,24 @@ const Collection = () => {
                     <span className="font-mono font-semibold text-slate-800">
                       {isUpi && upiTxId && String(upiTxId).trim() ? String(upiTxId).trim() : "-"}
                     </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-slate-500 font-medium">Collected By</span>
+                    <div className="text-right flex items-center gap-1.5 justify-end">
+                      <span className="font-bold text-slate-900">{tx.collectedByName || "Legacy Record"}</span>
+                      {tx.collectedByRole ? (
+                        <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                          tx.collectedByRole === 'Admin'
+                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                            : 'bg-teal-50 text-[#006B52] border border-teal-200'
+                        }`}>
+                          {tx.collectedByRole}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400">Legacy</span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between py-2 last:pb-0">

@@ -19,6 +19,7 @@ import {
 import { generateSchedule, computeEffectiveSchedule } from "./RepaymentScheduleTable";
 import { formatDate } from "../utils/dateUtils";
 import { getInstallmentPenaltySupportingAmount } from "../utils/penaltyRules";
+import { getCurrentUser } from "../utils/userManagementStorage";
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(Number(val))) return "₹0";
@@ -607,7 +608,11 @@ export default function MidwayClosureModal({
         allocations: closureAllocations,
         totalPrincipalOutstandingAfter: 0,
         totalInterestOutstandingAfter: 0,
-        totalLoanOutstandingAfter: 0
+        totalLoanOutstandingAfter: 0,
+        collectedByUserId: (getCurrentUser() || { id: 'usr-admin-01' }).id,
+        collectedByName: (getCurrentUser() || { name: 'Admin User' }).name,
+        collectedByRole: (getCurrentUser() || { role: 'Admin' }).role,
+        collectedAt: nowIso,
       };
 
       const existingHistory = JSON.parse(localStorage.getItem("motoLendPaymentHistory") || "[]");

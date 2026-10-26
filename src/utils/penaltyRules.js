@@ -9,6 +9,7 @@
  */
 
 import { parseToDate, getLocalDateString } from './dateUtils.js';
+import { getCurrentUser } from './userManagementStorage.js';
 
 export const PENALTY_SETTINGS_STORAGE_KEY = 'motoLendPenaltySettings_data';
 export const PENALTY_RECORDS_STORAGE_KEY = 'motoLendPenaltyRecords_data';
@@ -764,55 +765,68 @@ export const collectPenaltyTransaction = ({
 
   savePenaltyRecords(allRecords);
 
-  // 1. Record single collection transaction
-  const newTx = {
-    id: `PTX-${Date.now()}`,
-    transactionRef: finalTxnRef,
-    loanId,
-    customerId,
-    customerName,
-    date: collectionDate,
-    installmentNumbers: installmentNums,
-    installmentDisplay: instDisplay,
-    actualPenaltyAmount: totalApplicableAmount,
-    calculatedPenaltyAmount: totalApplicableAmount,
-    collectedAmount: amtToCollect,
-    status: 'Collected',
-    paymentMode,
-    createdAt: nowIso,
-  };
+    const activeCollector = getCurrentUser ? getCurrentUser() : null;
+    const collectorId = activeCollector?.id || 'usr-admin-01';
+    const collectorName = activeCollector?.name || 'Admin User';
+    const collectorRole = activeCollector?.role || 'Admin';
 
-  existingTxns.push(newTx);
-  savePenaltyTransactions(existingTxns);
+    // 1. Record single collection transaction
+    const newTx = {
+      id: `PTX-${Date.now()}`,
+      transactionRef: finalTxnRef,
+      loanId,
+      customerId,
+      customerName,
+      date: collectionDate,
+      installmentNumbers: installmentNums,
+      installmentDisplay: instDisplay,
+      actualPenaltyAmount: totalApplicableAmount,
+      calculatedPenaltyAmount: totalApplicableAmount,
+      collectedAmount: amtToCollect,
+      status: 'Collected',
+      paymentMode,
+      createdAt: nowIso,
+      collectedByUserId: collectorId,
+      collectedByName: collectorName,
+      collectedByRole: collectorRole,
+      collectedAt: nowIso,
+    };
 
-  // 2. Record exactly ONE Penalty Income entry in motoLendIncome_data
-  try {
-    const existingIncome = JSON.parse(localStorage.getItem('motoLendIncome_data') || '[]');
-    const incExists = existingIncome.some((inc) => inc.transactionRef === finalTxnRef);
-    if (!incExists && amtToCollect > 0) {
-      existingIncome.push({
-        id: `INC-PEN-${Date.now()}`,
-        type: 'Penalty',
-        category: 'Penalty Income',
-        amount: amtToCollect,
-        date: collectionDate,
-        customerId,
-        customerName,
-        loanId,
-        installmentNumbers: installmentNums,
-        installmentNumber: instDisplay,
-        transactionRef: finalTxnRef,
-        actualPenaltyAmount: totalApplicableAmount,
-        collectedAmount: amtToCollect,
-        mode: paymentMode,
-        remarks: `Penalty collection for Installment ${instDisplay}`,
-        createdAt: nowIso,
-      });
-      localStorage.setItem('motoLendIncome_data', JSON.stringify(existingIncome));
+    existingTxns.push(newTx);
+    savePenaltyTransactions(existingTxns);
+
+    // 2. Record exactly ONE Penalty Income entry in motoLendIncome_data
+    try {
+      const existingIncome = JSON.parse(localStorage.getItem('motoLendIncome_data') || '[]');
+      const incExists = existingIncome.some((inc) => inc.transactionRef === finalTxnRef);
+      if (!incExists && amtToCollect > 0) {
+        existingIncome.push({
+          id: `INC-PEN-${Date.now()}`,
+          type: 'Penalty',
+          category: 'Penalty Income',
+          amount: amtToCollect,
+          date: collectionDate,
+          customerId,
+          customerName,
+          loanId,
+          installmentNumbers: installmentNums,
+          installmentNumber: instDisplay,
+          transactionRef: finalTxnRef,
+          actualPenaltyAmount: totalApplicableAmount,
+          collectedAmount: amtToCollect,
+          mode: paymentMode,
+          remarks: `Penalty collection for Installment ${instDisplay}`,
+          createdAt: nowIso,
+          collectedByUserId: collectorId,
+          collectedByName: collectorName,
+          collectedByRole: collectorRole,
+          collectedAt: nowIso,
+        });
+        localStorage.setItem('motoLendIncome_data', JSON.stringify(existingIncome));
+      }
+    } catch (err) {
+      console.error('Failed to save penalty income record:', err);
     }
-  } catch (err) {
-    console.error('Failed to save penalty income record:', err);
-  }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('storage'));
