@@ -48,6 +48,11 @@ import {
 } from "../../utils/penaltyRules";
 import { getCurrentUser, SESSION_UPDATE_EVENT } from "../../utils/userManagementStorage";
 import { getAuthorizedCollections, getCollectorInfo } from "../../services/collectionService";
+import {
+  getPaymentAllocationSettings,
+  PAYMENT_ALLOCATION_UPDATE_EVENT,
+  allocateInstallmentPayment,
+} from "../../utils/paymentAllocationSettings";
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -267,6 +272,11 @@ const Collection = () => {
     }
   };
 
+  // Payment Allocation priority state
+  const [paymentAllocationOrder, setPaymentAllocationOrder] = useState(
+    () => getPaymentAllocationSettings().allocationOrder
+  );
+
   useEffect(() => {
     loadCustomers();
     loadPaymentHistory();
@@ -274,12 +284,19 @@ const Collection = () => {
       loadCustomers();
       loadPaymentHistory();
       setCurrentUser(getCurrentUser());
+      setPaymentAllocationOrder(getPaymentAllocationSettings().allocationOrder);
     };
+    const handleAllocationUpdate = (e) => {
+      setPaymentAllocationOrder(e.detail?.allocationOrder || getPaymentAllocationSettings().allocationOrder);
+    };
+
     window.addEventListener("storage", handleStorageChange);
     window.addEventListener(SESSION_UPDATE_EVENT, handleStorageChange);
+    window.addEventListener(PAYMENT_ALLOCATION_UPDATE_EVENT, handleAllocationUpdate);
     return () => {
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener(SESSION_UPDATE_EVENT, handleStorageChange);
+      window.removeEventListener(PAYMENT_ALLOCATION_UPDATE_EVENT, handleAllocationUpdate);
     };
   }, []);
 
@@ -896,10 +913,15 @@ const Collection = () => {
       const alloc = Math.min(due, remainingToAllocate);
       remainingToAllocate -= alloc;
 
-      // Internal interest-first allocation
+      // Allocate according to configured payment allocation priority
       const interestDue = Math.max(0, s.interest - (s.interestPaid || 0));
-      const intAlloc = Math.min(interestDue, alloc);
-      const prinAlloc = alloc - intAlloc;
+      const principalDue = Math.max(0, s.principal - (s.principalPaid || 0));
+      const { interestPaid: intAlloc, principalPaid: prinAlloc } = allocateInstallmentPayment(
+        alloc,
+        interestDue,
+        principalDue,
+        paymentAllocationOrder
+      );
 
       const newAmountPaid = (s.amountPaid || 0) + alloc;
       const newBalance = Math.max(0, s.emi - newAmountPaid);
@@ -931,7 +953,7 @@ const Collection = () => {
     }
 
     return { allocations, unappliedAdvance, paymentType };
-  }, [selectedCustomer, collectAmount, date]);
+  }, [selectedCustomer, collectAmount, date, paymentAllocationOrder]);
 
   // Handle Confirm Payment Submission
   const handleConfirmPayment = () => {
@@ -1056,10 +1078,15 @@ const Collection = () => {
         const alloc = Math.min(due, remainingToAllocate);
         remainingToAllocate -= alloc;
 
-        // Interest first, then principal
+        // Allocate according to configured payment allocation priority
         const interestDue = Math.max(0, s.interest - (s.interestPaid || 0));
-        const intAlloc = Math.min(interestDue, alloc);
-        const prinAlloc = alloc - intAlloc;
+        const principalDue = Math.max(0, s.principal - (s.principalPaid || 0));
+        const { interestPaid: intAlloc, principalPaid: prinAlloc } = allocateInstallmentPayment(
+          alloc,
+          interestDue,
+          principalDue,
+          paymentAllocationOrder
+        );
 
         totalInterestEarned += intAlloc;
         totalPrincipalRecovered += prinAlloc;
@@ -3478,10 +3505,10 @@ const Collection = () => {
                             row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed"
                           );
 
-                          let rowStatus = "Due";
+                          let rowStatus = "Pending";
                           if (isMidwaySettled) {
                             rowStatus = "Paid";
-                          } else if (outstanding <= 0.01 && emi > 0) {
+                          } else if (outstanding <= 0.01 && emi > 0 && paid > 0.01) {
                             rowStatus = "Paid";
                           } else if (paid > 0.01) {
                             rowStatus = "Partial";
@@ -3493,7 +3520,7 @@ const Collection = () => {
                             if (!isNaN(d.getTime()) && d.getTime() < t.getTime()) {
                               rowStatus = "Overdue";
                             } else {
-                              rowStatus = "Due";
+                              rowStatus = "Pending";
                             }
                           }
 
@@ -3555,7 +3582,7 @@ const Collection = () => {
                                   </div>
                                 ) : (
                                   <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 ring-1 ring-inset ring-slate-500/20">
-                                    Due
+                                    Pending
                                   </span>
                                 )}
                               </td>

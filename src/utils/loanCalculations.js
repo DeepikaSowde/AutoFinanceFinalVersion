@@ -1,5 +1,6 @@
 import { generateSchedule, computeEffectiveSchedule } from '../components/RepaymentScheduleTable.jsx';
 import { calculateRepayment } from '../components/Loantab.jsx';
+import { allocateInstallmentPayment } from './paymentAllocationSettings.js';
 
 /**
  * Filter out failed, cancelled, or reversed transactions.
@@ -152,16 +153,19 @@ export const calculateLoanOutstanding = (loanRecord, allPayments = []) => {
   let principalRepaid = effectiveSchedule.reduce((sum, s) => {
     if (s.principalPaid !== undefined) return sum + Number(s.principalPaid || 0);
     const intDue = Number(s.interest || 0);
+    const prinDue = Number(s.principal || 0);
     const amtPaid = Number(s.amountPaid || 0);
-    const intPaid = Math.min(intDue, amtPaid);
-    return sum + Math.max(0, amtPaid - intPaid);
+    const { principalPaid: pPaid } = allocateInstallmentPayment(amtPaid, intDue, prinDue);
+    return sum + pPaid;
   }, 0);
 
   let interestRepaid = effectiveSchedule.reduce((sum, s) => {
     if (s.interestPaid !== undefined) return sum + Number(s.interestPaid || 0);
     const intDue = Number(s.interest || 0);
+    const prinDue = Number(s.principal || 0);
     const amtPaid = Number(s.amountPaid || 0);
-    return sum + Math.min(intDue, amtPaid);
+    const { interestPaid: iPaid } = allocateInstallmentPayment(amtPaid, intDue, prinDue);
+    return sum + iPaid;
   }, 0);
 
   // Payments total collections vs schedule allocations

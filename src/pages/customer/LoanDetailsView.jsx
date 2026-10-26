@@ -31,6 +31,7 @@ import RepaymentScheduleTable, {
   computeEffectiveSchedule,
   getRepaymentColumnLabel,
   ForeclosureScheduleLock,
+  StatusBadge,
 } from "../../components/RepaymentScheduleTable";
 import InstallmentTimeline from "../../components/InstallmentTimeline";
 import MidwayClosureModal from "../../components/MidwayClosureModal";
@@ -254,7 +255,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
           amountPaid: Math.round(Number(item.amountPaid ?? item.emi ?? 0) * 100) / 100,
           principalOutstanding: 0,
           balance: 0,
-          status: "Paid",
+          status: item.status || (wasCustomerPaid ? "Paid" : "Foreclosed"),
           isForeclosed: true,
           wasCustomerPaid,
         };
@@ -1511,22 +1512,11 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                             {formatCurrency(displayBalance)}
                           </td>
                           <td className="whitespace-nowrap px-3.5 py-3 text-center">
-                            <div className="flex flex-col items-center justify-center gap-0.5">
-                              <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                  isMidwaySettled
-                                    ? "bg-orange-100/90 text-amber-900 border border-amber-300 ring-1 ring-amber-500/20"
-                                    : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                }`}
-                              >
-                                {isMidwaySettled ? "Paid" : "Paid"}
-                              </span>
-                              {isOverdue && penaltyAmount > 0 && (
-                                <span className="text-[10px] font-semibold text-[#006052] whitespace-nowrap leading-tight">
-                                  Penalty: ₹{Number(penaltyAmount).toLocaleString('en-IN')}
-                                </span>
-                              )}
-                            </div>
+                            <StatusBadge
+                              status={row.status}
+                              isMidwaySettled={isMidwaySettled}
+                              penaltyAmount={penaltyAmount}
+                            />
                           </td>
                         </tr>
                       );

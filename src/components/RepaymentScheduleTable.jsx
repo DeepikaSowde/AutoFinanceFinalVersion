@@ -7,6 +7,7 @@ import {
   getInstallmentPenaltySupportingAmount,
   PENALTY_UPDATE_EVENT,
 } from '../utils/penaltyRules';
+import { allocateInstallmentPayment } from '../utils/paymentAllocationSettings';
 
 const formatINR = (value) => {
   if (value === undefined || value === null || isNaN(Number(value))) return '₹0';
@@ -142,7 +143,7 @@ export const generateSchedule = (loanDetails) => {
           emi: periodEmi,
           amountPaid: 0,
           balance: periodEmi,
-          status: 'Due'
+          status: 'Pending'
         });
 
         balance = remainingPrincipal;
@@ -183,7 +184,7 @@ export const generateSchedule = (loanDetails) => {
         emi: amt,
         amountPaid: 0,
         balance: amt,
-        status: 'Due'
+        status: 'Pending'
       });
 
       balance = remainingPrincipal;
@@ -197,18 +198,22 @@ export const generateSchedule = (loanDetails) => {
   today.setHours(0, 0, 0, 0);
 
   schedule.forEach(item => {
-    if (item.amountPaid >= item.emi - 0.01) {
+    const emi = Number(item.emi || 0);
+    const paid = Number(item.amountPaid || 0);
+    if (paid >= emi - 0.01 && emi > 0 && paid > 0.01) {
       item.status = 'Paid';
       item.balance = 0;
-    } else if (item.amountPaid > 0) {
+    } else if (paid > 0.01) {
       item.status = 'Partial';
-      item.balance = item.emi - item.amountPaid;
+      item.balance = Math.max(0, emi - paid);
     } else {
-      item.balance = item.emi;
-      if (item.dueDate < today) {
+      item.balance = emi;
+      const itemDue = new Date(item.dueDate);
+      itemDue.setHours(0, 0, 0, 0);
+      if (!isNaN(itemDue.getTime()) && itemDue.getTime() < today.getTime()) {
         item.status = 'Overdue';
       } else {
-        item.status = 'Due';
+        item.status = 'Pending';
       }
     }
   });
@@ -270,8 +275,8 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = [], optio
       const principal = Number(item.principal ?? (item.emi ? item.emi - (Number(item.interest || 0)) : 0));
       const interest = Number(item.interest ?? item.allocatedInterest ?? item.interestAmount ?? (emi > principal ? emi - principal : 0));
       const balance = Math.max(0, Math.round((emi - amountPaid) * 100) / 100);
-      let status = "Due";
-      if (balance <= 0.01 && emi > 0) {
+      let status = "Pending";
+      if (balance <= 0.01 && emi > 0 && amountPaid > 0.01) {
         status = "Paid";
       } else if (amountPaid > 0.01) {
         status = "Partial";
@@ -281,7 +286,7 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = [], optio
         if (!isNaN(itemDue.getTime()) && itemDue.getTime() < todayDate.getTime()) {
           status = "Overdue";
         } else {
-          status = "Due";
+          status = "Pending";
         }
       }
 
@@ -344,7 +349,7 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = [], optio
       principalPaid: shouldPrepopulateMidway ? (Number(item.principalPaid ?? principal)) : 0,
       interestPaid: shouldPrepopulateMidway ? (Number(item.interestPaid ?? 0)) : 0,
       balance: shouldPrepopulateMidway ? 0 : emi,
-      status: shouldPrepopulateMidway ? "Paid" : (item.status || "Due"),
+      status: shouldPrepopulateMidway ? "Paid" : (item.status || "Pending"),
       isMidwayClosed: isMidway,
       closureAdjusted: isMidway,
       paymentsList: [],
@@ -405,10 +410,14 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = [], optio
       if (inst) {
         const pAmt = Number(p.amount || 0);
         const remDue = Math.max(0, inst.emi - inst.amountPaid);
-        const alloc = Math.min(remDue, pAmt);
+        const alloc = Math.min(pAmt, remDue);
         const intDue = Math.max(0, inst.interest - inst.interestPaid);
-        const intAlloc = Math.min(intDue, alloc);
-        const prinAlloc = alloc - intAlloc;
+        const prinDue = Math.max(0, inst.principal - inst.principalPaid);
+        const { interestPaid: intAlloc, principalPaid: prinAlloc } = allocateInstallmentPayment(
+          alloc,
+          intDue,
+          prinDue
+        );
 
         inst.amountPaid += alloc;
         inst.interestPaid += intAlloc;
@@ -445,10 +454,13 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = [], optio
         continue;
       }
 
-      const alloc = Math.min(remDue, unassignedRemAmt);
       const intDue = Math.max(0, inst.interest - inst.interestPaid);
-      const intAlloc = Math.min(intDue, alloc);
-      const prinAlloc = alloc - intAlloc;
+      const prinDue = Math.max(0, inst.principal - inst.principalPaid);
+      const { interestPaid: intAlloc, principalPaid: prinAlloc } = allocateInstallmentPayment(
+        alloc,
+        intDue,
+        prinDue
+      );
 
       inst.amountPaid += alloc;
       inst.interestPaid += intAlloc;
@@ -549,8 +561,8 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = [], optio
       };
     }
 
-    let status = "Due";
-    if (balance <= 0.01 && item.emi > 0) {
+    let status = "Pending";
+    if (balance <= 0.01 && item.emi > 0 && roundedPaid > 0.01) {
       status = "Paid";
     } else if (roundedPaid > 0.01) {
       status = "Partial";
@@ -560,7 +572,7 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = [], optio
       if (!isNaN(itemDue.getTime()) && itemDue.getTime() < todayDate.getTime()) {
         status = "Overdue";
       } else {
-        status = "Due";
+        status = "Pending";
       }
     }
 
@@ -620,7 +632,7 @@ export const ForeclosureScheduleLock = ({ className = "" }) => {
   );
 };
 
-const StatusBadge = ({ status, isMidwaySettled = false, penaltyAmount = null }) => {
+export const StatusBadge = ({ status, isMidwaySettled = false, penaltyAmount = null }) => {
   if (status === 'Foreclosed') {
     return (
       <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-900 border border-purple-300 ring-1 ring-purple-500/20 shadow-2xs">
@@ -636,7 +648,11 @@ const StatusBadge = ({ status, isMidwaySettled = false, penaltyAmount = null }) 
         </span>
       );
     }
-    return <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-600/20">Paid</span>;
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 border border-emerald-200 ring-1 ring-inset ring-emerald-600/20">
+        Paid
+      </span>
+    );
   }
   if (status === 'Midway Closed') {
     return (
@@ -645,11 +661,17 @@ const StatusBadge = ({ status, isMidwaySettled = false, penaltyAmount = null }) 
       </span>
     );
   }
-  if (status === 'Partial') return <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 ring-1 ring-inset ring-amber-600/20">Partial</span>;
+  if (status === 'Partial') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 border border-amber-200 ring-1 ring-inset ring-amber-600/20">
+        Partial
+      </span>
+    );
+  }
   if (status === 'Overdue') {
     return (
       <div className="flex flex-col items-center justify-center gap-0.5">
-        <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 ring-1 ring-inset ring-red-600/10">
+        <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700 border border-red-200 ring-1 ring-inset ring-red-600/10">
           Overdue
         </span>
         {penaltyAmount > 0 && (
@@ -660,7 +682,11 @@ const StatusBadge = ({ status, isMidwaySettled = false, penaltyAmount = null }) 
       </div>
     );
   }
-  return <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 ring-1 ring-inset ring-slate-500/20">Due</span>;
+  return (
+    <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 border border-slate-200 ring-1 ring-inset ring-slate-500/20">
+      Pending
+    </span>
+  );
 };
 
 export const getRepaymentColumnLabel = (frequency) => {

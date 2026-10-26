@@ -22,6 +22,7 @@ import ChitInvestment from './pages/ChitInvestment'
 import SettingsOverview from './pages/Settings/SettingsOverview'
 import PenaltyGraceSettings from './pages/Settings/PenaltyGraceSettings'
 import ForeclosureVehicleSaleSettings from './pages/Settings/ForeclosureVehicleSaleSettings'
+import PaymentAllocationSettings from './pages/Settings/PaymentAllocationSettings'
 import SmartSearch from './pages/SmartSearch'
 import SmartSearchFloatingButton from './components/SmartSearchFloatingButton'
 
@@ -136,6 +137,7 @@ function App() {
           <Route path="/settings" element={<ProtectedRoute path="/settings"><SettingsOverview /></ProtectedRoute>} />
           <Route path="/settings/penalty-grace" element={<ProtectedRoute path="/settings"><PenaltyGraceSettings /></ProtectedRoute>} />
           <Route path="/settings/foreclosure-vehicle-sale" element={<ProtectedRoute path="/settings"><ForeclosureVehicleSaleSettings /></ProtectedRoute>} />
+          <Route path="/settings/payment-allocation" element={<ProtectedRoute path="/settings"><PaymentAllocationSettings /></ProtectedRoute>} />
           <Route path="/reminders" element={<ProtectedRoute path="/reminders"><Reminder /></ProtectedRoute>} />
           <Route path="/chit-investment" element={<ProtectedRoute path="/investors"><ChitInvestment /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
