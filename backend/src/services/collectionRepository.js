@@ -70,6 +70,11 @@ const mapCollection = (row) => {
     installment: row.installment_number,
 
     staffName: row.staff_name || "",
+    // The signed-in user who recorded it (none on older collections).
+    collectedByUserId: row.collected_by_user_id || "",
+    collectedByName: row.collected_by_user_id ? row.staff_name || "" : "",
+    collectedByRole:
+      row.collected_by_role === "admin" ? "Admin" : row.collected_by_role === "staff" ? "Staff" : "",
     location: row.location || "",
     remarks: row.remarks || "",
 
@@ -120,8 +125,24 @@ const SELECT_COLLECTIONS = `
   LEFT JOIN loans ON loans.pk = collections.loan_pk
 `;
 
-export const getCollections = async () => {
-  const result = await query(`${SELECT_COLLECTIONS} WHERE collections.tenant_id = $1 ORDER BY collections.pk DESC`, [currentTenantId()]);
+// Who took the payment, from the signed-in session (never from the request
+// body): the Collection page shows it, and staff see their own collections.
+const stampCollector = (client, pk, user) =>
+  user?.userId
+    ? client.query(
+        "UPDATE collections SET collected_by_user_id = $2, collected_by_role = $3, staff_name = $4 WHERE pk = $1",
+        [pk, user.userId, user.role || "", user.name || user.username || ""]
+      )
+    : null;
+
+// Every collection, or only those `collectedByUserId` took.
+export const getCollections = async ({ collectedByUserId = null } = {}) => {
+  const result = await query(
+    `${SELECT_COLLECTIONS} WHERE collections.tenant_id = $1
+       AND ($2::text IS NULL OR collections.collected_by_user_id = $2)
+     ORDER BY collections.pk DESC`,
+    [currentTenantId(), collectedByUserId]
+  );
 
   return result.rows.map(mapCollection);
 };
@@ -216,6 +237,7 @@ export const createCollection = async (payload = {}, submittedBy) => {
       const id = `COL-${pad(pk)}`;
 
       await client.query("UPDATE collections SET id = $1 WHERE pk = $2", [id, pk]);
+      await stampCollector(client, pk, submittedBy);
 
       // Post it in the same transaction: if posting fails, nothing is saved.
       const locked = await client.query("SELECT * FROM collections WHERE pk = $1 FOR UPDATE", [pk]);
@@ -357,6 +379,7 @@ export const closeLoanMidway = async (loanId, payload = {}, closedBy) => {
     const pk = inserted.rows[0].pk;
     const id = `COL-${pad(pk)}`;
     await client.query("UPDATE collections SET id = $1 WHERE pk = $2", [id, pk]);
+    await stampCollector(client, pk, closedBy);
 
     for (const [index, item] of items.entries()) {
       await client.query(

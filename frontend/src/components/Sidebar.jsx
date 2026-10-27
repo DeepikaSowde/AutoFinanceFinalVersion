@@ -29,6 +29,7 @@ const Sidebar = ({ onCollapsedChange }) => {
   const [isCollapsed, setIsCollapsed] = useState(true)
   const { t } = useTranslation()
   const navigate = useNavigate()
+  // The signed-in user and their page access come from the session.
   const currentUser = getSessionUser()
   const isAdmin = currentUser?.role === 'admin'
 
@@ -124,6 +125,12 @@ const Sidebar = ({ onCollapsedChange }) => {
     { name: 'Reminder', path: '/reminders', icon: BellRing },
   ].filter((item) => canOpen(currentUser, item.path))
 
+  // Each list is already filtered to the pages this user can open.
+  const visibleMainItems = mainItems
+  const visibleModuleItems = moduleItems
+  const visibleUserItems = userItems
+  const visibleNotificationItems = notificationItems
+
   return (
     <>
       {/* Edge Sidebar Toggle for Mobile */}
@@ -181,96 +188,110 @@ const Sidebar = ({ onCollapsedChange }) => {
         <div className="flex-1 flex flex-col justify-between overflow-hidden pb-2">
           {/* Top Navigation */}
           <div className="flex flex-col space-y-0.5 xl:space-y-1">
-            <SectionLabel label="MAIN" />
-            <div className="space-y-0.5 xl:space-y-1">
-              {mainItems.map((item) => (
-                <NavLink
-                  key={item.name}
-                  to={item.path}
-                  onClick={() => setIsOpen(false)}
-                  className={getNavLinkClasses(item)}
-                  title={isCollapsed ? item.name : undefined}
-                >
-                  {({ isActive }) => (
-                    <>
-                      {renderIcon(item.icon, isLinkActive(item, isActive))}
-                      <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
+            {visibleMainItems.length > 0 && (
+              <>
+                <SectionLabel label="MAIN" />
+                <div className="space-y-0.5 xl:space-y-1">
+                  {visibleMainItems.map((item) => (
+                    <NavLink
+                      key={item.name}
+                      to={item.path}
+                      onClick={() => setIsOpen(false)}
+                      className={getNavLinkClasses(item)}
+                      title={isCollapsed ? item.name : undefined}
+                    >
+                      {({ isActive }) => (
+                        <>
+                          {renderIcon(item.icon, isLinkActive(item, isActive))}
+                          <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
+                        </>
+                      )}
+                    </NavLink>
+                  ))}
+                </div>
+              </>
+            )}
 
-            <SectionLabel label="MODULES" />
-            <div className={`space-y-0.5 xl:space-y-1 ${isCollapsed ? '' : 'pl-3'}`}>
-              {moduleItems.map((item) => (
-                <NavLink
-                  key={item.name}
-                  to={item.path}
-                  onClick={() => setIsOpen(false)}
-                  className={getNavLinkClasses(item)}
-                  title={isCollapsed ? item.name : undefined}
-                >
-                  {({ isActive }) => (
-                    <>
-                      {renderIcon(item.icon, isLinkActive(item, isActive))}
-                      <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
+            {visibleModuleItems.length > 0 && (
+              <>
+                <SectionLabel label="MODULES" />
+                <div className={`space-y-0.5 xl:space-y-1 ${isCollapsed ? '' : 'pl-3'}`}>
+                  {visibleModuleItems.map((item) => (
+                    <NavLink
+                      key={item.name}
+                      to={item.path}
+                      onClick={() => setIsOpen(false)}
+                      className={getNavLinkClasses(item)}
+                      title={isCollapsed ? item.name : undefined}
+                    >
+                      {({ isActive }) => (
+                        <>
+                          {renderIcon(item.icon, isLinkActive(item, isActive))}
+                          <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
+                        </>
+                      )}
+                    </NavLink>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Bottom Area */}
           <div className="shrink-0 flex flex-col gap-1 xl:gap-2 pt-2">
-            <SectionLabel label="NOTIFICATIONS" />
-            <div className="space-y-0.5 xl:space-y-1 mb-1">
-              {notificationItems.map((item) => (
-                <NavLink
-                  key={item.name}
-                  to={item.path}
-                  onClick={() => setIsOpen(false)}
-                  className={getNavLinkClasses(item)}
-                  title={isCollapsed ? item.name : undefined}
-                >
-                  {({ isActive }) => (
-                    <>
-                      {renderIcon(item.icon, isLinkActive(item, isActive))}
-                      <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
+            {visibleNotificationItems.length > 0 && (
+              <>
+                <SectionLabel label="NOTIFICATIONS" />
+                <div className="space-y-0.5 xl:space-y-1 mb-1">
+                  {visibleNotificationItems.map((item) => (
+                    <NavLink
+                      key={item.name}
+                      to={item.path}
+                      onClick={() => setIsOpen(false)}
+                      className={getNavLinkClasses(item)}
+                      title={isCollapsed ? item.name : undefined}
+                    >
+                      {({ isActive }) => (
+                        <>
+                          {renderIcon(item.icon, isLinkActive(item, isActive))}
+                          <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
+                        </>
+                      )}
+                    </NavLink>
+                  ))}
+                </div>
+              </>
+            )}
 
             <div className="mt-1 xl:mt-2 pt-2 xl:pt-3 border-t border-[#145247] flex flex-col gap-2 xl:gap-3">
-              <SectionLabel label="USER" />
+              {visibleUserItems.length > 0 && (
+                <>
+                  <SectionLabel label="USER" />
+                  <div className="-mt-1 space-y-0.5 xl:space-y-1">
+                    {visibleUserItems.map((item) => (
+                      <NavLink
+                        key={item.name}
+                        to={item.path}
+                        onClick={() => setIsOpen(false)}
+                        className={getNavLinkClasses(item)}
+                        title={isCollapsed ? item.name : undefined}
+                      >
+                        {({ isActive }) => (
+                          <>
+                            {renderIcon(item.icon, isLinkActive(item, isActive))}
+                            <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
+                          </>
+                        )}
+                      </NavLink>
+                    ))}
+                  </div>
+                </>
+              )}
 
-              {/* User Management & Settings Items */}
-              <div className="-mt-1 space-y-0.5 xl:space-y-1">
-                {userItems.map((item) => (
-                  <NavLink
-                    key={item.name}
-                    to={item.path}
-                    onClick={() => setIsOpen(false)}
-                    className={getNavLinkClasses(item)}
-                    title={isCollapsed ? item.name : undefined}
-                  >
-                    {({ isActive }) => (
-                      <>
-                        {renderIcon(item.icon, isLinkActive(item, isActive))}
-                        <span className={`whitespace-nowrap ${isCollapsed ? 'hidden' : ''}`}>{item.name}</span>
-                      </>
-                    )}
-                  </NavLink>
-                ))}
-              </div>
-
-              {/* Admin Profile Card */}
+              {/* Active Profile Card */}
               <div className={`flex items-center gap-3 rounded-xl bg-[#005344] border border-[#145247] p-2.5 transition-all duration-300 ${isCollapsed ? 'justify-center' : ''}`}>
-                <div className="h-8 w-8 rounded-full bg-[#006B52] flex items-center justify-center shrink-0 shadow-inner">
-                  <UserRound className="h-4 w-4 text-[#39D6A3]" />
+                <div className="h-8 w-8 rounded-full bg-[#006B52] flex items-center justify-center shrink-0 shadow-inner text-[#39D6A3] font-bold text-xs">
+                  {currentUser?.name ? currentUser.name[0].toUpperCase() : <UserRound className="h-4 w-4 text-[#39D6A3]" />}
                 </div>
                 {!isCollapsed && (
                   <div className="flex flex-col overflow-hidden">

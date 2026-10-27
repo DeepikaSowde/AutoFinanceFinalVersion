@@ -53,6 +53,62 @@ export const normalizePermissions = (input) => {
   return result;
 };
 
+/*
+ * User Management -> Roles & Permissions sets staff access per page (one
+ * switch per sidebar item, for every staff account). A page that is on
+ * grants these module actions; deleting and approving / reversing stay with
+ * admins. User Management and Settings are admin-only and cannot be granted.
+ */
+export const STAFF_PAGE_PERMISSIONS = {
+  dashboard: { dashboard: ["view"] },
+  loans: { loans: ["view", "add", "edit"], reloan: ["view", "add", "edit"] },
+  collection: { collections: ["view", "add"] },
+  vehicle: { vehicles: ["view", "edit"] },
+  ledger: { ledger: ["view"], income: ["view", "add", "edit"], expense: ["view", "add", "edit"] },
+  customers: { customers: ["view", "add", "edit"] },
+  investors: { investor: ["view", "add"] },
+  reminders: { reminders: ["view", "add", "edit"] },
+  users: {},
+  settings: {},
+};
+
+export const ADMIN_ONLY_PAGES = ["users", "settings"];
+
+// The staff role's defaults (as Oviya's Roles & Permissions tab ships them).
+export const DEFAULT_STAFF_PAGES = {
+  dashboard: true,
+  loans: true,
+  collection: true,
+  vehicle: true,
+  ledger: false,
+  customers: true,
+  investors: false,
+  reminders: true,
+  users: false,
+  settings: false,
+};
+
+export const normalizeStaffPages = (input) =>
+  Object.fromEntries(
+    Object.keys(STAFF_PAGE_PERMISSIONS).map((page) => [
+      page,
+      ADMIN_ONLY_PAGES.includes(page) ? false : Boolean(input?.[page] ?? DEFAULT_STAFF_PAGES[page]),
+    ])
+  );
+
+// The module-action permissions a staff account gets from the page switches.
+export const permissionsFromPages = (pages) => {
+  const granted = {};
+  for (const [page, on] of Object.entries(normalizeStaffPages(pages))) {
+    if (!on) continue;
+    for (const [module, actions] of Object.entries(STAFF_PAGE_PERMISSIONS[page])) {
+      granted[module] ||= {};
+      for (const action of actions) granted[module][action] = true;
+    }
+  }
+  return normalizePermissions(granted);
+};
+
 export const hasPermission = (user, module, action = "view") => {
   if (!user) {
     return false;

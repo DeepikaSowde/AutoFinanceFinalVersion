@@ -18,8 +18,10 @@ export const collectionsRouter = Router();
 collectionsRouter.get(
   "/",
   asyncHandler(async (req, res) => {
-    const { status } = req.query;
-    const collections = await getCollections();
+    // ?mine=1: only the collections the signed-in user recorded (the
+    // Collection page's history for staff).
+    const { status, mine } = req.query;
+    const collections = await getCollections({ collectedByUserId: mine ? req.user.userId : null });
 
     res.json(status ? collections.filter((item) => item.status === status) : collections);
   })

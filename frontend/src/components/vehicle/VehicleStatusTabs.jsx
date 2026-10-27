@@ -13,7 +13,7 @@ const VehicleStatusTabs = ({ activeTab, onTabChange }) => {
     { id: 'all', label: 'All Vehicles' },
     { id: 'seized', label: 'Seized' },
     { id: 'sold', label: 'Sold Vehicles' },
-    { id: 'inactive', label: 'Inactive' },
+    { id: 'inactive', label: 'Closed' },
     { id: 'foreclosure_analytics', label: 'Foreclosure Analytics' },
   ];
 

@@ -7,6 +7,7 @@ import { apiGet, apiPost } from './api'
 const toPayment = (collection) => ({
   id: collection.id,
   customerId: collection.customerId,
+  customerName: collection.customerName || '',
   loanId: collection.loanId,
   date: collection.collectedDate || collection.createdAt,
   amount: collection.amount,
@@ -17,6 +18,12 @@ const toPayment = (collection) => ({
   mode: collection.payMode,
   remarks: collection.remarks,
   transactionId: collection.transactionId || '',
+  // Who recorded it (empty on collections from before this was tracked:
+  // the Collection page shows those as "Legacy Record").
+  collectedByUserId: collection.collectedByUserId || '',
+  collectedByName: collection.collectedByName || '',
+  collectedByRole: collection.collectedByRole || '',
+  collectedAt: collection.createdAt || '',
   // Which installments this payment went to (from the server's allocation),
   // for the Installment No. column. Deliberately not "allocations": the
   // schedule views must not re-apply a payment the server already applied.
@@ -28,8 +35,9 @@ const toPayment = (collection) => ({
 })
 
 // Posted payments only; reversed or rejected collections moved no money.
-export const loadPayments = async () => {
-  const collections = await apiGet('/collections')
+// mine: only the payments the signed-in user recorded.
+export const loadPayments = async ({ mine = false } = {}) => {
+  const collections = await apiGet(mine ? '/collections?mine=1' : '/collections')
   return collections.filter((item) => item.status === 'Approved').map(toPayment)
 }
 

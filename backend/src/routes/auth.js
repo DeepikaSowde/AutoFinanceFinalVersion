@@ -5,9 +5,11 @@ import { Router } from "express";
 import {
   createUser,
   deleteUser,
+  getStaffPagePermissions,
   getUsers,
   login,
   logout,
+  saveStaffPagePermissions,
   updateUser,
 } from "../services/auth.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
@@ -20,12 +22,20 @@ export const authRouter = Router();
 authRouter.post(
   "/login",
   asyncHandler(async (req, res) => {
+    // username may also be the account's 10-digit mobile number.
     const { username, password } = req.body || {};
 
     const session = await login(username, password);
 
     if (!session) {
       return res.status(401).json({ error: "Invalid username or password." });
+    }
+
+    if (session.inactive) {
+      return res.status(403).json({
+        error: "This account has been deactivated. Please contact your system administrator to restore access.",
+        code: "USER_INACTIVE",
+      });
     }
 
     if (session.blocked) {
@@ -110,6 +120,28 @@ authRouter.put(
     }
 
     res.json(user);
+  })
+);
+
+// Roles & Permissions: the staff role's page switches. Saving applies them
+// to every staff account.
+authRouter.get(
+  "/role-permissions",
+  requireAuth,
+  loadTenant,
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.json({ Staff: await getStaffPagePermissions() });
+  })
+);
+
+authRouter.put(
+  "/role-permissions",
+  requireAuth,
+  loadTenant,
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.json({ Staff: await saveStaffPagePermissions(req.body?.Staff || {}) });
   })
 );
 
