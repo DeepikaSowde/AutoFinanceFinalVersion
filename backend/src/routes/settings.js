@@ -6,6 +6,10 @@
 
 import { Router } from "express";
 import { getForeclosureSettings, saveForeclosureSettings } from "../services/foreclosureRepository.js";
+import {
+  getPaymentAllocationSettings,
+  savePaymentAllocationSettings,
+} from "../services/paymentAllocationSettings.js";
 import { requireRole } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
@@ -26,5 +30,21 @@ settingsRouter.put(
   requireRole("admin"),
   asyncHandler(async (req, res) => {
     res.json(await saveForeclosureSettings(req.body || {}, actor(req)));
+  })
+);
+
+// Settings -> Payment Allocation: { allocationOrder: ["Interest", "Principal"] | ["Principal", "Interest"] }.
+settingsRouter.get(
+  "/payment-allocation",
+  asyncHandler(async (req, res) => {
+    res.json(await getPaymentAllocationSettings());
+  })
+);
+
+settingsRouter.put(
+  "/payment-allocation",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.json(await savePaymentAllocationSettings(req.body || {}, actor(req)));
   })
 );

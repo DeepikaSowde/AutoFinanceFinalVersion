@@ -5,8 +5,9 @@
 // buildPaymentAllocation, processRepayment).
 //
 // A payment is applied oldest-installment-first, and within an
-// installment: penalty -> interest -> principal. Anything left over after
-// every open installment is satisfied becomes advance/excess.
+// installment: penalty -> interest -> principal (or principal before
+// interest, per the lender's Payment Allocation setting). Anything left over
+// after every open installment is satisfied becomes advance/excess.
 
 export const ALLOCATION_TYPE = {
   PENALTY: "Penalty",
@@ -15,6 +16,14 @@ export const ALLOCATION_TYPE = {
   ADVANCE: "Advance",
   EXCESS: "Excess",
 };
+
+export const DEFAULT_ALLOCATION_ORDER = [ALLOCATION_TYPE.INTEREST, ALLOCATION_TYPE.PRINCIPAL];
+
+// ["Interest", "Principal"] or ["Principal", "Interest"]; anything else is the default.
+export const normalizeAllocationOrder = (order) =>
+  Array.isArray(order) && order.length === 2 && order[0] === ALLOCATION_TYPE.PRINCIPAL && order[1] === ALLOCATION_TYPE.INTEREST
+    ? [ALLOCATION_TYPE.PRINCIPAL, ALLOCATION_TYPE.INTEREST]
+    : [...DEFAULT_ALLOCATION_ORDER];
 
 export const INSTALLMENT_STATUS = {
   PENDING: "Pending",
@@ -120,6 +129,7 @@ export const buildAllocation = ({
   penaltyAmount = 0,
   referenceDate = new Date(),
   allowAdvance = true,
+  allocationOrder = DEFAULT_ALLOCATION_ORDER,
 } = {}) => {
   let remaining = roundMoney(paymentAmount);
 
@@ -158,7 +168,13 @@ export const buildAllocation = ({
     }
   }
 
-  // 2. Oldest installment first: interest, then principal.
+  // 2. Oldest installment first; within it, interest then principal (or the
+  //    other way round, per Settings -> Payment Allocation).
+  const parts =
+    allocationOrder[0] === ALLOCATION_TYPE.PRINCIPAL
+      ? [ALLOCATION_TYPE.PRINCIPAL, ALLOCATION_TYPE.INTEREST]
+      : [ALLOCATION_TYPE.INTEREST, ALLOCATION_TYPE.PRINCIPAL];
+
   for (const installment of open) {
     if (remaining <= 0) {
       break;
@@ -170,56 +186,40 @@ export const buildAllocation = ({
       break;
     }
 
-    if (installment.remainingInterest > 0) {
-      const applied = roundMoney(Math.min(installment.remainingInterest, remaining));
+    for (const part of parts) {
+      if (remaining <= 0) {
+        break;
+      }
 
-      if (applied > 0) {
-        items.push({
-          installmentNumber: installment.installmentNumber,
-          dueDate: installment.dueDate,
-          amount: applied,
-          type: isAdvance ? ALLOCATION_TYPE.ADVANCE : ALLOCATION_TYPE.INTEREST,
-          isPenalty: false,
-          isInterest: true,
-          isPrincipal: false,
-        });
+      const isInterest = part === ALLOCATION_TYPE.INTEREST;
+      const due = isInterest ? installment.remainingInterest : installment.remainingPrincipal;
+      const applied = roundMoney(Math.min(due, remaining));
 
+      if (!(applied > 0)) {
+        continue;
+      }
+
+      items.push({
+        installmentNumber: installment.installmentNumber,
+        dueDate: installment.dueDate,
+        amount: applied,
+        type: isAdvance ? ALLOCATION_TYPE.ADVANCE : part,
+        isPenalty: false,
+        isInterest,
+        isPrincipal: !isInterest,
+      });
+
+      if (isInterest) {
         totals.interest = roundMoney(totals.interest + applied);
-
-        if (isAdvance) {
-          totals.advance = roundMoney(totals.advance + applied);
-        }
-
-        remaining = roundMoney(remaining - applied);
-      }
-    }
-
-    if (remaining <= 0) {
-      break;
-    }
-
-    if (installment.remainingPrincipal > 0) {
-      const applied = roundMoney(Math.min(installment.remainingPrincipal, remaining));
-
-      if (applied > 0) {
-        items.push({
-          installmentNumber: installment.installmentNumber,
-          dueDate: installment.dueDate,
-          amount: applied,
-          type: isAdvance ? ALLOCATION_TYPE.ADVANCE : ALLOCATION_TYPE.PRINCIPAL,
-          isPenalty: false,
-          isInterest: false,
-          isPrincipal: true,
-        });
-
+      } else {
         totals.principal = roundMoney(totals.principal + applied);
-
-        if (isAdvance) {
-          totals.advance = roundMoney(totals.advance + applied);
-        }
-
-        remaining = roundMoney(remaining - applied);
       }
+
+      if (isAdvance) {
+        totals.advance = roundMoney(totals.advance + applied);
+      }
+
+      remaining = roundMoney(remaining - applied);
     }
   }
 

@@ -381,7 +381,7 @@ const toUiSchedule = (rows = [], paymentHistory = []) => {
     waivedInterest: row.waivedInterest || 0,
     closureAdjusted: Boolean(row.midwayClosed),
     isMidwayClosed: Boolean(row.midwayClosed),
-    status: SCHEDULE_STATUS[row.status] || 'Due',
+    status: SCHEDULE_STATUS[row.status] || 'Pending',
     fromServer: true,
     allocations: allocations[row.installmentNumber] || [],
   }))

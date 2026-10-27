@@ -23,6 +23,7 @@ import {
   roundMoney,
   summariseOutstanding,
 } from "./repaymentEngine.js";
+import { getPaymentAllocationSettings } from "./paymentAllocationSettings.js";
 
 export const COLLECTION_STATUS = {
   PENDING: "Pending",
@@ -486,11 +487,13 @@ const postCollection = async (client, collectionRow, postedBy, { allowExcess }) 
     describeInstallment(row, referenceDate)
   );
 
+  const { allocationOrder } = await getPaymentAllocationSettings(client);
   const allocation = buildAllocation({
     installments,
     paymentAmount: collectionRow.amount,
     penaltyAmount: collectionRow.penalty_amount,
     referenceDate,
+    allocationOrder,
   });
 
   // Nobody reviews a collection before it posts, so an amount larger than the
