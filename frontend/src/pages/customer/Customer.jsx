@@ -12,6 +12,7 @@ import {
   Eye,
   UserCheck,
   Coins,
+  RefreshCw,
 } from "lucide-react";
 
 import { loadCustomerEntries } from "../../services/customerApi";
@@ -145,7 +146,8 @@ const Customer = () => {
   const hasCustomer = customerData.length > 0;
 
   const processedCustomers = useMemo(() => {
-    return customerData.map((data, index) => {
+    // 1. Process each individual loan record with its calculations
+    const mappedRecords = customerData.map((data, index) => {
       const customer = data.customer || {};
       const vehicle = data.vehicle || {};
       const loan = data.loan || {};
@@ -156,7 +158,7 @@ const Customer = () => {
       const loanCalc = calculateLoanOutstanding(data, allPayments);
       const loanAmount = loanCalc.principal;
       const outstandingAmount = loanCalc.outstandingAmount;
-      const customerStatus =
+      const loanStatus =
         data.status === "Closed" || loanCalc.status === "Closed"
           ? "Closed"
           : (data.status || loanCalc.status || (customer.name ? "Active" : "—"));
@@ -170,9 +172,54 @@ const Customer = () => {
         loanId,
         loanAmount,
         outstandingAmount,
-        status: customerStatus
+        status: loanStatus,
+        loanCalc,
       };
     });
+
+    // 2. Deduplicate / group by stable Customer ID (never deduplicate by name alone)
+    const customerMap = new Map();
+
+    mappedRecords.forEach((record) => {
+      const rawCId = record.customerId ? String(record.customerId).trim() : "";
+      // Unique group key is strictly the Customer ID
+      const groupKey = rawCId ? rawCId.toLowerCase() : `__unknown_${record.loanId}`;
+
+      if (!customerMap.has(groupKey)) {
+        customerMap.set(groupKey, {
+          ...record,
+          customerId: rawCId || record.customerId,
+          loans: [record],
+          totalLoanAmount: record.loanAmount,
+          totalOutstandingAmount: record.outstandingAmount,
+        });
+      } else {
+        const existing = customerMap.get(groupKey);
+        existing.loans.push(record);
+        existing.totalLoanAmount += record.loanAmount;
+        existing.totalOutstandingAmount += record.outstandingAmount;
+
+        // If the primary record lacks a customer name or mobile, prefer the non-empty one
+        if ((!existing.customer?.name || existing.customer.name === "—") && record.customer?.name) {
+          existing.customer = record.customer;
+        }
+
+        // Aggregate customer-level status:
+        // If any loan is Overdue, customer status is Overdue
+        // Else if any loan is Active, customer status is Active
+        // Else all are Closed -> Closed
+        const allLoans = existing.loans;
+        if (allLoans.some(l => l.status === "Overdue")) {
+          existing.status = "Overdue";
+        } else if (allLoans.some(l => l.status === "Active")) {
+          existing.status = "Active";
+        } else {
+          existing.status = "Closed";
+        }
+      }
+    });
+
+    return Array.from(customerMap.values());
   }, [customerData, allPayments]);
 
   const filteredCustomers = useMemo(() => {
@@ -182,9 +229,10 @@ const Customer = () => {
 
     return processedCustomers.filter(item => {
       const matchesSearch = !searchValue ||
-        item.customer.name?.toLowerCase().includes(searchValue) ||
+        item.customer?.name?.toLowerCase().includes(searchValue) ||
         item.customerId?.toLowerCase().includes(searchValue) ||
-        item.loanId?.toLowerCase().includes(searchValue);
+        item.customer?.mobile?.toLowerCase().includes(searchValue) ||
+        item.loans?.some(l => l.loanId?.toLowerCase().includes(searchValue));
 
       const matchesStatus = status === "All" || item.status === status;
 
@@ -234,7 +282,7 @@ const Customer = () => {
 
   const handleView = (item) => {
     setSelectedCustomerId(item.customerId);
-    setSelectedLoanId(item.loanId);
+    setSelectedLoanId(item.loans?.[0]?.loanId || item.loanId);
   };
 
   if (selectedCustomerId) {
@@ -251,9 +299,19 @@ const Customer = () => {
   }
 
   const totalCustomers = processedCustomers.length;
-  const activeLoans = processedCustomers.filter(item => item.status === "Active");
-  const totalActiveDeployed = activeLoans.reduce((sum, item) => sum + item.loanAmount, 0);
-  const totalActiveOutstanding = activeLoans.reduce((sum, item) => sum + item.outstandingAmount, 0);
+  const totalActiveDeployed = processedCustomers.reduce((sum, item) => {
+    const activeSum = (item.loans || [item])
+      .filter(l => l.status === "Active" || l.status === "Overdue")
+      .reduce((s, l) => s + (l.loanAmount || 0), 0);
+    return sum + activeSum;
+  }, 0);
+
+  const totalActiveOutstanding = processedCustomers.reduce((sum, item) => {
+    const activeOutSum = (item.loans || [item])
+      .filter(l => l.status === "Active" || l.status === "Overdue")
+      .reduce((s, l) => s + (l.outstandingAmount || 0), 0);
+    return sum + activeOutSum;
+  }, 0);
 
   return (
     <div className="w-full min-w-0 flex-1 min-h-screen bg-white px-3.5 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 space-y-5 sm:space-y-6">
@@ -287,10 +345,19 @@ const Customer = () => {
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 self-start sm:self-auto shrink-0 w-full sm:w-auto">
           <button
             type="button"
-            onClick={() => navigate("/guarantor-referral")}
+            onClick={() => navigate("/re-loan")}
             className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-lg bg-[#006052] px-4 py-2.5 sm:px-4.5 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer shrink-0"
           >
-            <UserCheck className="h-4 w-4 sm:h-4.5 sm:w-4.5" strokeWidth={2} />
+            <RefreshCw className="h-4 w-4 sm:h-4.5 sm:w-4.5" strokeWidth={2} />
+            <span>Re-Loan</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate("/guarantor-referral")}
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 active:bg-slate-100 px-4 py-2.5 sm:px-4.5 text-xs sm:text-sm font-semibold shadow-2xs transition-colors focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-1 cursor-pointer shrink-0"
+          >
+            <UserCheck className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-slate-600" strokeWidth={2} />
             <span>Guarantor / Referral</span>
           </button>
 
@@ -445,53 +512,80 @@ const Customer = () => {
                   </td>
                 </tr>
               ) : paginatedCustomers.length > 0 ? (
-                paginatedCustomers.map((item, idx) => (
-                  <tr
-                    key={`${item.customerId || "cus"}_${item.loanId || "loan"}_${(validCurrentPage - 1) * ITEMS_PER_PAGE + idx}`}
-                    className="bg-white hover:bg-slate-50/70 transition-colors"
-                  >
-                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-medium text-slate-800 whitespace-nowrap">
-                      {item.customerId}
-                    </td>
+                paginatedCustomers.map((item, idx) => {
+                  const hasMultipleLoans = item.loans && item.loans.length > 1;
+                  const primaryLoanId = item.loans?.[0]?.loanId || item.loanId;
+                  const displayedLoanAmount = item.totalLoanAmount ?? item.loanAmount;
+                  const displayedOutstanding = item.totalOutstandingAmount ?? item.outstandingAmount;
+                  
+                  return (
+                    <tr
+                      key={item.customerId || `cus_${(validCurrentPage - 1) * ITEMS_PER_PAGE + idx}`}
+                      className="bg-white hover:bg-slate-50/70 transition-colors"
+                    >
+                      <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-medium text-slate-800 whitespace-nowrap">
+                        {item.customerId}
+                      </td>
 
-                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-bold text-slate-900 whitespace-nowrap">
-                      {item.customer?.name}
-                    </td>
+                      <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-bold text-slate-900 whitespace-nowrap">
+                        {item.customer?.name}
+                      </td>
 
-                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] text-slate-700 whitespace-nowrap">
-                      {item.loanId}
-                    </td>
+                      <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] text-slate-700 whitespace-nowrap">
+                        {hasMultipleLoans ? (
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {item.loans.length} Loans
+                              </span>
+                            </div>
+                            <span
+                              className="text-[11px] text-slate-500 font-mono truncate max-w-[150px]"
+                              title={item.loans.map(l => l.loanId).join(', ')}
+                            >
+                              {item.loans.map(l => l.loanId).join(', ')}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-medium text-slate-800">{primaryLoanId}</span>
+                        )}
+                      </td>
 
-                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-semibold text-slate-900 whitespace-nowrap">
-                      {formatCurrency(item.loanAmount)}
-                    </td>
+                      <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-semibold text-slate-900 whitespace-nowrap">
+                        {formatCurrency(displayedLoanAmount)}
+                      </td>
 
-                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-semibold text-slate-900 whitespace-nowrap">
-                      {formatCurrency(item.outstandingAmount)}
-                    </td>
+                      <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-semibold text-slate-900 whitespace-nowrap">
+                        {formatCurrency(displayedOutstanding)}
+                      </td>
 
-                    <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] text-slate-700 whitespace-nowrap">
-                      {item.loan?.interestRate
-                        ? `${item.loan.interestRate}%`
-                        : "—"}
-                    </td>
+                      <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] text-slate-700 whitespace-nowrap">
+                        {(() => {
+                          if (hasMultipleLoans) {
+                            const rates = Array.from(new Set(item.loans.map(l => l.loan?.interestRate).filter(Boolean)));
+                            return rates.length > 0 ? rates.map(r => `${r}%`).join(', ') : '—';
+                          }
+                          return item.loan?.interestRate ? `${item.loan.interestRate}%` : '—';
+                        })()}
+                      </td>
 
-                    <td className="px-3.5 py-3.5 sm:py-4 whitespace-nowrap">
-                      <StatusBadge status={item.status} />
-                    </td>
+                      <td className="px-3.5 py-3.5 sm:py-4 whitespace-nowrap">
+                        <StatusBadge status={item.status} />
+                      </td>
 
-                    <td className="px-3.5 py-3.5 sm:py-4 whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => handleView(item)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
-                      >
-                        <Eye className="h-4 w-4 text-slate-500" />
-                        <span>View</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      <td className="px-3.5 py-3.5 sm:py-4 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => handleView(item)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-700 shadow-2xs hover:bg-[#006052] hover:text-white hover:border-[#006052] transition-colors cursor-pointer"
+                        >
+                          <Eye className="h-4 w-4" />
+                          <span>View</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td

@@ -10,6 +10,7 @@ import {
   getPaymentAllocationSettings,
   savePaymentAllocationSettings,
 } from "../services/paymentAllocationSettings.js";
+import { getReLoanPolicy, saveReLoanPolicy } from "../services/reloanPolicy.js";
 import { requireRole } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
@@ -30,6 +31,22 @@ settingsRouter.put(
   requireRole("admin"),
   asyncHandler(async (req, res) => {
     res.json(await saveForeclosureSettings(req.body || {}, actor(req)));
+  })
+);
+
+// Settings -> Re-Loan: { policy: "zero_outstanding" | "allow_with_outstanding" }.
+settingsRouter.get(
+  "/reloan",
+  asyncHandler(async (req, res) => {
+    res.json(await getReLoanPolicy());
+  })
+);
+
+settingsRouter.put(
+  "/reloan",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.json(await saveReLoanPolicy(req.body || {}, actor(req)));
   })
 );
 

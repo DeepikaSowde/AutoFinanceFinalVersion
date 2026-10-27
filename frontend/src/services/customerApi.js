@@ -574,12 +574,16 @@ export const submitLoanApplication = async (form) => {
   if (existing) {
     record = await apiPost(`/customers/${existing.customer.id}/loans`, loan)
   } else {
+    const isReLoan = Boolean(form.customer?.isReLoanCustomer || form.loan?.isReLoan)
     record = await apiPost('/customers', {
       customer: toCustomer(form.customer),
       vehicle: toVehicle(form.vehicle),
       rc: toRc(form.vehicle),
       guarantor: toGuarantor(form.guarantor, hasGuarantorIn(form)),
       loan,
+      // A re-loan on a different vehicle becomes its own customer record; the
+      // server applies the Re-Loan policy to the customer it came from.
+      ...(isReLoan && form.customer?.customerId ? { reLoanOfCustomerId: form.customer.customerId } : {}),
     })
   }
 

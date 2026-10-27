@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 
 import CustomerTab from '../components/CustomerTab'
 import VehicleTab from '../components/Vehicletab'
@@ -21,7 +21,7 @@ import {
 import { deleteDraft, getDraft, listDrafts, saveDraft } from '../services/draftApi'
 
 import { getFundingSummary, hasGuarantorIn, principalOf, submitLoanApplication } from '../services/customerApi'
-import { CheckCircle2, FileText, Trash2, X } from 'lucide-react'
+import { CheckCircle2, FileText, Trash2, X, RefreshCw } from 'lucide-react'
 import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
 import { formatDate } from '../utils/dateUtils'
 
@@ -443,6 +443,8 @@ const NewLoan = () => {
   const handleFetchVehicle = () => console.log('Fetch vehicle details', form.vehicle.regNo)
 
   const navigate = useNavigate()
+  const location = useLocation()
+  const isReLoan = Boolean(location.state?.isReLoan || form.customer?.isReLoanCustomer || form.loan?.isReLoan)
 
   const outlineBtn = 'rounded-md border border-slate-300 bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-slate-800 hover:border-emerald-700 hover:text-emerald-800 transition-colors'
   const primaryBtn = 'inline-flex items-center justify-center gap-1.5 sm:gap-2 rounded-md bg-emerald-800 px-4 sm:px-5 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50 transition-colors'
@@ -453,11 +455,11 @@ const NewLoan = () => {
       <div className="shrink-0 mb-1.5 flex items-center justify-between">
         <button
           type="button"
-          onClick={() => navigate('/loans')}
+          onClick={() => navigate(isReLoan ? '/re-loan' : '/loans')}
           className="group inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-emerald-800 transition-colors focus:outline-none"
         >
           <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
-          <span>Back to Loans</span>
+          <span>{isReLoan ? 'Back to Re-Loan' : 'Back to Loans'}</span>
         </button>
         <div className="flex items-center gap-2">
           {draftId && <span className="text-[11px] sm:text-xs text-slate-500">Editing draft {draftId}</span>}
@@ -480,6 +482,21 @@ const NewLoan = () => {
           </div>
           <Stepper current={step} onStepClick={setStep} t={t} />
         </div>
+
+        {/* Re-Loan Banner if in Re-Loan workflow */}
+        {isReLoan && (
+          <div className="shrink-0 px-4 py-2 bg-emerald-50 border-b border-emerald-200/80 text-emerald-950 text-xs flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <RefreshCw className="h-4 w-4 text-[#006052] shrink-0" />
+              <span className="truncate">
+                <strong>Re-Loan Application</strong> for existing customer <strong>{form.customer?.name || location.state?.customerName}</strong> ({form.customer?.customerId || location.state?.customerId}). A new independent Loan ID will be assigned.
+              </span>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 ml-2">
+              Re-Loan Mode
+            </span>
+          </div>
+        )}
 
         {/* Consistent content area with fixed available height based on viewport */}
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 sm:px-5 sm:py-3.5 bg-white">

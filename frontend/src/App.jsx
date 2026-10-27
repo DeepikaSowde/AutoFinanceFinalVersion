@@ -21,6 +21,9 @@ import SettingsOverview from './pages/Settings/SettingsOverview'
 import PenaltyGraceSettings from './pages/Settings/PenaltyGraceSettings'
 import ForeclosureVehicleSaleSettings from './pages/Settings/ForeclosureVehicleSaleSettings'
 import PaymentAllocationSettings from './pages/Settings/PaymentAllocationSettings'
+import ReLoanSettings from './pages/Settings/ReLoanSettings'
+import ReLoanSearch from './pages/reloan/ReLoanSearch'
+import ReLoanDetails from './pages/reloan/ReLoanDetails'
 import SmartSearch from './pages/SmartSearch'
 import SmartSearchFloatingButton from './components/SmartSearchFloatingButton'
 import SubscriptionBanner from './components/SubscriptionBanner'
@@ -84,6 +87,10 @@ function AppShell() {
           <Route path="/settings/penalty-grace" element={gate('/settings', <PenaltyGraceSettings />)} />
           <Route path="/settings/foreclosure-vehicle-sale" element={gate('/settings', <ForeclosureVehicleSaleSettings />)} />
           <Route path="/settings/payment-allocation" element={gate('/settings', <PaymentAllocationSettings />)} />
+          <Route path="/settings/re-loan" element={gate('/settings', <ReLoanSettings />)} />
+          <Route path="/re-loan" element={gate('/re-loan', <ReLoanSearch />)} />
+          <Route path="/re-loan/:customerId" element={gate('/re-loan', <ReLoanDetails />)} />
+          <Route path="/customers/re-loan" element={gate('/re-loan', <ReLoanSearch />)} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         {canOpen(user, '/smart-search') && <SmartSearchFloatingButton />}

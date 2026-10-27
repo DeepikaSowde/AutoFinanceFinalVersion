@@ -11,6 +11,7 @@ import {
   updateCustomer,
 } from "../services/customerRepository.js";
 import { sanitizeCustomerPayload } from "../services/sanitize.js";
+import { assertReLoanAllowed } from "../services/reloanPolicy.js";
 import { hasPermission } from "../services/permissions.js";
 import { requirePermission } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
@@ -46,6 +47,9 @@ customersRouter.post(
   "/",
   requirePermission("customers.add", "loans.add"),
   asyncHandler(async (req, res) => {
+    // A re-loan on a different vehicle is created as its own customer record;
+    // reLoanOfCustomerId names the existing customer so the policy applies.
+    await assertReLoanAllowed(req.body?.reLoanOfCustomerId, req.user);
     res.status(201).json(await createCustomer(sanitizeCustomerPayload(req.body)));
   })
 );
@@ -95,6 +99,8 @@ customersRouter.post(
   "/:customerId/loans",
   requirePermission("loans.add", "reloan.add"),
   asyncHandler(async (req, res) => {
+    // A further loan for an existing customer is a re-loan (Settings -> Re-Loan).
+    await assertReLoanAllowed(req.params.customerId, req.user);
     const customer = await addLoanForCustomer(req.params.customerId, req.body || {});
 
     if (!customer) {

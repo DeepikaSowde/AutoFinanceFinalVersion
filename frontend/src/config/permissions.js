@@ -41,6 +41,8 @@ export const PAGE_ACCESS = {
   '/chit-investment': ['expense.view', 'income.view'],
   '/customers': ['customers.view'],
   '/guarantor-referral': ['customers.view', 'loans.add'],
+  // Re-Loan assessment for an existing customer (creating the loan needs loans.add).
+  '/re-loan': ['customers.view'],
   '/referral-commission': ['customers.view', 'expense.view'],
   '/ledger': ['ledger.view'],
   '/investors': ['investor.view'],

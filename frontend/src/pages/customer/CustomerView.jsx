@@ -1,11 +1,12 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { DATA_CHANGED_EVENT } from '../../services/api';
 import { loadCustomerEntries } from '../../services/customerApi';
 import { loadPayments } from '../../services/collectionApi';
 import { 
   ArrowLeft, Edit, Search, FileText, Coins, Landmark, 
   Clock, CheckCircle2, AlertTriangle, Car, Shield, Activity, Users, CreditCard,
-  FileCheck, FileText as FileTextIcon, Download, X, UserCheck, Wallet, ShieldCheck
+  FileCheck, FileText as FileTextIcon, Download, X, UserCheck, Wallet, ShieldCheck,
+  Check, ChevronRight
 } from 'lucide-react';
 import RepaymentScheduleTable, { generateSchedule, computeEffectiveSchedule } from '../../components/RepaymentScheduleTable';
 import { calculateRepayment } from '../../components/Loantab';
@@ -174,26 +175,26 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
       return [];
     }
 
-    // 1. Identify targeted loan record if initialLoanId is provided
+    // 1. Identify targeted customer record if customerId is provided (stable primary customer identity)
     let targetRecord = null;
     let targetIndex = -1;
-    if (initialLoanId && typeof initialLoanId === "string" && initialLoanId.trim()) {
-      const cleanInitialLoanId = initialLoanId.trim().toLowerCase();
+    if (customerId && typeof customerId === "string" && customerId.trim()) {
+      const cleanCId = customerId.trim().toLowerCase();
       targetIndex = allData.findIndex((d, idx) => {
-        const lId = extractRecordLoanId(d, idx);
-        return lId && lId.toLowerCase() === cleanInitialLoanId;
+        const cId = extractRecordCustomerId(d, idx);
+        return cId && cId.toLowerCase() === cleanCId;
       });
       if (targetIndex >= 0) {
         targetRecord = allData[targetIndex];
       }
     }
 
-    // 2. Identify targeted customer record if customerId is provided but initialLoanId was not matched
-    if (!targetRecord && customerId && typeof customerId === "string" && customerId.trim()) {
-      const cleanCId = customerId.trim().toLowerCase();
+    // 2. Fallback to initialLoanId if customerId was not matched or provided
+    if (!targetRecord && initialLoanId && typeof initialLoanId === "string" && initialLoanId.trim()) {
+      const cleanInitialLoanId = initialLoanId.trim().toLowerCase();
       targetIndex = allData.findIndex((d, idx) => {
-        const cId = extractRecordCustomerId(d, idx);
-        return cId && cId.toLowerCase() === cleanCId;
+        const lId = extractRecordLoanId(d, idx);
+        return lId && lId.toLowerCase() === cleanInitialLoanId;
       });
       if (targetIndex >= 0) {
         targetRecord = allData[targetIndex];
@@ -299,25 +300,49 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
       });
   }, [allData, allPayments, customerId, initialLoanId]);
 
-  const [selectedLoanId, setSelectedLoanId] = useState(initialLoanId || null);
+  const [selectedLoanId, setSelectedLoanId] = useState(() => {
+    return initialLoanId || null;
+  });
 
-  // Synchronize selected loan when initialLoanId, customerLoans, or selectedLoanId change
+  const prevCustomerIdRef = useRef(customerId);
+  const prevInitialLoanIdRef = useRef(initialLoanId);
+
+  // Synchronize selected loan safely without clobbering user selection
   useEffect(() => {
     if (!customerLoans || customerLoans.length === 0) {
       setSelectedLoanId(null);
       return;
     }
-    // 1. If an initialLoanId is provided and exists in this customer's loans, prioritize it
+
+    const customerChanged = prevCustomerIdRef.current !== customerId;
+    const initialLoanChanged = prevInitialLoanIdRef.current !== initialLoanId;
+    prevCustomerIdRef.current = customerId;
+    prevInitialLoanIdRef.current = initialLoanId;
+
+    // 1. If customerId changed or initialLoanId was updated externally from outside props, re-initialize
+    if (customerChanged || initialLoanChanged) {
+      if (initialLoanId && customerLoans.some(l => l.loanId?.toLowerCase() === initialLoanId.trim().toLowerCase())) {
+        const match = customerLoans.find(l => l.loanId?.toLowerCase() === initialLoanId.trim().toLowerCase());
+        setSelectedLoanId(match.loanId);
+        return;
+      }
+      setSelectedLoanId(customerLoans[0].loanId);
+      return;
+    }
+
+    // 2. If the user selected a loan and it exists in this customer's loans, PRESERVE IT!
+    if (selectedLoanId && customerLoans.some(l => l.loanId === selectedLoanId)) {
+      return;
+    }
+
+    // 3. Fallback: if initialLoanId exists in this customer's loans, prioritize it
     if (initialLoanId && customerLoans.some(l => l.loanId?.toLowerCase() === initialLoanId.trim().toLowerCase())) {
       const match = customerLoans.find(l => l.loanId?.toLowerCase() === initialLoanId.trim().toLowerCase());
       setSelectedLoanId(match.loanId);
       return;
     }
-    // 2. If current selectedLoanId belongs to this customer's loans, retain it
-    if (selectedLoanId && customerLoans.some(l => l.loanId === selectedLoanId)) {
-      return;
-    }
-    // 3. Otherwise default to the first loan of this customer
+
+    // 4. Default to first loan of this customer
     setSelectedLoanId(customerLoans[0].loanId);
   }, [customerId, initialLoanId, customerLoans, selectedLoanId]);
 
@@ -632,12 +657,30 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
           <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
             <div>
               <h2 className="text-lg font-bold text-slate-900">Loan Accounts</h2>
-              <p className="text-xs text-slate-500 mt-0.5">View and manage customer's loan details. Select a loan to view specifics.</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {customerLoans.length > 1
+                  ? "This customer has multiple loan accounts. Select any loan account below to view its specific details, schedule, collections, and balance."
+                  : "View and manage customer's loan details. Select a loan to view specifics."}
+              </p>
             </div>
-            <div className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
-              {customerLoans.length} Loan{customerLoans.length !== 1 ? 's' : ''}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 hidden sm:inline">Active Loan: <strong className="text-emerald-700 font-mono">{activeSelectedLoanId || 'None'}</strong></span>
+              <div className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
+                {customerLoans.length} Loan{customerLoans.length !== 1 ? 's' : ''}
+              </div>
             </div>
           </div>
+
+          {customerLoans.length > 1 && (
+            <div className="bg-emerald-50/60 border-b border-emerald-100/80 px-5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-900">
+              <span className="font-medium">
+                Showing all <strong>{customerLoans.length} loan accounts</strong> for this customer. Click <strong>"Select"</strong> on any row to dynamically switch the lower tabs.
+              </span>
+              <span className="font-semibold text-emerald-800 bg-emerald-100/60 px-2 py-0.5 rounded">
+                Selected: {activeSelectedLoanId}
+              </span>
+            </div>
+          )}
 
           <div className="divide-y divide-slate-100">
             {customerLoans.map(loan => {
@@ -650,15 +693,19 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                 <div
                   key={loan.loanId}
                   onClick={() => setSelectedLoanId(loan.loanId)}
-                  className={`p-5 flex flex-col lg:flex-row lg:items-center gap-6 cursor-pointer transition-colors ${isSelected ? 'bg-emerald-50/40 ring-1 ring-inset ring-emerald-500/30' : 'hover:bg-slate-50'}`}
+                  className={`p-5 flex flex-col lg:flex-row lg:items-center gap-6 cursor-pointer transition-all border-l-4 ${
+                    isSelected
+                      ? 'border-l-[#006052] bg-emerald-50/50 ring-1 ring-inset ring-[#006052]/25 shadow-xs'
+                      : 'border-l-transparent hover:bg-slate-50/80 hover:border-l-slate-300'
+                  }`}
                 >
                   <div className="flex items-center gap-4 lg:w-1/4">
-                    <div className={`p-3 rounded-xl shrink-0 transition-colors ${isSelected ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
+                    <div className={`p-3 rounded-xl shrink-0 transition-colors ${isSelected ? 'bg-[#006052] text-white shadow-2xs' : 'bg-emerald-100 text-emerald-700'}`}>
                       <Car className="h-6 w-6" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900">{loan.loanId}</span>
+                        <span className="font-bold text-slate-900 font-mono text-base">{loan.loanId}</span>
                         <StatusBadge status={loan.status} />
                       </div>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -725,6 +772,28 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                         </>
                       )}
                     </div>
+                  </div>
+
+                  {/* Explicit Action Button */}
+                  <div className="shrink-0 flex items-center justify-end lg:pl-2">
+                    {isSelected ? (
+                      <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#006052] text-white text-xs font-bold shadow-xs cursor-default">
+                        <CheckCircle2 className="h-4 w-4 stroke-[2.5]" />
+                        <span>Selected</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedLoanId(loan.loanId);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-[#006052] hover:text-white hover:border-[#006052] text-xs font-bold shadow-2xs transition-all cursor-pointer"
+                      >
+                        <span>Select</span>
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

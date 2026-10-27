@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, ChevronRight, SlidersHorizontal, Scale, ArrowDownUp } from 'lucide-react';
+import { Clock, ChevronRight, SlidersHorizontal, Scale, ArrowDownUp, RefreshCw } from 'lucide-react';
 
 const SettingsOverview = () => {
   const navigate = useNavigate();
@@ -118,6 +118,38 @@ const SettingsOverview = () => {
           </div>
 
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 group-hover:bg-teal-50 group-hover:text-[#006052] transition-colors duration-200">
+            <ChevronRight className="h-5 w-5 group-hover:translate-x-0.5 transition-transform duration-200" />
+          </div>
+        </div>
+
+        {/* 4. Re-Loan Configuration */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/settings/re-loan')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              navigate('/settings/re-loan');
+            }
+          }}
+          className="group relative flex items-center justify-between rounded-2xl border border-slate-200/90 bg-white p-5 sm:p-6 shadow-xs hover:border-[#006052]/50 hover:shadow-md transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-2"
+        >
+          <div className="flex items-start gap-4 sm:gap-5 min-w-0 pr-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700 border border-blue-100 group-hover:bg-[#006052] group-hover:text-white transition-colors duration-200">
+              <RefreshCw className="h-6 w-6" strokeWidth={2} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-[#006052] transition-colors duration-200 leading-snug">
+                Re-Loan Configuration
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 font-normal mt-1 leading-relaxed">
+                Configure customer outstanding balance policies and assessment rules for re-loans.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-[#006052] transition-colors duration-200">
             <ChevronRight className="h-5 w-5 group-hover:translate-x-0.5 transition-transform duration-200" />
           </div>
         </div>
