@@ -91,6 +91,12 @@ export const MANUFACTURING_YEARS = [
   '2019',
 ]
 
+export const VEHICLE_OWNERSHIP_TYPES = [
+  'New',
+  'Second-hand',
+  'Third-hand',
+]
+
 export const RTO_LOCATIONS = [
   'TN-01 Chennai Central',
   'TN-02 Chennai North',

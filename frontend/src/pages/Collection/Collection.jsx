@@ -311,35 +311,47 @@ const Collection = () => {
         (s) => s.status !== "Collected" && s.status !== "Paid" && s.emi - (s.amountPaid || 0) > 0.01
       );
 
-      const isDueToday = todayInstalls.length > 0;
-      const isOverdue = overdueInstalls.length > 0;
+      const isForeclosed = Boolean(
+        c.status === "Foreclosed" ||
+        c.status === "Sold · Foreclosed" ||
+        c.isForeclosed ||
+        c.loan?.status === "Foreclosed" ||
+        c.loan?.status === "Sold · Foreclosed" ||
+        c.loan?.isForeclosed ||
+        c.foreclosure
+      );
 
-      const totalDueToday = todayInstalls.reduce((sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)), 0);
-      const totalOverdue = overdueInstalls.reduce((sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)), 0);
-      const totalUnpaidInstallmentAmount = allUnpaidInstalls.reduce(
+      const isDueToday = isForeclosed ? false : todayInstalls.length > 0;
+      const isOverdue = isForeclosed ? false : overdueInstalls.length > 0;
+
+      const totalDueToday = isForeclosed ? 0 : todayInstalls.reduce((sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)), 0);
+      const totalOverdue = isForeclosed ? 0 : overdueInstalls.reduce((sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)), 0);
+      const totalUnpaidInstallmentAmount = isForeclosed ? 0 : allUnpaidInstalls.reduce(
         (sum, s) => sum + Math.max(0, s.emi - (s.amountPaid || 0)),
         0
       );
 
-      const originalDueToday = todayInstalls.reduce((sum, s) => sum + s.emi, 0);
-      const originalOverdue = overdueInstalls.reduce((sum, s) => sum + s.emi, 0);
+      const originalDueToday = isForeclosed ? 0 : todayInstalls.reduce((sum, s) => sum + s.emi, 0);
+      const originalOverdue = isForeclosed ? 0 : overdueInstalls.reduce((sum, s) => sum + s.emi, 0);
 
       const activeInstalls = [...overdueInstalls, ...todayInstalls];
-      let statusText = "Pending";
+      let statusText = isForeclosed ? "Foreclosed" : "Pending";
 
-      if (activeInstalls.length > 0) {
-        const allCollected = activeInstalls.every((s) => s.status === "Collected" || s.status === "Paid" || (s.amountPaid || 0) >= s.emi);
-        const anyPartial = activeInstalls.some(
-          (s) => s.status === "Partial" || ((s.amountPaid || 0) > 0 && (s.amountPaid || 0) < s.emi)
-        );
+      if (!isForeclosed) {
+        if (activeInstalls.length > 0) {
+          const allCollected = activeInstalls.every((s) => s.status === "Collected" || s.status === "Paid" || (s.amountPaid || 0) >= s.emi);
+          const anyPartial = activeInstalls.some(
+            (s) => s.status === "Partial" || ((s.amountPaid || 0) > 0 && (s.amountPaid || 0) < s.emi)
+          );
 
-        if (allCollected) {
+          if (allCollected) {
+            statusText = "Collected";
+          } else if (anyPartial) {
+            statusText = "Partial";
+          }
+        } else if (allUnpaidInstalls.length === 0 && schedule.length > 0) {
           statusText = "Collected";
-        } else if (anyPartial) {
-          statusText = "Partial";
         }
-      } else if (allUnpaidInstalls.length === 0 && schedule.length > 0) {
-        statusText = "Collected";
       }
 
       const customerId =
@@ -361,21 +373,24 @@ const Collection = () => {
         date ? new Date(date) : new Date()
       );
 
-      const hasFrozenPenalty = penaltySummary.frozenPenalties.length > 0;
-      const totalFrozenPenaltyAmount = penaltySummary.totalFrozenPenalty;
-      const hasPendingPenalty = penaltySummary.pendingPenalties.length > 0;
-      const totalPendingPenaltyAmount = penaltySummary.totalPendingPenalty;
+      const hasFrozenPenalty = isForeclosed ? false : penaltySummary.frozenPenalties.length > 0;
+      const totalFrozenPenaltyAmount = isForeclosed ? 0 : penaltySummary.totalFrozenPenalty;
+      const hasPendingPenalty = isForeclosed ? false : penaltySummary.pendingPenalties.length > 0;
+      const totalPendingPenaltyAmount = isForeclosed ? 0 : penaltySummary.totalPendingPenalty;
 
       // Dedicated Penalty status:
       // If loan has a frozen penalty and no regular overdue installments (or active collection is 0)
-      if (hasFrozenPenalty && overdueInstalls.length === 0 && todayInstalls.length === 0) {
-        statusText = "Penalty";
-      } else if (hasPendingPenalty && overdueInstalls.length === 0 && todayInstalls.length === 0) {
-        statusText = "Pending Penalty";
+      if (!isForeclosed) {
+        if (hasFrozenPenalty && overdueInstalls.length === 0 && todayInstalls.length === 0) {
+          statusText = "Penalty";
+        } else if (hasPendingPenalty && overdueInstalls.length === 0 && todayInstalls.length === 0) {
+          statusText = "Pending Penalty";
+        }
       }
 
       return {
         ...c,
+        isForeclosed,
         customerId,
         loanId,
         isDueToday,
@@ -404,12 +419,12 @@ const Collection = () => {
   }, [customers, date, penaltyVersion]);
 
   const processedCustomers = useMemo(() => {
-    return allProcessedCustomers.filter((c) => c.isDueToday || c.isOverdue || c.hasFrozenPenalty || c.hasPendingPenalty);
+    return allProcessedCustomers.filter((c) => !c.isForeclosed && (c.isDueToday || c.isOverdue || c.hasFrozenPenalty || c.hasPendingPenalty));
   }, [allProcessedCustomers]);
 
-  const todayList = useMemo(() => allProcessedCustomers.filter((c) => c.isDueToday), [allProcessedCustomers]);
+  const todayList = useMemo(() => allProcessedCustomers.filter((c) => !c.isForeclosed && c.isDueToday), [allProcessedCustomers]);
   const overdueList = useMemo(
-    () => allProcessedCustomers.filter((c) => c.isOverdue || c.hasFrozenPenalty || c.hasPendingPenalty),
+    () => allProcessedCustomers.filter((c) => !c.isForeclosed && (c.isOverdue || c.hasFrozenPenalty || c.hasPendingPenalty)),
     [allProcessedCustomers]
   );
 
@@ -417,9 +432,10 @@ const Collection = () => {
   // When a search term is entered, search dynamically across ALL customer and loan records
   // by customer name, customer ID, or loan ID (including customers with multiple loans).
   const getFilteredList = (list) => {
-    const baseList = search.trim() ? allProcessedCustomers : list;
+    const baseList = search.trim() ? allProcessedCustomers.filter((c) => !c.isForeclosed) : list;
 
     return baseList.filter((c) => {
+      if (c.isForeclosed) return false;
       if (!search.trim() && activeTab === "Overdue" && overdueFilter !== "All") {
         if (overdueFilter === "1" && c.overdueCount !== 1) return false;
         if (overdueFilter === "2" && c.overdueCount !== 2) return false;
@@ -594,6 +610,19 @@ const Collection = () => {
   }, [filteredHistoryList, currentHistoryPage, historyPageSize]);
 
   const handleCollectClick = (c, penaltyOnly = false) => {
+    if (
+      c.status === "Foreclosed" ||
+      c.status === "Sold · Foreclosed" ||
+      c.isForeclosed ||
+      c.loan?.status === "Foreclosed" ||
+      c.loan?.status === "Sold · Foreclosed" ||
+      c.loan?.isForeclosed ||
+      c.foreclosure
+    ) {
+      alert("This loan has been Foreclosed. Further normal collections are blocked.");
+      return;
+    }
+
     setSelectedCustomer(c);
     setIsPenaltyOnlyMode(penaltyOnly);
 
@@ -830,6 +859,19 @@ const Collection = () => {
     }
 
     if (!selectedCustomer) return;
+
+    if (
+      selectedCustomer.status === "Foreclosed" ||
+      selectedCustomer.status === "Sold · Foreclosed" ||
+      selectedCustomer.isForeclosed ||
+      selectedCustomer.loan?.status === "Foreclosed" ||
+      selectedCustomer.loan?.status === "Sold · Foreclosed" ||
+      selectedCustomer.loan?.isForeclosed ||
+      selectedCustomer.foreclosure
+    ) {
+      alert("This loan has been Foreclosed. Further normal collections are blocked.");
+      return;
+    }
 
     submittingRef.current = true;
     setIsSubmitting(true);

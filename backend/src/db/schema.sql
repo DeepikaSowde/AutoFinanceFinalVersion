@@ -566,7 +566,7 @@ CREATE TABLE IF NOT EXISTS guarantor_referrals (
 );
 
 -- Seizure details can be corrected while a vehicle is held; the edit is
--- kept in its history.
+-- kept in its history. So is a sold vehicle's settlement with the customer.
 ALTER TABLE vehicle_events DROP CONSTRAINT IF EXISTS vehicle_events_event_type_check;
 ALTER TABLE vehicle_events ADD CONSTRAINT vehicle_events_event_type_check
-  CHECK (event_type IN ('SEIZURE', 'SEIZURE_UPDATED', 'RELEASE', 'PENDING_SALE', 'SALE', 'SALE_CANCELLED'));
+  CHECK (event_type IN ('SEIZURE', 'SEIZURE_UPDATED', 'RELEASE', 'PENDING_SALE', 'SALE', 'SALE_CANCELLED', 'SETTLEMENT'));

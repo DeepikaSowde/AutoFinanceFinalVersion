@@ -9,7 +9,7 @@ import VehicleCard from './VehicleCard';
  * - Mobile: 1 card per row
  * - Includes clean empty state if no records match
  */
-const VehicleCardGrid = ({ vehicles = [], onViewDetails, onAddVehicle }) => {
+const VehicleCardGrid = ({ vehicles = [], onViewDetails, onViewExpenseHistory, onAddVehicle }) => {
   if (vehicles.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-slate-200/90 p-12 text-center shadow-2xs w-full flex flex-col items-center justify-center min-h-[320px]">
@@ -49,11 +49,13 @@ const VehicleCardGrid = ({ vehicles = [], onViewDetails, onAddVehicle }) => {
             key={key}
             vehicleRecord={record}
             onViewDetails={onViewDetails}
+            onViewExpenseHistory={onViewExpenseHistory}
           />
         );
       })}
     </div>
   );
 };
+
 
 export default VehicleCardGrid;

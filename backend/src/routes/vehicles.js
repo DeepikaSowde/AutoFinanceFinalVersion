@@ -11,8 +11,10 @@ import {
   getVehicles,
   getVehiclesByStatus,
   moveVehicleToPendingSale,
+  previewForeclosure,
   releaseVehicle,
   seizeVehicle,
+  settleVehicleSale,
   updateSeizureDetails,
 } from "../services/vehicleRepository.js";
 import { requirePermission } from "../middleware/requireAuth.js";
@@ -91,6 +93,19 @@ vehiclesRouter.post(
   "/:vehicleId/complete-sale",
   requirePermission("vehicles.edit"),
   action((req) => completeVehicleSale(req.params.vehicleId, req.body || {}, req.user.username))
+);
+
+// Query: salePrice, saleDate, vehicleExpenses (optional). Nothing is saved.
+vehiclesRouter.get(
+  "/:vehicleId/foreclosure-preview",
+  action((req) => previewForeclosure(req.params.vehicleId, req.query || {}))
+);
+
+// Body: { decision: recovery | waiver | payout | retained | breakeven, amount, notes, paymentMode }.
+vehiclesRouter.post(
+  "/:vehicleId/settlement",
+  requirePermission("vehicles.edit"),
+  action((req) => settleVehicleSale(req.params.vehicleId, req.body || {}, req.user.username))
 );
 
 vehiclesRouter.post(

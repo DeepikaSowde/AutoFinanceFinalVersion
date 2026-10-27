@@ -39,8 +39,8 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
   const rawHistory = Array.isArray(vehicleRecord.statusHistory)
     ? vehicleRecord.statusHistory
     : Array.isArray(vehicle.statusHistory)
-    ? vehicle.statusHistory
-    : [];
+      ? vehicle.statusHistory
+      : [];
 
   const timeline = [];
 
@@ -64,8 +64,8 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
       statusBadge: 'Active',
       badgeColor: 'bg-[#2563EB] text-white',
       title: 'Vehicle Registered & Activated',
-      eventDate: initialDate,
-      date: vehicleRecord.createdAt || loan.disbursementDate || '1970-01-01T00:00:00.000Z',
+      eventDate: initialDate !== 'Initial Onboarding' ? initialDate : null,
+      date: vehicleRecord.createdAt || loan.disbursementDate || vehicle.regDate || null,
       reason: 'Vehicle onboarding completed and initial status set to Active',
       notes: vehicleRecord.loanId ? `Linked with Loan ID: ${vehicleRecord.loanId}` : 'Vehicle active in fleet',
       customerName: customer.name || 'Customer',
@@ -80,10 +80,10 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
       item.toStatus === 'Seized'
         ? 'seizure'
         : item.toStatus === 'Released' || (item.toStatus === 'Active' && item.fromStatus === 'Seized')
-        ? 'release'
-        : item.toStatus === 'Sold'
-        ? 'sale'
-        : 'status_change'
+          ? 'release'
+          : item.toStatus === 'Sold'
+            ? 'sale'
+            : 'status_change'
     );
 
     const fromStatus = item.fromStatus || (eventType === 'seizure' ? 'Active' : eventType === 'release' ? 'Seized' : 'Active');
@@ -110,6 +110,14 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
       title = 'Vehicle Inactive (Loan Closed)';
       statusBadge = 'Inactive';
       badgeColor = 'bg-slate-500 text-white';
+    } else if (eventType === 'settlement') {
+      title = item.reason || 'Foreclosure Settlement Decision';
+      statusBadge = item.status === 'Completed' ? 'Settled' : item.status === 'Waived' ? 'Waived' : item.status === 'Retained' ? 'Retained' : 'Pending Settlement';
+      badgeColor = item.status === 'Completed' ? 'bg-[#006052] text-white' : item.status === 'Waived' ? 'bg-purple-600 text-white' : item.status === 'Retained' ? 'bg-sky-600 text-white' : 'bg-amber-600 text-white';
+    } else if (eventType === 'foreclosure_completed') {
+      title = 'Foreclosure Completed & Account Closed';
+      statusBadge = 'Foreclosed';
+      badgeColor = 'bg-purple-700 text-white';
     } else if (eventType === 'initial' || eventType === 'created') {
       title = 'Vehicle Registered & Activated';
       statusBadge = 'Active';
@@ -124,8 +132,8 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
       statusBadge,
       badgeColor,
       title,
-      eventDate: item.seizureDate || item.releaseDate || item.saleDate || item.closureDate || item.date,
-      date: item.date || item.seizureDate || item.releaseDate || item.saleDate || item.closureDate || new Date().toISOString(),
+      eventDate: item.seizureDate || item.releaseDate || item.saleDate || item.closureDate || item.date || item.timestamp || null,
+      date: item.timestamp || item.date || item.recordedAt || item.createdAt || item.seizureDate || item.releaseDate || item.saleDate || item.closureDate || null,
       reason: item.reason,
       storageLocation: item.storageLocation,
       condition: item.condition,
@@ -143,7 +151,7 @@ export const getChronologicalVehicleHistory = (vehicleRecord) => {
   // 3. If currently Inactive due to loan closure/midway closure but no explicit Inactive entry in rawHistory
   if (currentStatus === 'Inactive' && !timeline.some((e) => e.toStatus === 'Inactive')) {
     const isMidway = vehicleRecord.isMidwayClosed || (vehicleRecord.status || '').toLowerCase() === 'midway closed';
-    const closureDate = vehicleRecord.closureDate || vehicleRecord.midwayClosure?.date || vehicleRecord.midwayClosure?.closedAt || vehicleRecord.updatedAt || new Date().toISOString();
+    const closureDate = vehicleRecord.closureDate || vehicleRecord.midwayClosure?.date || vehicleRecord.midwayClosure?.closedAt || vehicleRecord.updatedAt || null;
     timeline.push({
       id: 'evt-inactive-auto',
       eventType: 'closure',
@@ -365,9 +373,8 @@ const VehicleStatusHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
 
                     {/* Event Card */}
                     <div
-                      className={`bg-white rounded-xl border p-4 shadow-2xs space-y-2 transition-shadow hover:shadow-xs ${
-                        isLatest ? 'border-emerald-200 ring-1 ring-emerald-500/20' : 'border-slate-200'
-                      }`}
+                      className={`bg-white rounded-xl border p-4 shadow-2xs space-y-2 transition-shadow hover:shadow-xs ${isLatest ? 'border-emerald-200 ring-1 ring-emerald-500/20' : 'border-slate-200'
+                        }`}
                     >
                       {/* Top Header of Card */}
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
@@ -388,7 +395,16 @@ const VehicleStatusHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
                         </div>
 
                         <span className="text-[11px] font-medium text-slate-500">
-                          {formatDateTime(event.date, event)}
+                          {(() => {
+                            const t = event.date || event.eventDate;
+                            if (!t || t === '1970-01-01T00:00:00.000Z' || t === 'Initial Onboarding') {
+                              return event.eventDate && event.eventDate !== 'Initial Onboarding'
+                                ? formatDate(event.eventDate)
+                                : 'Timestamp unavailable';
+                            }
+                            const formatted = formatDateTime(t, event);
+                            return !formatted || formatted === '—' ? 'Timestamp unavailable' : formatted;
+                          })()}
                         </span>
                       </div>
 

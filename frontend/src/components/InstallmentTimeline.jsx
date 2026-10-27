@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Info, CheckCircle2 } from "lucide-react";
+import { Info, CheckCircle2, Lock } from "lucide-react";
 
 /**
  * Format currency helper in INR format
@@ -37,6 +37,7 @@ export default function InstallmentTimeline({
   effectiveLoanId = "LN-001",
   isLoanCompleted = false,
   isMidwayClosed = false,
+  isForeclosed = false,
 }) {
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(900);
@@ -120,6 +121,7 @@ export default function InstallmentTimeline({
 
   // Determine if the loan is genuinely 100% completed
   const loanJourneyFinished = useMemo(() => {
+    if (isForeclosed || isMidwayClosed) return false;
     if (!markerPoints.length) return false;
     // Check if every single installment is paid / cleared
     const allInstallmentsPaid = markerPoints.every(
@@ -130,7 +132,7 @@ export default function InstallmentTimeline({
         (m.balance !== undefined && m.balance <= 0.01)
     );
     return isLoanCompleted || allInstallmentsPaid;
-  }, [markerPoints, isLoanCompleted]);
+  }, [markerPoints, isLoanCompleted, isForeclosed, isMidwayClosed]);
 
   const totalRows = markerPoints.length > 0 ? Math.floor((markerPoints.length - 1) / colsPerRow) + 1 : 1;
   const svgHeight = 48 + totalRows * rowHeight + 40;
@@ -216,16 +218,20 @@ export default function InstallmentTimeline({
     const fullD = buildPathForPoints(markerPoints);
 
     let paidUpToIdx = -1;
-    for (let i = 0; i < markerPoints.length; i++) {
-      if (
-        markerPoints[i].status === "Paid" ||
-        markerPoints[i].status === "Collected" ||
-        markerPoints[i].completionPct === 100 ||
-        (isMidwayClosed && (markerPoints[i].isMidwayClosed || markerPoints[i].status === "Midway Closed"))
-      ) {
-        paidUpToIdx = i;
-      } else {
-        break;
+    if (isForeclosed) {
+      paidUpToIdx = markerPoints.length - 1;
+    } else {
+      for (let i = 0; i < markerPoints.length; i++) {
+        if (
+          markerPoints[i].status === "Paid" ||
+          markerPoints[i].status === "Collected" ||
+          markerPoints[i].completionPct === 100 ||
+          (isMidwayClosed && (markerPoints[i].isMidwayClosed || markerPoints[i].status === "Midway Closed"))
+        ) {
+          paidUpToIdx = i;
+        } else {
+          break;
+        }
       }
     }
 
@@ -235,7 +241,7 @@ export default function InstallmentTimeline({
     }
 
     return { fullPathD: fullD, paidPathD: paidD };
-  }, [markerPoints, isMidwayClosed]);
+  }, [markerPoints, isMidwayClosed, isForeclosed]);
 
   if (!schedule || schedule.length === 0) {
     return (
@@ -291,20 +297,20 @@ export default function InstallmentTimeline({
               />
             )}
 
-            {/* 2. Paid Connecting Path (Emerald Green completed segment, or Orange/Amber if Midway Closed) */}
+            {/* 2. Paid Connecting Path (Emerald Green completed segment, Orange/Amber if Midway Closed, Purple if Foreclosed) */}
             {paidPathD && (
               <path
                 d={paidPathD}
                 fill="none"
-                stroke={isMidwayClosed ? "#EA580C" : "#047857"}
+                stroke={isMidwayClosed ? "#EA580C" : isForeclosed ? "#7E22CE" : "#047857"}
                 strokeWidth={colsPerRow <= 3 ? 5 : 6}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
             )}
 
-            {/* 3. Partial Progress Segment (Amber dashed line, suppressed for Midway Closed loans) */}
-            {!isMidwayClosed && (() => {
+            {/* 3. Partial Progress Segment (Amber dashed line, suppressed for Midway Closed & Foreclosed loans) */}
+            {!isMidwayClosed && !isForeclosed && (() => {
               const partialPoint = markerPoints.find((m) => m.status === "Partial" || (m.completionPct > 0 && m.completionPct < 100));
               if (!partialPoint) return null;
               const prevPoint = partialPoint.index > 0 ? markerPoints[partialPoint.index - 1] : null;
@@ -351,9 +357,10 @@ export default function InstallmentTimeline({
             {/* 5. Render Installment Markers with Inline Completion Percentage */}
             {markerPoints.map((item) => {
               const isMidwayItem = isMidwayClosed && (item.isMidwayClosed || item.status === "Midway Closed");
-              const isPaid = !isMidwayItem && (item.status === "Paid" || item.status === "Collected" || item.completionPct === 100);
-              const isPartial = !isPaid && !isMidwayItem && (item.status === "Partial" || item.completionPct > 0);
-              const isOverdue = !isPaid && !isPartial && !isMidwayItem && item.status === "Overdue";
+              const isForeclosedItem = isForeclosed && !isMidwayItem;
+              const isPaid = !isForeclosedItem && !isMidwayItem && (item.status === "Paid" || item.status === "Collected" || item.completionPct === 100);
+              const isPartial = !isPaid && !isMidwayItem && !isForeclosedItem && (item.status === "Partial" || item.completionPct > 0);
+              const isOverdue = !isPaid && !isPartial && !isMidwayItem && !isForeclosedItem && item.status === "Overdue";
 
               let circleFill = "#FFFFFF";
               let circleStroke = "#CBD5E1";
@@ -367,6 +374,12 @@ export default function InstallmentTimeline({
                 numberColor = "#C2410C";
                 badgeBg = "#FFEDD5";
                 badgeText = "#C2410C";
+              } else if (isForeclosedItem) {
+                circleFill = "#7E22CE";
+                circleStroke = "#581C87";
+                numberColor = "#FFFFFF";
+                badgeBg = "#F3E8FF";
+                badgeText = "#7E22CE";
               } else if (isPaid) {
                 circleFill = "#047857";
                 circleStroke = "#065F46";
@@ -387,8 +400,12 @@ export default function InstallmentTimeline({
                 badgeText = "#BE123C";
               }
 
-              // Text for completion status: e.g. "100% Completed", "Midway Closed", "50% Completed"
-              const completionLabel = isMidwayItem ? "Midway Closed" : `${item.completionPct}% Completed`;
+              // Text for completion status: e.g. "100% Completed", "Midway Closed", "Foreclosure"
+              const completionLabel = isMidwayItem
+                ? "Midway Closed"
+                : isForeclosedItem
+                ? "Foreclosure"
+                : `${item.completionPct}% Completed`;
 
               return (
                 <g key={`inst-marker-${item.installmentNumber}`}>
@@ -399,7 +416,7 @@ export default function InstallmentTimeline({
                     r={markerRadius}
                     fill={circleFill}
                     stroke={circleStroke}
-                    strokeWidth={isPaid || isPartial || isOverdue || isMidwayItem ? 3 : 2}
+                    strokeWidth={isPaid || isPartial || isOverdue || isMidwayItem || isForeclosedItem ? 3 : 2}
                     filter="url(#markerShadow)"
                   />
 
@@ -426,6 +443,30 @@ export default function InstallmentTimeline({
                         fontWeight="bold"
                       >
                         CLOSED
+                      </text>
+                    </>
+                  ) : isForeclosedItem ? (
+                    <>
+                      <text
+                        x={item.cx}
+                        y={item.cy - 2}
+                        textAnchor="middle"
+                        fill="#FFFFFF"
+                        fontSize={colsPerRow <= 3 ? "10" : "11"}
+                        fontWeight="800"
+                        fontFamily="inherit"
+                      >
+                        #{item.installmentNumber}
+                      </text>
+                      <text
+                        x={item.cx}
+                        y={item.cy + 10}
+                        textAnchor="middle"
+                        fill="#E9D5FF"
+                        fontSize="7"
+                        fontWeight="bold"
+                      >
+                        FORECLOSURE
                       </text>
                     </>
                   ) : isPaid ? (
@@ -501,7 +542,7 @@ export default function InstallmentTimeline({
                     height="18"
                     rx="9"
                     fill={badgeBg}
-                    stroke={isMidwayItem ? "#FED7AA" : isPaid ? "#A7F3D0" : isPartial ? "#FDE68A" : isOverdue ? "#FECDD3" : "#E2E8F0"}
+                    stroke={isMidwayItem ? "#FED7AA" : isForeclosedItem ? "#D8B4FE" : isPaid ? "#A7F3D0" : isPartial ? "#FDE68A" : isOverdue ? "#FECDD3" : "#E2E8F0"}
                     strokeWidth="1"
                   />
                   <text
@@ -520,8 +561,8 @@ export default function InstallmentTimeline({
             })}
 
             {/* 6. Money-Based Progress Indicator (Golden Coin with Rupee Icon along zigzag path) */}
-            {/* Displayed cleanly without any text labels or undefined flags; Suppressed for Midway Closed loans */}
-            {!isMidwayClosed && !loanJourneyFinished && moneyProgress && (
+            {/* Displayed cleanly without any text labels or undefined flags; Suppressed for Midway Closed & Foreclosed loans */}
+            {!isMidwayClosed && !isForeclosed && !loanJourneyFinished && moneyProgress && (
               <g
                 className="select-none"
                 style={{
@@ -571,6 +612,13 @@ export default function InstallmentTimeline({
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold shadow-2xs">
               <CheckCircle2 className="h-4 w-4 text-amber-600" />
               <span>Midway Closed</span>
+            </div>
+          </div>
+        ) : isForeclosed ? (
+          <div className="mt-4 pt-3 border-t border-purple-100 flex items-center justify-end">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-50 border border-purple-300 text-purple-900 text-xs font-bold shadow-2xs">
+              <Lock className="h-4 w-4 text-purple-600" />
+              <span>100% Foreclosure</span>
             </div>
           </div>
         ) : loanJourneyFinished ? (

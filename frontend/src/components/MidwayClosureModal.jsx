@@ -190,8 +190,16 @@ export default function MidwayClosureModal({
     const schedule = computeEffectiveSchedule(baseSchedule, relevantPayments);
 
     // Sum principal repaid so far
-    const totalPrincipalRepaid = schedule.reduce((sum, s) => sum + Number(s.principalPaid || 0), 0);
-    const principalOutstanding = Math.max(0, principalAmount - totalPrincipalRepaid);
+    const totalPrincipalRepaid = schedule.reduce((sum, s) => {
+      if (s.principalPaid !== undefined && s.principalPaid !== null && !isNaN(Number(s.principalPaid))) {
+        return sum + Number(s.principalPaid || 0);
+      }
+      const intDue = Number(s.interest || 0);
+      const amtPaid = Number(s.amountPaid || 0);
+      const intPaid = Math.min(intDue, amtPaid);
+      return sum + Math.max(0, amtPaid - intPaid);
+    }, 0);
+    const principalOutstanding = Math.max(0, Math.round((principalAmount - totalPrincipalRepaid) * 100) / 100);
 
     // Count fully paid installments
     const installmentsPaidCount = schedule.filter(
@@ -268,8 +276,8 @@ export default function MidwayClosureModal({
         setInterestInstalmentsCount(0);
       } else if (interestInstalmentsCount > maxCount) {
         setInterestInstalmentsCount(maxCount);
-      } else if (interestInstalmentsCount < 1) {
-        setInterestInstalmentsCount(1);
+      } else if (interestInstalmentsCount < 0 && interestInstalmentsCount !== "") {
+        setInterestInstalmentsCount(0);
       }
     }
   }, [loanDetails]);

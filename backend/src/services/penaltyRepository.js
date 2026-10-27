@@ -260,9 +260,13 @@ const loadLoans = async (db, { loanId = null, lock = false } = {}) => {
 const resolveAll = (entries, settings, today) => {
   const records = [];
   for (const { loan, insts, rows } of entries) {
+    // A foreclosed loan (its vehicle sold) owes no further penalties: pending
+    // and frozen ones lapse; collected and cancelled ones stay on record.
+    const foreclosed = loan.status === "Foreclosed";
     const numbers = new Set([...insts.keys(), ...rows.keys()]);
     for (const n of [...numbers].sort((a, b) => a - b)) {
       const rec = resolve(loan, insts.get(n), rows.get(n), settings, today);
+      if (foreclosed && rec && !["Collected", "Cancelled"].includes(rec.status)) continue;
       if (rec && (rows.has(n) || rec.calculatedAmount > 0)) records.push(rec);
     }
   }
@@ -295,6 +299,25 @@ export const getPenalties = async ({ loanId = null } = {}) => {
     readTransactions({ query }, loanId),
   ]);
   return { settings, today, records: resolveAll(entries, settings, today), transactions };
+};
+
+// One loan's penalties as they stand on `asOf` (a YYYY-MM-DD business date):
+// the pending total and how many instalments are pending / frozen /
+// cancelled, with the rule for the loan's frequency. Used for the penalty
+// part of a foreclosure cost.
+export const pendingPenaltySummary = async (db, loanId, asOf = businessToday()) => {
+  const [settings, entries] = await Promise.all([readSettings(db), loadLoans(db, { loanId })]);
+  const frequency = entries[0]?.loan.frequency || "Monthly";
+  const records = resolveAll(entries, settings, asOf);
+  const pending = records.filter((r) => r.status === "Pending" && r.calculatedAmount > 0);
+  return {
+    frequency,
+    rule: settings[frequency],
+    pendingAmount: roundMoney(pending.reduce((sum, r) => sum + r.calculatedAmount, 0)),
+    pendingCount: pending.length,
+    frozenCount: records.filter((r) => r.status === "Frozen").length,
+    cancelledCount: records.filter((r) => r.status === "Cancelled").length,
+  };
 };
 
 /* ---------- settings ---------- */

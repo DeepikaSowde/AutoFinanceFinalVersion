@@ -56,8 +56,8 @@ const getLoanId = (data, customerId, index) => {
 const getLoanAmount = (loan, vehicle) => {
   const vehicleAmount =
     loan?.vehicleAmount !== "" &&
-    loan?.vehicleAmount !== null &&
-    loan?.vehicleAmount !== undefined
+      loan?.vehicleAmount !== null &&
+      loan?.vehicleAmount !== undefined
       ? Number(loan.vehicleAmount)
       : Number(vehicle?.amount || 0);
 
@@ -75,9 +75,8 @@ const StatusBadge = ({ status }) => {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-3 py-1 text-xs sm:text-[13px] font-semibold ${
-        styles[status] || "bg-slate-100 text-slate-700 border border-slate-200/60"
-      }`}
+      className={`inline-flex items-center rounded-full px-3 py-1 text-xs sm:text-[13px] font-semibold ${styles[status] || "bg-slate-100 text-slate-700 border border-slate-200/60"
+        }`}
     >
       {status}
     </span>
@@ -97,7 +96,7 @@ const SummaryCard = ({ icon: Icon, title, value }) => {
             {title}
           </p>
 
-          <p 
+          <p
             className="text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-slate-900 whitespace-nowrap leading-tight"
           >
             {value}
@@ -240,13 +239,13 @@ const Customer = () => {
 
   if (selectedCustomerId) {
     return (
-      <CustomerView 
+      <CustomerView
         customerId={selectedCustomerId}
         initialLoanId={selectedLoanId}
         onBack={() => {
           setSelectedCustomerId(null);
           setSelectedLoanId(null);
-        }} 
+        }}
       />
     );
   }
@@ -382,11 +381,10 @@ const Customer = () => {
                         setStatusOpen(false);
                         setCurrentPage(1);
                       }}
-                      className={`w-full rounded-md px-3 py-2 text-left text-sm sm:text-base transition-colors cursor-pointer ${
-                        status === option
+                      className={`w-full rounded-md px-3 py-2 text-left text-sm sm:text-base transition-colors cursor-pointer ${status === option
                           ? "bg-emerald-50 text-[#006052] font-semibold"
                           : "text-slate-700 hover:bg-slate-50"
-                      }`}
+                        }`}
                     >
                       {option}
                     </button>
@@ -562,11 +560,10 @@ const Customer = () => {
                     key={page}
                     type="button"
                     onClick={() => handlePageChange(page)}
-                    className={`flex h-9 sm:h-10 min-w-[36px] sm:min-w-[40px] px-2.5 items-center justify-center rounded-lg text-xs sm:text-sm font-bold transition-colors cursor-pointer ${
-                      validCurrentPage === page
+                    className={`flex h-9 sm:h-10 min-w-[36px] sm:min-w-[40px] px-2.5 items-center justify-center rounded-lg text-xs sm:text-sm font-bold transition-colors cursor-pointer ${validCurrentPage === page
                         ? "bg-[#006052] border border-[#006052] text-white shadow-2xs"
                         : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300"
-                    }`}
+                      }`}
                     aria-label={`Page ${page}`}
                     aria-current={validCurrentPage === page ? "page" : undefined}
                   >

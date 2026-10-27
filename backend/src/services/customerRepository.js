@@ -52,6 +52,8 @@ export const mapVehicle = (row) => {
     manufacturingYear: row.manufacturing_year || "",
     fuelType: row.fuel_type || "",
     vehicleValue: row.vehicle_value || 0,
+    // New / Second-hand / Third-hand.
+    ownershipType: row.ownership_type || "",
     photo: row.photo ?? {},
     status: row.status,
     seizure: row.seizure ?? null,
@@ -302,8 +304,8 @@ const insertVehicle = async (client, customerPk, vehicle = {}) => {
   const result = await client.query(
     `INSERT INTO vehicles
       (id, customer_pk, vehicle_type, brand, model, variant, colour, manufacturing_year,
-       fuel_type, vehicle_value, photo, status, tenant_id)
-     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE', $11)
+       fuel_type, vehicle_value, photo, status, tenant_id, ownership_type)
+     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE', $11, $12)
      RETURNING pk`,
     [
       customerPk,
@@ -317,6 +319,7 @@ const insertVehicle = async (client, customerPk, vehicle = {}) => {
       Number(vehicle.vehicleValue) || 0,
       JSON.stringify(vehicle.photo || {}),
       currentTenantId(),
+      vehicle.ownershipType || "",
     ]
   );
 
@@ -577,7 +580,8 @@ export const updateCustomer = async (customerId, payload = {}) => {
       await client.query(
         `UPDATE vehicles SET
           vehicle_type = $2, brand = $3, model = $4, variant = $5, colour = $6,
-          manufacturing_year = $7, fuel_type = $8, vehicle_value = $9, photo = $10, updated_at = now()
+          manufacturing_year = $7, fuel_type = $8, vehicle_value = $9, photo = $10,
+          ownership_type = $11, updated_at = now()
          WHERE pk = $1`,
         [
           vehicleRow.pk,
@@ -590,6 +594,7 @@ export const updateCustomer = async (customerId, payload = {}) => {
           merged.fuelType || "",
           Number(merged.vehicleValue) || 0,
           JSON.stringify(merged.photo || {}),
+          merged.ownershipType || "",
         ]
       );
     }

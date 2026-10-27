@@ -25,6 +25,9 @@ const toIncome = (income) => ({
   penaltyType: income.penaltyType || '',
   gracePeriod: income.gracePeriod ?? '',
   transactionRef: income.reference || '',
+  // Set on a foreclosure shortfall recovered from the customer.
+  isForeclosureRecovery: Boolean(income.isForeclosureRecovery),
+  vehicleRegNo: income.vehicleRegNo || '',
 })
 
 const toExpense = (expense) => ({
@@ -34,6 +37,19 @@ const toExpense = (expense) => ({
   date: expense.expenseDate,
   mode: expense.paymentMode,
   remarks: expense.remarks,
+  description: expense.description || '',
+  createdAt: expense.createdAt,
+  // Set on a Vehicle Expense: the vehicle (and its loan) it was spent on.
+  vehicleId: expense.vehicleId || '',
+  vehicleRegNo: expense.vehicleRegNo || '',
+  regNo: expense.vehicleRegNo || '',
+  vehicleMakeModel: expense.vehicleMakeModel || '',
+  loanId: expense.loanId || '',
+  customerId: expense.customerId || '',
+  customerName: expense.customerName || '',
+  isVehicleExpense: Boolean(expense.vehicleId),
+  // Set on a foreclosure customer payout (EXP-PAYOUT-<loan id>).
+  isForeclosurePayout: Boolean(expense.isForeclosurePayout),
 })
 
 export const loadIncomes = async () => {
@@ -44,14 +60,16 @@ export const loadExpenses = async () => {
   return (await apiGet('/expenses')).map(toExpense)
 }
 
-// A sold repossessed vehicle brings its net proceeds (price less sale costs) back in.
+// A sold repossessed vehicle brings its net proceeds back in: the price less
+// the sale's own costs. Vehicle expenses already booked while it was held are
+// in the expense list, so only the part of the sale costs above them counts here.
 export const loadVehicleSales = async () =>
   (await apiGet('/vehicles?status=SOLD')).map((vehicle) => ({
     id: `SALE-${vehicle.id}`,
     date: vehicle.sale?.soldAt || vehicle.sale?.updatedAt,
     amount: Number(vehicle.sale?.netSaleProceeds || 0),
     salePrice: Number(vehicle.sale?.salePrice || 0),
-    saleExpenses: Number(vehicle.sale?.saleExpenses || 0),
+    saleExpenses: Number(vehicle.sale?.additionalSaleExpenses ?? vehicle.sale?.saleExpenses ?? 0),
     regNo: vehicle.registrationNumber,
     customerName: vehicle.customerName,
     loanId: vehicle.loanId,
@@ -80,7 +98,7 @@ export const addIncome = ({ type, amount, date, mode, remarks }) =>
     status: 'Received',
   })
 
-export const addExpense = ({ category, amount, date, mode, remarks }) =>
+export const addExpense = ({ category, amount, date, mode, remarks, vehicleLink = null }) =>
   apiPost('/expenses', {
     category,
     amount,
@@ -88,4 +106,11 @@ export const addExpense = ({ category, amount, date, mode, remarks }) =>
     paymentMode: mode,
     remarks,
     status: 'Paid',
+    ...(vehicleLink || {}),
   })
+
+// The Vehicle Expense rows booked against one vehicle, newest first.
+export const loadVehicleExpenses = async (vehicleId) =>
+  (await loadExpenses())
+    .filter((expense) => expense.category === 'Vehicle Expense' && vehicleId && expense.vehicleId === vehicleId)
+    .sort((a, b) => String(b.createdAt || b.date).localeCompare(String(a.createdAt || a.date)))

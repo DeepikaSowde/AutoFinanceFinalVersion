@@ -1,12 +1,19 @@
 // src/services/vehicleRepository.js
 //
-// Vehicle lifecycle: ACTIVE -> SEIZED -> (RELEASED | PENDING_SALE -> SOLD).
+// Vehicle lifecycle: ACTIVE -> SEIZED -> (RELEASED | PENDING_SALE -> SOLD),
+// then the settlement with the customer once sold (foreclosureRepository).
 // The transition guards mirror the rules the frontend used to enforce,
 // now applied server-side where they cannot be bypassed.
 
 import { query, withTransaction } from "../db/connection.js";
 import { currentTenantId } from "../db/tenantContext.js";
 import { buildCustomerRecord, buildLoan, mapVehicle } from "./customerRepository.js";
+import {
+  applySettlement,
+  computeForeclosure,
+  initialSettlement,
+  recordedVehicleExpenses,
+} from "./foreclosureRepository.js";
 
 export const VEHICLE_STATUS = {
   ACTIVE: "ACTIVE",
@@ -272,30 +279,88 @@ export const cancelVehicleSale = async (vehicleId, reason = "", performedBy) => 
   });
 };
 
-/*
- * Completing a sale also forecloses the linked loan. Recovery figures are
- * computed from the loan's real outstanding, not a client-supplied one.
- */
-export const completeVehicleSale = async (vehicleId, details = {}, performedBy) => {
-  const now = nowIso();
+const SELLABLE = [VEHICLE_STATUS.PENDING_SALE, VEHICLE_STATUS.SEIZED];
+
+// The foreclosure cost and profit / loss of selling the vehicle on the
+// figures given (salePrice, saleDate, vehicleExpenses), without saving
+// anything — the Mark as Sold form shows it as the figures are typed.
+export const previewForeclosure = async (vehicleId, details = {}) => {
   const vehicleRow = await requireVehicle(vehicleId);
   const loanRow = await getLoanRowForVehicle(vehicleRow.pk);
   const loan = loanRow ? await buildLoan(loanRow) : null;
 
+  return computeForeclosure({ query }, {
+    vehicleRow,
+    loan,
+    salePrice: details.salePrice,
+    saleDate: details.saleDate,
+    vehicleExpenses: details.vehicleExpenses,
+  });
+};
+
+/*
+ * Completing a sale also forecloses the linked loan. The foreclosure cost is
+ * worked out here from the loan's real outstanding and the Foreclosure
+ * settings, not taken from the client, and saved with the sale; the
+ * settlement with the customer starts Pending (or Settled at break-even).
+ *
+ * saleExpenses is the vehicle's total expenses for the foreclosure cost.
+ * Vehicle Expense rows already booked against it are in the expense list, so
+ * the sale itself only books what is above them (additionalSaleExpenses), and
+ * the cash it brings in is the price less that.
+ */
+export const completeVehicleSale = async (vehicleId, details = {}, performedBy) => {
+  const now = nowIso();
+  const vehicleRow = await requireVehicle(vehicleId);
+
+  if (!SELLABLE.includes(vehicleRow.status)) {
+    throw new TransitionError("Only a seized vehicle (or one pending sale) can be marked as sold.");
+  }
+
+  const loanRow = await getLoanRowForVehicle(vehicleRow.pk);
+  const loan = loanRow ? await buildLoan(loanRow) : null;
+
   const salePrice = roundMoney(details.salePrice || 0);
-  const saleExpenses = roundMoney(details.saleExpenses || 0);
+  if (!(salePrice > 0)) {
+    throw new TransitionError("A sale amount greater than zero is required.", 400);
+  }
+  const saleDate = String(details.soldAt || now).slice(0, 10);
+  const recorded = await recordedVehicleExpenses({ query }, vehicleRow.id);
+  const saleExpenses =
+    details.saleExpenses === undefined || details.saleExpenses === null || details.saleExpenses === ""
+      ? recorded
+      : roundMoney(Math.max(0, Number(details.saleExpenses) || 0));
+  const additionalSaleExpenses = roundMoney(Math.max(0, saleExpenses - recorded));
   const outstandingAmount = roundMoney(loan?.outstandingAmount ?? 0);
-  const netSaleProceeds = roundMoney(Math.max(salePrice - saleExpenses, 0));
-  const deficiency = roundMoney(Math.max(outstandingAmount - netSaleProceeds, 0));
-  const surplus = roundMoney(Math.max(netSaleProceeds - outstandingAmount, 0));
+  const netSaleProceeds = roundMoney(Math.max(salePrice - additionalSaleExpenses, 0));
+
+  const finalizedCalculation = await computeForeclosure({ query }, {
+    vehicleRow,
+    loan,
+    salePrice,
+    saleDate,
+    vehicleExpenses: saleExpenses,
+  });
+  const deficiency = finalizedCalculation.shortfall;
+  const surplus = Math.max(0, finalizedCalculation.profitLoss);
 
   return transition({
     vehicleId,
     // The Vehicles screen sells straight from Seized; Pending Sale is optional.
-    allowedFrom: [VEHICLE_STATUS.PENDING_SALE, VEHICLE_STATUS.SEIZED],
+    allowedFrom: SELLABLE,
     toStatus: VEHICLE_STATUS.SOLD,
     eventType: "SALE",
-    details: { ...details, salePrice, saleExpenses, netSaleProceeds, deficiency, surplus },
+    details: {
+      ...details,
+      salePrice,
+      saleExpenses,
+      netSaleProceeds,
+      deficiency,
+      surplus,
+      totalForeclosureCost: finalizedCalculation.totalForeclosureCost,
+      profitLoss: finalizedCalculation.profitLoss,
+      isProfit: finalizedCalculation.isProfit,
+    },
     performedBy,
     detailColumn: "sale",
     detailValue: {
@@ -304,10 +369,14 @@ export const completeVehicleSale = async (vehicleId, details = {}, performedBy) 
       saleStatus: "SOLD",
       salePrice,
       saleExpenses,
+      recordedVehicleExpenses: recorded,
+      additionalSaleExpenses,
       outstandingAmount,
       netSaleProceeds,
       deficiency,
       surplus,
+      finalizedCalculation,
+      settlement: initialSettlement(finalizedCalculation, now),
       soldAt: details.soldAt || now,
       soldBy: performedBy || details.soldBy || "",
       updatedAt: now,
@@ -327,6 +396,59 @@ export const completeVehicleSale = async (vehicleId, details = {}, performedBy) 
     },
     errorMessage: "Only a seized vehicle (or one pending sale) can be marked as sold.",
   });
+};
+
+/*
+ * Records the settlement with the customer after a sale (collect or waive a
+ * shortfall, pay out or retain a profit), books the money that moves, and
+ * keeps the decision in the vehicle's history. The vehicle row is locked so
+ * two decisions cannot race.
+ */
+export const settleVehicleSale = async (vehicleId, body = {}, performedBy) => {
+  await requireVehicle(vehicleId);
+
+  await withTransaction(async (client) => {
+    const locked = await client.query("SELECT * FROM vehicles WHERE id = $1 AND tenant_id = $2 FOR UPDATE", [
+      vehicleId,
+      currentTenantId(),
+    ]);
+    const vehicleRow = locked.rows[0];
+
+    if (vehicleRow.status !== VEHICLE_STATUS.SOLD) {
+      throw new TransitionError("Only a sold vehicle has a settlement to record.");
+    }
+
+    const [loanResult, customerResult, rcResult] = await Promise.all([
+      client.query("SELECT id FROM loans WHERE vehicle_pk = $1 ORDER BY is_primary DESC, pk ASC LIMIT 1", [vehicleRow.pk]),
+      client.query("SELECT personal FROM customers WHERE pk = $1", [vehicleRow.customer_pk]),
+      client.query("SELECT registration_number FROM rc_details WHERE vehicle_pk = $1", [vehicleRow.pk]),
+    ]);
+
+    const { sale, event } = await applySettlement(client, {
+      vehicleRow,
+      loanId: loanResult.rows[0]?.id || "",
+      regNo: rcResult.rows[0]?.registration_number || "",
+      customerName: customerResult.rows[0]?.personal?.name || "",
+      body,
+      performedBy,
+    });
+
+    await client.query("UPDATE vehicles SET sale = $2, updated_at = now() WHERE pk = $1", [
+      vehicleRow.pk,
+      JSON.stringify(sale),
+    ]);
+
+    await recordEvent(client, {
+      vehiclePk: vehicleRow.pk,
+      type: "SETTLEMENT",
+      fromStatus: VEHICLE_STATUS.SOLD,
+      toStatus: VEHICLE_STATUS.SOLD,
+      details: event,
+      performedBy,
+    });
+  });
+
+  return getVehicleById(vehicleId);
 };
 
 /*

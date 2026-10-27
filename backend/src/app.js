@@ -14,6 +14,7 @@ import { draftsRouter } from "./routes/drafts.js";
 import { chitsRouter } from "./routes/chits.js";
 import { penaltiesRouter } from "./routes/penalties.js";
 import { guarantorReferralsRouter } from "./routes/guarantorReferrals.js";
+import { settingsRouter } from "./routes/settings.js";
 import { superadminRouter } from "./superadmin/routes.js";
 import {
   categoriesRouter,
@@ -70,6 +71,7 @@ export const createApp = () => {
   app.use("/api/reminders", requireAuth, loadTenant, remindersRouter);
   app.use("/api/categories", requireAuth, loadTenant, categoriesRouter);
   app.use("/api/reloan", requireAuth, loadTenant, reloanRouter);
+  app.use("/api/settings", requireAuth, loadTenant, settingsRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: "Not found." });

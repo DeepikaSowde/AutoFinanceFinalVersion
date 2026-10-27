@@ -20,7 +20,7 @@ const STATUS_STYLES = {
   Inactive: 'bg-slate-500 text-white',
 };
 
-const VehicleCard = ({ vehicleRecord, onViewDetails }) => {
+const VehicleCard = ({ vehicleRecord, onViewDetails, onViewExpenseHistory }) => {
   const vehicle = vehicleRecord.vehicle || {};
   const customer = vehicleRecord.customer || {};
 
@@ -90,17 +90,28 @@ const VehicleCard = ({ vehicleRecord, onViewDetails }) => {
           </div>
         </div>
 
-        {/* Full-width View Details button with green outline matching screenshot */}
-        <button
-          type="button"
-          onClick={() => onViewDetails(vehicleRecord)}
-          className="w-full py-2 px-3 rounded-lg border border-[#006052] text-[#006052] hover:bg-[#006052] hover:text-white text-xs font-bold transition-all duration-150 text-center shadow-2xs active:scale-[0.99] cursor-pointer"
-        >
-          View Details
-        </button>
+        {/* Action Buttons: Expense History & View Details */}
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => onViewExpenseHistory && onViewExpenseHistory(vehicleRecord)}
+            className="flex-1 py-2 px-2 rounded-lg border border-emerald-600/30 bg-emerald-50/50 hover:bg-emerald-100/70 text-[#006052] text-xs font-bold transition-all duration-150 text-center shadow-2xs active:scale-[0.99] cursor-pointer truncate"
+            title="View Vehicle Expense History"
+          >
+            Expense History
+          </button>
+          <button
+            type="button"
+            onClick={() => onViewDetails(vehicleRecord)}
+            className="flex-1 py-2 px-2 rounded-lg border border-[#006052] text-[#006052] hover:bg-[#006052] hover:text-white text-xs font-bold transition-all duration-150 text-center shadow-2xs active:scale-[0.99] cursor-pointer truncate"
+          >
+            View Details
+          </button>
+        </div>
       </div>
     </div>
   );
 };
+
 
 export default VehicleCard;

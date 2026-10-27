@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { Lock, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { formatDate } from '../utils/dateUtils';
 import {
   getPenaltySettings,
@@ -47,7 +48,7 @@ export const generateSchedule = (loanDetails) => {
 
   const schedule = [];
   let balance = P;
-  
+
   let baseDate;
   if (firstDueDateStr) {
     if (typeof firstDueDateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(firstDueDateStr)) {
@@ -90,7 +91,7 @@ export const generateSchedule = (loanDetails) => {
         emi = P / numberOfPayments;
       } else {
         emi = (P * periodicRate * Math.pow(1 + periodicRate, numberOfPayments)) /
-              (Math.pow(1 + periodicRate, numberOfPayments) - 1);
+          (Math.pow(1 + periodicRate, numberOfPayments) - 1);
       }
 
       for (let i = 1; i <= numberOfPayments; i++) {
@@ -128,7 +129,7 @@ export const generateSchedule = (loanDetails) => {
         if (i === numberOfPayments) {
           principalForPeriod = balance;
         }
-        
+
         let periodEmi = principalForPeriod + interestForPeriod;
         const remainingPrincipal = i === numberOfPayments ? 0 : Math.max(0, balance - principalForPeriod);
 
@@ -193,7 +194,7 @@ export const generateSchedule = (loanDetails) => {
   // The logic supports taking payments into account if we pass them in the future.
   // We'll calculate balances and statuses here.
   const today = new Date();
-  today.setHours(0,0,0,0);
+  today.setHours(0, 0, 0, 0);
 
   schedule.forEach(item => {
     if (item.amountPaid >= item.emi - 0.01) {
@@ -215,8 +216,10 @@ export const generateSchedule = (loanDetails) => {
   return schedule;
 };
 
-export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
+export const computeEffectiveSchedule = (baseOrRawSchedule, payments = [], options = {}) => {
   if (!baseOrRawSchedule || baseOrRawSchedule.length === 0) return [];
+
+  const opts = (typeof options === "object" && options !== null) ? options : {};
 
   // Rows loaded from the server already include every posted payment (the
   // server splits each payment across installments when it is recorded).
@@ -225,6 +228,10 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
   if (baseOrRawSchedule.some((item) => item.fromServer)) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    // A foreclosed loan owes nothing more: its unpaid rows end as Foreclosed.
+    const isForeclosedLoan = Boolean(
+      opts.isForeclosed || baseOrRawSchedule.some((s) => s.isForeclosed || s.status === "Foreclosed")
+    );
 
     return baseOrRawSchedule.map((item) => {
       const amountPaid = Math.round(Number(item.amountPaid || 0) * 100) / 100;
@@ -239,15 +246,23 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
       else if (amountPaid > 0.01) status = "Partial";
       else if (!isNaN(dueDate.getTime()) && dueDate.getTime() < today.getTime()) status = "Overdue";
 
+      const paymentsList = (item.allocations || []).map((part) => ({
+        ...(payments || []).find((p) => p.id === part.id),
+        ...part,
+      }));
+
+      if (isForeclosedLoan) {
+        return status === "Paid"
+          ? { ...item, amountPaid, balance: 0, status, isForeclosed: true, wasCustomerPaid: true, paymentsList }
+          : { ...item, amountPaid, principalOutstanding: 0, balance: 0, status: "Foreclosed", isForeclosed: true, wasCustomerPaid: false, paymentsList };
+      }
+
       return {
         ...item,
         amountPaid,
         balance: balance <= 0.01 ? 0 : balance,
         status,
-        paymentsList: (item.allocations || []).map((part) => ({
-          ...(payments || []).find((p) => p.id === part.id),
-          ...part,
-        })),
+        paymentsList,
       };
     });
   }
@@ -265,6 +280,11 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
   // If there are NO eligible payments recorded in payment history,
   // preserve the existing rawSchedule amounts and compute statuses
   if (eligiblePayments.length === 0) {
+    const isForeclosedLoan = Boolean(
+      opts.isForeclosed ||
+      baseOrRawSchedule.some((s) => s.isForeclosed || s.status === "Foreclosed")
+    );
+
     const firstMidwayRaw = baseOrRawSchedule.find(
       (s) => Boolean(s.isMidwayClosed || s.closureAdjusted || s.status === "Midway Closed")
     );
@@ -310,6 +330,27 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
           status = "Due";
         }
       }
+
+      if (isForeclosedLoan) {
+        const isPaid = status === "Paid" || (balance <= 0.01 && emi > 0);
+        return {
+          ...item,
+          principal,
+          interest,
+          emi,
+          amountPaid,
+          principalPaid: Number(item.principalPaid || 0),
+          interestPaid: Number(item.interestPaid || 0),
+          principalOutstanding: 0,
+          balance: 0,
+          status: isPaid ? "Paid" : "Foreclosed",
+          isForeclosed: true,
+          isMidwayClosed: false,
+          closureAdjusted: true,
+          paymentsList: item.paymentsList || [],
+        };
+      }
+
       return {
         ...item,
         principal,
@@ -327,22 +368,29 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
     });
   }
 
+  const hasMidwayPayment = eligiblePayments.some(
+    (p) => Boolean(p.isMidwayClosure) ||
+      String(p.remarks || "").toLowerCase().includes("midway closure") ||
+      (Array.isArray(p.allocations) && p.allocations.some((a) => a.isMidwayClosed || a.statusAfter === "Midway Closed"))
+  );
+
   const schedule = baseOrRawSchedule.map((item) => {
     const emi = Number(item.emi || 0);
     const principal = Number(item.principal ?? (item.emi ? item.emi - (Number(item.interest || 0)) : 0));
     const interest = Number(item.interest ?? item.allocatedInterest ?? item.interestAmount ?? (emi > principal ? emi - principal : 0));
     const isMidway = Boolean(item.isMidwayClosed || item.status === "Midway Closed" || item.closureAdjusted);
+    const shouldPrepopulateMidway = isMidway && !hasMidwayPayment;
     return {
       ...item,
       principal,
       interest,
       emi,
       principalOutstanding: item.principalOutstanding !== undefined ? Number(item.principalOutstanding) : undefined,
-      amountPaid: isMidway ? (Number(item.amountPaid ?? emi)) : 0,
-      principalPaid: isMidway ? (Number(item.principalPaid ?? principal)) : 0,
-      interestPaid: isMidway ? (Number(item.interestPaid ?? 0)) : 0,
-      balance: isMidway ? 0 : emi,
-      status: isMidway ? "Paid" : (item.status || "Due"),
+      amountPaid: shouldPrepopulateMidway ? (Number(item.amountPaid ?? emi)) : 0,
+      principalPaid: shouldPrepopulateMidway ? (Number(item.principalPaid ?? principal)) : 0,
+      interestPaid: shouldPrepopulateMidway ? (Number(item.interestPaid ?? 0)) : 0,
+      balance: shouldPrepopulateMidway ? 0 : emi,
+      status: shouldPrepopulateMidway ? "Paid" : (item.status || "Due"),
       isMidwayClosed: isMidway,
       closureAdjusted: isMidway,
       paymentsList: [],
@@ -500,10 +548,31 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
     }
   }
 
+  // Check if this loan is foreclosed
+  const isForeclosedLoan = Boolean(
+    opts.isForeclosed ||
+    baseOrRawSchedule.some((s) => s.isForeclosed || s.status === "Foreclosed")
+  );
+
   // Calculate balances and final statuses
   return schedule.map((item) => {
     const roundedPaid = Math.round(item.amountPaid * 100) / 100;
     const balance = Math.max(0, Math.round((item.emi - roundedPaid) * 100) / 100);
+
+    // If loan is foreclosed:
+    // All installments have status "Paid" with 0 balance, while recording wasCustomerPaid for dynamic styling
+    if (isForeclosedLoan) {
+      const wasCustomerPaid = (balance <= 0.01 && item.emi > 0) || item.status === "Paid" || item.status === "Collected";
+      return {
+        ...item,
+        amountPaid: roundedPaid > 0 ? roundedPaid : item.emi,
+        principalOutstanding: 0,
+        balance: 0,
+        status: "Paid",
+        isForeclosed: true,
+        wasCustomerPaid,
+      };
+    }
 
     const isMidwayRow = Boolean(
       item.isMidwayClosed ||
@@ -517,7 +586,7 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
     if (isMidwayRow) {
       return {
         ...item,
-        amountPaid: roundedPaid > 0 ? roundedPaid : item.emi,
+        amountPaid: roundedPaid,
         principalOutstanding: 0,
         balance: 0,
         status: "Paid",
@@ -552,7 +621,59 @@ export const computeEffectiveSchedule = (baseOrRawSchedule, payments = []) => {
   });
 };
 
+export const ForeclosureScheduleLock = ({ className = "" }) => {
+  return (
+    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-50/90 via-purple-100/70 to-purple-50/90 border border-purple-200/90 p-3.5 sm:p-4 shadow-2xs transition-all ${className}`}>
+      {/* Linked-chain SVG decorative motif */}
+      <div className="absolute inset-0 pointer-events-none opacity-25 overflow-hidden flex items-center justify-between px-3 select-none">
+        <svg className="w-full h-7 text-purple-700 motion-safe:animate-[pulse_3s_ease-in-out_infinite]" preserveAspectRatio="none" viewBox="0 0 500 24" fill="none">
+          <path d="M0,12 C25,12 30,5 55,5 C80,5 85,19 110,19 C135,19 140,12 165,12 C190,12 195,5 220,5 C245,5 250,19 275,19 C300,19 305,12 330,12 C355,12 360,5 385,5 C410,5 415,19 440,19 C465,19 470,12 500,12" stroke="currentColor" strokeWidth="2" strokeDasharray="6 4" />
+        </svg>
+      </div>
+
+      <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+        <div className="flex items-center gap-3">
+          <div className="relative flex items-center justify-center shrink-0">
+            {/* Subtle rotating chained orbit ring */}
+            <div className="absolute -inset-1 rounded-full border border-dashed border-purple-400/80 motion-safe:animate-[spin_16s_linear_infinite]" />
+            <div className="h-9 w-9 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-xs">
+              <Lock className="h-4.5 w-4.5" strokeWidth={2.2} />
+            </div>
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+              <span className="font-bold text-xs sm:text-sm text-purple-950 tracking-tight">
+                Repayment Schedule Foreclosed &amp; Locked
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-purple-200/90 text-purple-900 border border-purple-300">
+                Loan Closed
+              </span>
+            </div>
+            <p className="text-[11px] sm:text-xs text-purple-800/90 mt-0.5 font-medium leading-snug">
+              All outstanding installments have been closed through vehicle foreclosure.
+            </p>
+          </div>
+        </div>
+
+        <div className="shrink-0 flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/90 border border-purple-200 text-purple-900 text-xs font-bold shadow-2xs">
+            <CheckCircle2 className="h-3.5 w-3.5 text-purple-600" />
+            Status: Foreclosed
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const StatusBadge = ({ status, isMidwaySettled = false, penaltyAmount = null }) => {
+  if (status === 'Foreclosed') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-900 border border-purple-300 ring-1 ring-purple-500/20 shadow-2xs">
+        Foreclosed
+      </span>
+    );
+  }
   if (status === 'Paid') {
     if (isMidwaySettled) {
       return (
@@ -596,7 +717,7 @@ export const getRepaymentColumnLabel = (frequency) => {
   return 'EMI';
 };
 
-export default function RepaymentScheduleTable({ loanDetails = {}, schedule: propSchedule }) {
+export default function RepaymentScheduleTable({ loanDetails = {}, schedule: propSchedule, isForeclosed: propIsForeclosed }) {
   // Penalty rules and records from the server; re-renders when they reload.
   usePenaltyData();
   const penaltySettings = getPenaltySettings();
@@ -614,8 +735,32 @@ export default function RepaymentScheduleTable({ loanDetails = {}, schedule: pro
     return generatedSchedule;
   }, [propSchedule, loanDetails, generatedSchedule]);
 
+  const isForeclosed = Boolean(
+    propIsForeclosed ||
+    loanDetails?.isForeclosed ||
+    loanDetails?.status === 'Foreclosed' ||
+    loanDetails?.loan?.status === 'Foreclosed' ||
+    schedule.some((s) => s.isForeclosed || s.status === 'Foreclosed')
+  );
+
   const frequency = loanDetails?.paymentFrequency || (schedule[0]?.paymentFrequency) || 'Monthly';
   const repaymentColumnHeader = getRepaymentColumnLabel(frequency);
+
+  // Dynamic determination of foreclosure effective start installment
+  const foreclosureEffectiveStartNum = useMemo(() => {
+    if (!isForeclosed) return null;
+    const explicitStart = Number(
+      loanDetails?.foreclosure?.effectiveInstallment ||
+      loanDetails?.foreclosure?.fromInstallment ||
+      loanDetails?.foreclosure?.startInstallment ||
+      loanDetails?.foreclosure?.installmentNumber ||
+      loanDetails?.foreclosureStartInstallment ||
+      0
+    );
+    if (explicitStart > 0) return explicitStart;
+    const firstUnpaid = schedule.find((s) => !s.wasCustomerPaid);
+    return firstUnpaid ? Number(firstUnpaid.installmentNumber) : null;
+  }, [isForeclosed, loanDetails, schedule]);
 
   if (!propSchedule && (!loanDetails?.loanAmount || !loanDetails?.interestRate || !loanDetails?.tenure)) {
     return (
@@ -638,63 +783,78 @@ export default function RepaymentScheduleTable({ loanDetails = {}, schedule: pro
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200">
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50">
-          <tr>
-            <th className="px-4 py-3 text-left font-semibold text-slate-700">Instalment Number</th>
-            <th className="px-4 py-3 text-left font-semibold text-slate-700">Due Date</th>
-            <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal</th>
-            <th className="px-4 py-3 text-right font-semibold text-slate-700">Interest</th>
-            <th className="px-4 py-3 text-right font-semibold text-slate-700">Total EMI</th>
-            <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal Outstanding</th>
-            <th className="px-4 py-3 text-right font-semibold text-slate-700">Balance Amount</th>
-            <th className="px-4 py-3 text-center font-semibold text-slate-700">Status</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-200 bg-white">
-          {schedule.map((row) => {
-            const isMidwaySettled = Boolean(row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed");
-            const isOverdue = !isMidwaySettled && row.status === 'Overdue';
-            const penaltyAmount = isOverdue
-              ? getInstallmentPenaltySupportingAmount(row, {
+    <div className="space-y-3.5">
+      {isForeclosed && <ForeclosureScheduleLock />}
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-4 py-3 text-left font-semibold text-slate-700">Instalment Number</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-700">Due Date</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-700">Interest</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-700">{repaymentColumnHeader}</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-700">Principal Outstanding</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-700">Balance Amount</th>
+              <th className="px-4 py-3 text-center font-semibold text-slate-700">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200 bg-white">
+            {schedule.map((row) => {
+              const isMidwaySettled = !isForeclosed && Boolean(row.isMidwayClosed || row.closureAdjusted || row.status === "Midway Closed");
+              const isForeclosedRow = isForeclosed && (
+                foreclosureEffectiveStartNum !== null &&
+                Number(row.installmentNumber) >= foreclosureEffectiveStartNum
+              );
+              const isOverdue = !isMidwaySettled && !isForeclosed && row.status === 'Overdue';
+              const penaltyAmount = isOverdue
+                ? getInstallmentPenaltySupportingAmount(row, {
                   loanId: loanDetails?.loanId || row.loanId,
                   frequency,
                   settings: penaltySettings,
                   penaltyRecords,
                 })
-              : null;
+                : null;
 
-            return (
-              <tr
-                key={row.installmentNumber}
-                className={`transition-colors ${
-                  isMidwaySettled
-                    ? "bg-amber-50/70 hover:bg-amber-100/60"
-                    : "hover:bg-slate-50"
-                }`}
-              >
-                <td className={`whitespace-nowrap px-4 py-3 font-medium ${isMidwaySettled ? "text-amber-950 font-semibold" : "text-slate-600"}`}>
-                  {row.installmentNumber}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">{formatDate(row.dueDate)}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.principal)}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.interest)}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-emerald-800">{formatINR(row.emi)}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-700">{formatINR(row.principalOutstanding)}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{formatINR(row.balance)}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-center">
-                  <StatusBadge
-                    status={row.status}
-                    isMidwaySettled={isMidwaySettled}
-                    penaltyAmount={penaltyAmount}
-                  />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+              const displayBalance = isForeclosed ? 0 : row.balance;
+              const displayPrinOutstanding = isForeclosed ? 0 : row.principalOutstanding;
+
+              return (
+                <tr
+                  key={row.installmentNumber}
+                  className={`transition-colors ${
+                    isMidwaySettled
+                      ? "bg-amber-50/70 hover:bg-amber-100/60"
+                      : isForeclosedRow
+                        ? "bg-[#F3E8FF] hover:bg-[#EBD5FF] border-b border-purple-200/50"
+                        : "bg-white hover:bg-slate-50"
+                  }`}
+                  style={isForeclosedRow ? { backgroundColor: '#F3E8FF' } : undefined}
+                >
+                  <td className={`whitespace-nowrap px-4 py-3 font-medium ${
+                    isMidwaySettled ? "text-amber-950 font-semibold" : "text-slate-600"
+                  }`}>
+                    {row.installmentNumber}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">{formatDate(row.dueDate)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.principal)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right text-slate-600">{formatINR(row.interest)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-emerald-800">{formatINR(row.emi)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-700">{formatINR(displayPrinOutstanding)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{formatINR(displayBalance)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-center">
+                    <StatusBadge
+                      status={row.status}
+                      isMidwaySettled={isMidwaySettled}
+                      penaltyAmount={penaltyAmount}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

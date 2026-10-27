@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { DATA_CHANGED_EVENT } from '../../services/api';
 import { loadCustomerEntries } from '../../services/customerApi';
 import VehicleStatusTabs from '../../components/vehicle/VehicleStatusTabs';
 import VehicleSummaryCards from '../../components/vehicle/VehicleSummaryCards';
 import VehicleSearchAndFilter from '../../components/vehicle/VehicleSearchAndFilter';
 import VehicleCardGrid from '../../components/vehicle/VehicleCardGrid';
+import SoldVehiclesTable from '../../components/vehicle/SoldVehiclesTable';
 import VehicleDetailsView from './VehicleDetailsView';
 import ActiveVehicleModal from '../../components/vehicle/ActiveVehicleModal';
+import VehicleExpenseHistoryModal from '../../components/vehicle/VehicleExpenseHistoryModal';
+import ForeclosureAnalyticsTab from './ForeclosureAnalyticsTab';
 import { getEffectiveVehicleStatus, syncVehiclesWithClosedLoans } from '../../utils/vehicleStatusHelper';
 
 /**
@@ -22,9 +25,15 @@ import { getEffectiveVehicleStatus, syncVehiclesWithClosedLoans } from '../../ut
  */
 const Vehicle = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  // Selected vehicle for details view
+  // Selected vehicle for details view; a loanId / vehicleId / regNo in the URL
+  // opens it once the vehicles have loaded (see the effect further down).
   const [selectedVehicle, setSelectedVehicle] = useState(null);
+
+  // Selected vehicle for expense history modal
+  const [expenseHistoryVehicle, setExpenseHistoryVehicle] = useState(null);
 
   // Tab filter: 'all' | 'seized' | 'sold'
   const [activeTab, setActiveTab] = useState('all');
@@ -143,6 +152,31 @@ const Vehicle = () => {
     });
   }, [allVehicles, activeTab, selectedType, searchQuery]);
 
+  // Auto-open vehicle details when navigated to with loanId, vehicleId, or regNo query parameters
+  useEffect(() => {
+    const loanIdParam = searchParams.get('loanId');
+    const vehicleIdParam = searchParams.get('vehicleId');
+    const regNoParam = searchParams.get('regNo');
+
+    if (!loanIdParam && !vehicleIdParam && !regNoParam) return;
+    if (allVehicles.length === 0) return;
+
+    const match = allVehicles.find((v) => {
+      const vLoanId = (v.loanId || v.loan?.loanId || '').toLowerCase().trim();
+      const vId = (v.vehicleId || v.id || '').toLowerCase().trim();
+      const vReg = (v.vehicle?.regNo || v.regNo || '').toLowerCase().replace(/[\s-]/g, '');
+
+      if (loanIdParam && vLoanId === loanIdParam.toLowerCase().trim()) return true;
+      if (vehicleIdParam && vId === vehicleIdParam.toLowerCase().trim()) return true;
+      if (regNoParam && vReg === regNoParam.toLowerCase().replace(/[\s-]/g, '')) return true;
+      return false;
+    });
+
+    if (match) {
+      setSelectedVehicle(match);
+    }
+  }, [searchParams, allVehicles]);
+
   // Active vehicle popup modal state
   const [activeVehicleForModal, setActiveVehicleForModal] = useState(null);
 
@@ -165,9 +199,30 @@ const Vehicle = () => {
         <div className="w-full max-w-7xl mx-auto">
           <VehicleDetailsView
             vehicleRecord={selectedVehicle}
-            onBack={() => setSelectedVehicle(null)}
+            onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
+            onBack={() => {
+              setSelectedVehicle(null);
+              if (location.state?.from) {
+                navigate(location.state.from, { replace: true });
+                return;
+              }
+              const hasParam = searchParams.get('loanId') || searchParams.get('vehicleId') || searchParams.get('regNo');
+              if (hasParam) {
+                navigate(-1);
+                return;
+              }
+              setSearchParams({}, { replace: true });
+            }}
+            backLabel={location.state?.fromLabel ? `Back to ${location.state.fromLabel}` : 'Back to Vehicle Management'}
           />
         </div>
+
+        {/* Vehicle Expense History Modal */}
+        <VehicleExpenseHistoryModal
+          isOpen={Boolean(expenseHistoryVehicle)}
+          onClose={() => setExpenseHistoryVehicle(null)}
+          vehicleRecord={expenseHistoryVehicle}
+        />
       </div>
     );
   }
@@ -197,33 +252,52 @@ const Vehicle = () => {
           onTabChange={setActiveTab}
         />
 
-        {/* =========================================================
-            3. SEARCH BAR AND VEHICLE-TYPE FILTER
-        ========================================================= */}
-        <VehicleSearchAndFilter
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          selectedType={selectedType}
-          onTypeChange={setSelectedType}
-        />
+        {activeTab === 'foreclosure_analytics' ? (
+          <ForeclosureAnalyticsTab
+            allVehicles={allVehicles}
+            rawRecords={rawRecords}
+            onViewDetails={handleViewDetails}
+          />
+        ) : (
+          <>
+            {/* =========================================================
+                3. SEARCH BAR AND VEHICLE-TYPE FILTER
+            ========================================================= */}
+            <VehicleSearchAndFilter
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              selectedType={selectedType}
+              onTypeChange={setSelectedType}
+            />
 
-        {/* =========================================================
-            4. SUMMARY KPI CARDS (Real data counts)
-        ========================================================= */}
-        <VehicleSummaryCards
-          totalCount={summaryCounts.totalCount}
-          seizedCount={summaryCounts.seizedCount}
-          soldCount={summaryCounts.soldCount}
-        />
+            {/* =========================================================
+                4. SUMMARY KPI CARDS (Real data counts)
+            ========================================================= */}
+            <VehicleSummaryCards
+              totalCount={summaryCounts.totalCount}
+              seizedCount={summaryCounts.seizedCount}
+              soldCount={summaryCounts.soldCount}
+            />
 
-        {/* =========================================================
-            5. VEHICLE CARD GRID
-        ========================================================= */}
-        <VehicleCardGrid
-          vehicles={filteredVehicles}
-          onViewDetails={handleViewDetails}
-          onAddVehicle={() => navigate('/newloan')}
-        />
+            {/* =========================================================
+                5. VEHICLE CARD GRID / SOLD VEHICLES TABLE
+            ========================================================= */}
+            {activeTab === 'sold' ? (
+              <SoldVehiclesTable
+                vehicles={filteredVehicles}
+                onViewDetails={handleViewDetails}
+                onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
+              />
+            ) : (
+              <VehicleCardGrid
+                vehicles={filteredVehicles}
+                onViewDetails={handleViewDetails}
+                onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
+                onAddVehicle={() => navigate('/newloan')}
+              />
+            )}
+          </>
+        )}
 
         {/* =========================================================
             6. ACTIVE VEHICLE DETAILS POPUP MODAL
@@ -232,13 +306,24 @@ const Vehicle = () => {
           isOpen={Boolean(activeVehicleForModal)}
           onClose={() => setActiveVehicleForModal(null)}
           vehicleRecord={activeVehicleForModal}
+          onViewExpenseHistory={(rec) => setExpenseHistoryVehicle(rec)}
           onSeizureSuccess={() => {
             // The list reloads itself after the save (DATA_CHANGED_EVENT).
           }}
+        />
+
+        {/* =========================================================
+            7. VEHICLE EXPENSE HISTORY MODAL
+        ========================================================= */}
+        <VehicleExpenseHistoryModal
+          isOpen={Boolean(expenseHistoryVehicle)}
+          onClose={() => setExpenseHistoryVehicle(null)}
+          vehicleRecord={expenseHistoryVehicle}
         />
       </div>
     </div>
   );
 };
+
 
 export default Vehicle;

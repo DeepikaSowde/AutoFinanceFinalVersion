@@ -282,11 +282,11 @@ export const checkInstallmentPenaltyEligibility = (
 ) => {
   if (!installment) return { isEligible: false, eligibleOverdueDays: 0, penaltyAmount: 0 };
 
-  // If already fully paid under existing collection logic, no penalty
+  // If already fully paid under existing collection logic or foreclosed, no penalty
   const emi = Number(installment.emi || 0);
   const amountPaid = Number(installment.amountPaid || 0);
   const remainingBal = Math.max(0, emi - amountPaid);
-  if (remainingBal <= 0.01 || installment.status === 'Paid' || installment.status === 'Collected') {
+  if (remainingBal <= 0.01 || installment.status === 'Paid' || installment.status === 'Collected' || installment.status === 'Foreclosed') {
     return { isEligible: false, eligibleOverdueDays: 0, penaltyAmount: 0 };
   }
 
@@ -591,7 +591,8 @@ export const getLoanPenaltySummary = (
   customerName,
   schedule = [],
   frequency = 'Monthly',
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  customSettings = null
 ) => {
   if (!loanId) {
     return {
@@ -610,37 +611,52 @@ export const getLoanPenaltySummary = (
   }
 
   const existingRecords = getPenaltyRecords();
-  const settings = getPenaltySettings();
-  const loanRecords = existingRecords.filter((r) => r.loanId === loanId);
+  const settings = customSettings || getPenaltySettings();
+  const targetLoanId = String(loanId || '').trim().toLowerCase();
+  const loanRecords = existingRecords.filter((r) => String(r.loanId || '').trim().toLowerCase() === targetLoanId);
 
-  // Group existing records by installmentNumber
+  // Group existing records by numeric installmentNumber
   const recordsByInstallment = {};
   loanRecords.forEach((r) => {
-    recordsByInstallment[String(r.installmentNumber)] = r;
+    recordsByInstallment[String(Number(r.installmentNumber))] = r;
   });
+
+  // A foreclosed loan owes no further penalties (the server drops its
+  // pending and frozen ones too); collected and cancelled ones stay.
+  const isLoanForeclosed =
+    schedule.length > 0 &&
+    schedule.every((s) => s.status === 'Paid' || s.status === 'Collected' || s.status === 'Foreclosed') &&
+    schedule.some((s) => s.status === 'Foreclosed');
 
   const pendingPenaltyRecords = [];
   const frozenPenaltyRecords = [];
   const collectedPenaltyRecords = [];
   const cancelledPenaltyRecords = [];
 
+  const sortRecord = (r) => {
+    if (r.status === 'Frozen') {
+      if (!isLoanForeclosed) frozenPenaltyRecords.push(r);
+    } else if (r.status === 'Collected') {
+      collectedPenaltyRecords.push(r);
+    } else if (r.status === 'Cancelled') {
+      cancelledPenaltyRecords.push(r);
+    } else if (r.status === 'Pending') {
+      // The server's pending amount is live (as of today).
+      if (!isLoanForeclosed && Number(r.calculatedAmount) > 0) pendingPenaltyRecords.push(r);
+    }
+  };
+
   // Check each installment in schedule
   schedule.forEach((inst) => {
-    const instNumStr = String(inst.installmentNumber);
+    const instNumStr = String(Number(inst.installmentNumber));
     const existing = recordsByInstallment[instNumStr];
 
     if (existing) {
-      if (existing.status === 'Frozen') {
-        frozenPenaltyRecords.push(existing);
-      } else if (existing.status === 'Collected') {
-        collectedPenaltyRecords.push(existing);
-      } else if (existing.status === 'Cancelled') {
-        cancelledPenaltyRecords.push(existing);
-      } else if (existing.status === 'Pending') {
-        pendingPenaltyRecords.push(existing);
-      }
+      sortRecord(existing);
       return;
     }
+
+    if (isLoanForeclosed) return;
 
     // If no existing record, check if eligible under grace-period rules
     const eligibility = checkInstallmentPenaltyEligibility(inst, frequency, settings, referenceDate);
@@ -655,10 +671,16 @@ export const getLoanPenaltySummary = (
         settings,
         referenceDate
       );
-      if (rec && rec.status === 'Pending') {
+      if (rec && rec.status === 'Pending' && Number(rec.calculatedAmount) > 0) {
         pendingPenaltyRecords.push(rec);
       }
     }
+  });
+
+  // Also include the loan's penalty records whose installment was not in the schedule given
+  const visitedInstNumbers = new Set(schedule.map((s) => String(Number(s.installmentNumber))));
+  loanRecords.forEach((r) => {
+    if (!visitedInstNumbers.has(String(Number(r.installmentNumber)))) sortRecord(r);
   });
 
   const totalPendingPenalty = pendingPenaltyRecords.reduce(

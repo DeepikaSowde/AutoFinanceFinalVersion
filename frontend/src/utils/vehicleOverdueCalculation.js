@@ -49,8 +49,11 @@ export const calculateVehicleLoanOverdue = (loanRecord, allPayments = []) => {
   const calculatedPrincipal = Math.max(vehicleAmount - downPayment, 0);
   const principal = Number(loanRecord.loanAmount || calculatedPrincipal || 0);
 
-  // If marked explicitly Closed or principal is 0, no overdue
-  if (loanRecord.status === 'Closed') {
+  const rawStatus = String(loanRecord.status || loan.status || '').trim().toLowerCase();
+  const isMidway = loanRecord.isMidwayClosed === true || rawStatus === 'midway closed';
+
+  // If marked explicitly Closed, Midway Closed, or principal is 0, no overdue
+  if (loanRecord.status === 'Closed' || isMidway || principal <= 0) {
     return {
       isDataMissing: false,
       missingReason: '',

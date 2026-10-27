@@ -33,6 +33,8 @@ const StatusBadge = ({ status }) => {
     Closed: "bg-slate-100 text-slate-600 border-slate-200",
     "Midway Closed": "bg-amber-100 text-amber-800 border-amber-300",
     Overdue: "bg-red-100 text-red-700 border-red-200",
+    Foreclosed: "bg-purple-100 text-purple-800 border-purple-300",
+    "Sold · Foreclosed": "bg-purple-100 text-purple-800 border-purple-300",
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider border ${styles[status] || styles.Closed}`}>
@@ -51,7 +53,7 @@ const PhotoPlaceholder = ({ src, icon: Icon, alt, className = "h-16 w-16 rounded
 
   return (
     <>
-      <div 
+      <div
         onClick={() => setIsPreviewOpen(true)}
         className={`relative flex items-center justify-center bg-slate-100 border border-slate-200 text-slate-400 shrink-0 cursor-pointer overflow-hidden hover:ring-2 hover:ring-emerald-500 hover:ring-offset-2 transition-all ${className}`}
       >
@@ -65,20 +67,20 @@ const PhotoPlaceholder = ({ src, icon: Icon, alt, className = "h-16 w-16 rounded
       {isPreviewOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/80 p-4 sm:p-6 backdrop-blur-sm" onClick={() => setIsPreviewOpen(false)}>
           <div className="relative flex flex-col items-center max-w-4xl max-h-[90vh] w-full" onClick={e => e.stopPropagation()}>
-            <button 
+            <button
               onClick={() => setIsPreviewOpen(false)}
               className="absolute -top-12 right-0 rounded-full p-2 text-white hover:bg-white/20 transition-colors"
               aria-label="Close preview"
             >
               <X className="h-6 w-6" />
             </button>
-            
+
             {src ? (
               <>
                 <img src={src} alt={alt} className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl bg-slate-900" />
                 <div className="mt-6 flex justify-center">
-                  <a 
-                    href={src} 
+                  <a
+                    href={src}
                     download={`${alt.replace(/\s+/g, '_')}.jpg`}
                     className="inline-flex items-center gap-2 rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-slate-900 shadow-lg hover:bg-slate-100 transition-colors"
                   >
@@ -257,15 +259,29 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
       .map(({ d, lId, cId }) => {
         const loanCalc = calculateLoanOutstanding(d, allPayments);
         const loanAmount = loanCalc.principal;
-        const outstandingAmount = loanCalc.outstandingAmount;
-        const isMidway = Boolean(
+        const isForeclosed = Boolean(
+          d.status === 'Foreclosed' ||
+          d.status === 'Sold · Foreclosed' ||
+          d.isForeclosed ||
+          d.loan?.status === 'Foreclosed' ||
+          d.loan?.isForeclosed ||
+          d.foreclosure
+        );
+        const isVehicleSold = d.vehicle?.status === 'Sold' || d.vehicleStatus === 'Sold';
+        const outstandingAmount = isForeclosed ? 0 : loanCalc.outstandingAmount;
+        const overdueAmount = isForeclosed ? 0 : (loanCalc.overdueAmount || 0);
+        const isMidway = !isForeclosed && Boolean(
           d.isMidwayClosed ||
           d.midwayClosure ||
           String(d.status || '').toLowerCase() === 'midway closed' ||
           String(d.closureType || '').toLowerCase() === 'midway closure' ||
           loanCalc.status === 'Midway Closed'
         );
-        const status = isMidway ? "Midway Closed" : (d.status || loanCalc.status);
+        const status = isForeclosed
+          ? (isVehicleSold ? "Sold · Foreclosed" : "Foreclosed")
+          : isMidway
+            ? "Midway Closed"
+            : (d.status || loanCalc.status);
         const totalPaidForLoan = loanCalc.totalRepaid;
 
         return {
@@ -273,8 +289,10 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
           customerId: cId,
           loanAmount,
           outstandingAmount,
+          overdueAmount,
           loanId: lId,
           status,
+          isForeclosed,
           totalPaidForLoan,
           loanCalculations: loanCalc,
         };
@@ -342,7 +360,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
   const activeLoans = customerLoans.filter(l => l.status === 'Active' || l.status === 'Overdue').length;
   const totalOutstanding = customerLoans.reduce((sum, l) => sum + (Number(l.outstandingAmount) || 0), 0);
   const totalOverdue = customerLoans.filter(l => l.status === 'Overdue').reduce((sum, l) => sum + (Number(l.overdueAmount) || 0), 0);
-  
+
   const loanSummary = useMemo(() => {
     if (!selectedLoanData.loan) return null;
     return calculateRepayment({
@@ -398,14 +416,39 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
   // Effective authoritative schedule reconciled with actual recorded transactions
   const effectiveCustomerLoanSchedule = useMemo(() => {
-    const isMidway = Boolean(
+    const isForeclosed = Boolean(
+      selectedLoanData?.status === 'Foreclosed' ||
+      selectedLoanData?.status === 'Sold · Foreclosed' ||
+      selectedLoanData?.isForeclosed ||
+      selectedLoanData?.loan?.status === 'Foreclosed' ||
+      selectedLoanData?.loan?.isForeclosed ||
+      selectedLoanData?.foreclosure
+    );
+
+    const isMidway = !isForeclosed && Boolean(
       selectedLoanData?.isMidwayClosed ||
       selectedLoanData?.midwayClosure ||
       String(selectedLoanData?.status || "").toLowerCase() === "midway closed" ||
       String(selectedLoanData?.closureType || "").toLowerCase() === "midway closure"
     );
 
-    const computed = computeEffectiveSchedule(selectedLoanBaseSchedule, selectedLoanPayments);
+    const computed = computeEffectiveSchedule(selectedLoanBaseSchedule, selectedLoanPayments, { isForeclosed });
+
+    if (isForeclosed) {
+      return computed.map((item) => {
+        const isPaid = item.status === "Paid" || item.status === "Collected";
+        if (isPaid) return item;
+        return {
+          ...item,
+          amountPaid: item.amountPaid || 0,
+          principalOutstanding: 0,
+          balance: 0,
+          status: "Foreclosed",
+          isForeclosed: true,
+          closureAdjusted: true,
+        };
+      });
+    }
 
     if (!isMidway) {
       return computed;
@@ -516,19 +559,19 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
       )}
       
       <div className="bg-white border-b border-slate-200 px-4 py-4 sm:px-6 lg:px-8">
-        <button 
+        <button
           onClick={onBack}
           className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 mb-4 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" /> {backLabel}
         </button>
-        
+
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-4">
-            <PhotoPlaceholder 
-              src={primaryCustomer.photoFile || null} 
-              icon={Users} 
-              alt={primaryCustomer.name || 'Customer'} 
+            <PhotoPlaceholder
+              src={primaryCustomer.photoFile || null}
+              icon={Users}
+              alt={primaryCustomer.name || 'Customer'}
               className="h-16 w-16 rounded-full"
             />
             <div>
@@ -543,7 +586,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50 hover:border-emerald-200">
               <Edit className="h-4 w-4" /> View / Edit
@@ -553,7 +596,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
       </div>
 
       <div className="px-4 py-6 sm:px-6 lg:px-8 space-y-6 w-full mx-auto">
-        
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-4">
             <div className="bg-emerald-50 text-emerald-600 p-2.5 rounded-lg shrink-0"><FileText className="h-4 w-4" /></div>
@@ -595,7 +638,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
               {customerLoans.length} Loan{customerLoans.length !== 1 ? 's' : ''}
             </div>
           </div>
-          
+
           <div className="divide-y divide-slate-100">
             {customerLoans.map(loan => {
               const isSelected = activeSelectedLoanId === loan.loanId;
@@ -604,8 +647,8 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
               const pendingPct = Math.max(0, 100 - pct);
 
               return (
-                <div 
-                  key={loan.loanId} 
+                <div
+                  key={loan.loanId}
                   onClick={() => setSelectedLoanId(loan.loanId)}
                   className={`p-5 flex flex-col lg:flex-row lg:items-center gap-6 cursor-pointer transition-colors ${isSelected ? 'bg-emerald-50/40 ring-1 ring-inset ring-emerald-500/30' : 'hover:bg-slate-50'}`}
                 >
@@ -623,9 +666,9 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                         {(() => {
                           const vStat = getEffectiveVehicleStatus(loan);
                           const vStyle = vStat === 'Active' ? 'bg-[#2563EB] text-white' :
-                                         vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
-                                         vStat === 'Sold' ? 'bg-[#64748B] text-white' :
-                                         'bg-slate-500 text-white';
+                            vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
+                              vStat === 'Sold' ? 'bg-[#64748B] text-white' :
+                                'bg-slate-500 text-white';
                           return (
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${vStyle}`}>
                               {vStat}
@@ -633,7 +676,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                           );
                         })()}
                       </div>
-                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Car className="h-3 w-3"/> {loan.vehicle?.regNo || 'Unregistered'}</p>
+                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Car className="h-3 w-3" /> {loan.vehicle?.regNo || 'Unregistered'}</p>
                     </div>
                   </div>
 
@@ -652,20 +695,35 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     </div>
                     <div>
                       <p className="text-[10px] font-semibold text-slate-500 uppercase">Next Due Date</p>
-                      <p className="font-bold text-slate-900 mt-0.5">{formatDate(loan.loan?.firstDueDate || loan.nextDueDate)}</p>
+                      <p className="font-bold text-slate-900 mt-0.5">{loan.isForeclosed ? '—' : formatDate(loan.loan?.firstDueDate || loan.nextDueDate)}</p>
                     </div>
                     <div>
                       <p className="text-[10px] font-semibold text-slate-500 uppercase">Overdue</p>
                       <p className="font-bold text-red-600 mt-0.5">{formatCurrency(loan.overdueAmount || 0)}</p>
                     </div>
                     <div className="col-span-2 md:col-span-5 mt-1">
-                      <div className="flex justify-between text-[10px] font-semibold mb-1">
-                        <span className="text-emerald-700">{pct}% Paid</span>
-                        <span className="text-slate-500">{pendingPct}% Pending</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }}></div>
-                      </div>
+                      {loan.isForeclosed ? (
+                        <>
+                          <div className="flex justify-between text-[10px] font-semibold mb-1">
+                            <span className="text-emerald-700">{pct}% Paid</span>
+                            <span className="text-purple-700 font-bold">Foreclosed</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                            <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${pct}%` }}></div>
+                            <div className="h-full bg-purple-600 transition-all duration-300" style={{ width: `${Math.max(0, 100 - pct)}%` }}></div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex justify-between text-[10px] font-semibold mb-1">
+                            <span className="text-emerald-700">{pct}% Paid</span>
+                            <span className="text-slate-500">{pendingPct}% Pending</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }}></div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -683,11 +741,10 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`whitespace-nowrap py-3 px-1 border-b-2 font-semibold text-sm transition-colors ${
-                  activeTab === tab.id
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-semibold text-sm transition-colors ${activeTab === tab.id
                     ? 'border-emerald-600 text-emerald-700'
                     : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
@@ -696,11 +753,11 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
         </div>
 
         <div className="py-4">
-          
+
           {/* OVERVIEW TAB */}
           {activeTab === 'overview' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-              
+
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100">
                   <div className="flex items-center gap-2 font-bold text-slate-900">
@@ -737,11 +794,10 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                       {selectedLoanData.referral?.commissionAmount && (
                         <FieldValue
                           label="Referral Commission"
-                          value={`₹${Number(selectedLoanData.referral.commissionAmount).toLocaleString('en-IN')}${
-                            selectedLoanData.referral.commissionPercentage
+                          value={`₹${Number(selectedLoanData.referral.commissionAmount).toLocaleString('en-IN')}${selectedLoanData.referral.commissionPercentage
                               ? ` (${selectedLoanData.referral.commissionPercentage}%)`
                               : ''
-                          } — ${selectedLoanData.referral.payCommission ? 'Paid' : 'Pending'}`}
+                            } — ${selectedLoanData.referral.payCommission ? 'Paid' : 'Pending'}`}
                         />
                       )}
                     </div>
@@ -761,19 +817,19 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     const fileKey = `${kycType}File`;
                     const hasValue = !!selectedLoanData.customer?.[noKey];
                     const hasFile = !!selectedLoanData.customer?.[fileKey];
-                    
+
                     if (!hasValue && !hasFile) return null;
-                    
+
                     const labels = { aadhaar: 'Aadhaar Number', pan: 'PAN Number', dl: 'Driving Licence Number', voter: 'Voter ID Number', otherKyc: 'Other KYC' };
-                    
+
                     return (
                       <div key={kycType} className="flex items-center justify-between border-b border-slate-100 pb-4 last:border-0 last:pb-0">
                         <div className="flex items-center gap-4">
                           {hasFile ? (
-                            <PhotoPlaceholder 
-                              src={selectedLoanData.customer[fileKey]} 
-                              icon={FileCheck} 
-                              alt={labels[kycType]} 
+                            <PhotoPlaceholder
+                              src={selectedLoanData.customer[fileKey]}
+                              icon={FileCheck}
+                              alt={labels[kycType]}
                               className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
                             />
                           ) : (
@@ -885,15 +941,30 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                       <div className="px-5 py-3 border-b border-slate-100 font-bold text-slate-900 flex items-center justify-between">
                         <span>Repayment Progress</span>
-                        {Boolean(selectedLoanData.isMidwayClosed || selectedLoanData.midwayClosure) && (
+                        {Boolean(
+                          selectedLoanData.status === 'Foreclosed' ||
+                          selectedLoanData.status === 'Sold · Foreclosed' ||
+                          selectedLoanData.isForeclosed ||
+                          selectedLoanData.foreclosure
+                        ) ? (
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-300">
+                            Foreclosed
+                          </span>
+                        ) : Boolean(selectedLoanData.isMidwayClosed || selectedLoanData.midwayClosure) ? (
                           <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
                             Midway Settled
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <div className="p-5 flex-1 flex flex-col justify-center">
                         {(() => {
-                          const isMidway = Boolean(selectedLoanData.isMidwayClosed || selectedLoanData.midwayClosure);
+                          const isForeclosed = Boolean(
+                            selectedLoanData.status === 'Foreclosed' ||
+                            selectedLoanData.status === 'Sold · Foreclosed' ||
+                            selectedLoanData.isForeclosed ||
+                            selectedLoanData.foreclosure
+                          );
+                          const isMidway = !isForeclosed && Boolean(selectedLoanData.isMidwayClosed || selectedLoanData.midwayClosure);
                           const totalRepay = effectiveCustomerLoanSchedule.length > 0
                             ? effectiveCustomerLoanSchedule.reduce((sum, s) => sum + Number(s.emi || 0), 0)
                             : (loanSummary?.totalAmount || selectedLoanData.loanAmount || 0);
@@ -913,14 +984,14 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
                           // Percentages out of totalRepay
                           const regularPct = totalRepay > 0 ? Math.min(100, Math.round((regularPaidAmount / totalRepay) * 100)) : 0;
-                          const closurePct = totalRepay > 0
+                          const closurePct = isMidway && totalRepay > 0
                             ? Math.min(100 - regularPct, Math.round((closureAdjustedAmount / totalRepay) * 100))
                             : 0;
                           const totalSettledPct = Math.min(100, regularPct + closurePct);
                           const remainingPct = Math.max(0, 100 - totalSettledPct);
 
                           const totalInstCount = effectiveCustomerLoanSchedule.length || loanSummary?.numberOfPayments || 0;
-                          
+
                           // Count regular paid instalments vs closure-adjusted instalments
                           const regularPaidInstCount = effectiveCustomerLoanSchedule.filter((s) => {
                             const isPaid = s.status === 'Paid' || s.status === 'Collected';
@@ -937,15 +1008,26 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                             <>
                               <div className="text-center mb-6">
                                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">
-                                  {isMidway ? "Total Settled" : "Total Paid"}
+                                  {isForeclosed ? "Total Paid (Prior to Foreclosure)" : isMidway ? "Total Settled" : "Total Paid"}
                                 </p>
                                 <p className="text-3xl font-black text-emerald-700">{formatCurrency(paid)}</p>
                                 <p className="text-xs text-slate-500 mt-1">out of {formatCurrency(totalRepay)}</p>
                               </div>
-                              
+
                               <div className="space-y-2">
                                 <div className="flex justify-between text-xs font-semibold">
-                                  {isMidway ? (
+                                  {isForeclosed ? (
+                                    <>
+                                      <span className="text-emerald-700 flex items-center gap-1">
+                                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
+                                        {regularPct}% Paid
+                                      </span>
+                                      <span className="text-purple-700 font-bold flex items-center gap-1">
+                                        <span className="inline-block h-2 w-2 rounded-full bg-purple-600"></span>
+                                        Foreclosed
+                                      </span>
+                                    </>
+                                  ) : isMidway ? (
                                     <>
                                       <div className="flex items-center gap-2">
                                         <span className="text-emerald-700 flex items-center gap-1">
@@ -975,6 +1057,14 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                                     style={{ width: `${regularPct}%` }}
                                     title={`Regular Paid: ${regularPct}% (${formatCurrency(regularPaidAmount)})`}
                                   ></div>
+                                  {/* Foreclosed portion in purple */}
+                                  {isForeclosed && (
+                                    <div
+                                      className="h-full bg-purple-600 transition-all duration-300"
+                                      style={{ width: `${100 - regularPct}%` }}
+                                      title={`Foreclosed & Closed: ${100 - regularPct}%`}
+                                    ></div>
+                                  )}
                                   {/* Closure-adjusted portion in orange */}
                                   {isMidway && closurePct > 0 && (
                                     <div
@@ -989,7 +1079,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                               <div className="grid grid-cols-2 gap-4 mt-6">
                                 <div className="bg-slate-50 rounded-lg p-3 text-center">
                                   <p className="text-[10px] text-slate-500 uppercase font-semibold">
-                                    {isMidway ? "Paid Prior" : "Paid Inst."}
+                                    {isForeclosed ? "Paid Prior" : isMidway ? "Paid Prior" : "Paid Inst."}
                                   </p>
                                   <p className="text-lg font-bold text-slate-900 mt-0.5">
                                     {regularPaidInstCount}
@@ -997,10 +1087,10 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                                 </div>
                                 <div className="bg-slate-50 rounded-lg p-3 text-center">
                                   <p className="text-[10px] text-slate-500 uppercase font-semibold">
-                                    {isMidway ? "Closure Settled" : "Pending Inst."}
+                                    {isForeclosed ? "Foreclosed" : isMidway ? "Closure Settled" : "Pending Inst."}
                                   </p>
-                                  <p className="text-lg font-bold text-amber-700 mt-0.5">
-                                    {isMidway ? closureAdjustedInstCount : pendingInst}
+                                  <p className={`text-lg font-bold mt-0.5 ${isForeclosed ? 'text-purple-700' : 'text-amber-700'}`}>
+                                    {isForeclosed ? Math.max(0, totalInstCount - regularPaidInstCount) : isMidway ? closureAdjustedInstCount : pendingInst}
                                   </p>
                                 </div>
                               </div>
@@ -1012,9 +1102,15 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                   </div>
 
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mt-6">
-                    <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-emerald-600"/> Repayment Schedule</h3>
+                    <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-emerald-600" /> Repayment Schedule</h3>
                     <RepaymentScheduleTable
                       schedule={effectiveCustomerLoanSchedule}
+                      isForeclosed={Boolean(
+                        selectedLoanData.status === 'Foreclosed' ||
+                        selectedLoanData.status === 'Sold · Foreclosed' ||
+                        selectedLoanData.isForeclosed ||
+                        selectedLoanData.foreclosure
+                      )}
                       loanDetails={{
                         ...selectedLoanData.loan,
                         loanAmount: selectedLoanData.loanAmount,
@@ -1022,6 +1118,12 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                         customerId: displayCustomerId,
                         customerName: primaryCustomer.name,
                         paymentFrequency: selectedLoanData.loan?.paymentFrequency || selectedLoanData.paymentFrequency || 'Monthly',
+                        isForeclosed: Boolean(
+                          selectedLoanData.status === 'Foreclosed' ||
+                          selectedLoanData.status === 'Sold · Foreclosed' ||
+                          selectedLoanData.isForeclosed ||
+                          selectedLoanData.foreclosure
+                        ),
                       }}
                     />
                   </div>
@@ -1039,7 +1141,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
           {/* VEHICLE TAB */}
           {activeTab === 'vehicle' && (
             <div className="space-y-6">
-              
+
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100 flex items-center justify-between gap-2 font-bold text-slate-900">
                   <div className="flex items-center gap-2">
@@ -1048,9 +1150,9 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                   {(() => {
                     const vStat = getEffectiveVehicleStatus(selectedLoanData);
                     const vStyle = vStat === 'Active' ? 'bg-[#2563EB] text-white' :
-                                   vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
-                                   vStat === 'Sold' ? 'bg-[#64748B] text-white' :
-                                   'bg-slate-500 text-white';
+                      vStat === 'Seized' ? 'bg-[#EA580C] text-white' :
+                        vStat === 'Sold' ? 'bg-[#64748B] text-white' :
+                          'bg-slate-500 text-white';
                     return (
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${vStyle}`}>
                         {vStat}
@@ -1059,27 +1161,27 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                   })()}
                 </div>
                 <div className="p-4 sm:p-5 flex flex-col md:flex-row gap-6 items-start">
-                   <div className="shrink-0 w-full md:w-auto flex justify-center md:justify-start">
-                     <PhotoPlaceholder 
-                       src={getVehicleDisplayImage(selectedLoanData)} 
-                       icon={Car} 
-                       alt={`${selectedLoanData.vehicle?.brand || 'Vehicle'} ${selectedLoanData.vehicle?.model || ''}`} 
-                       className="h-32 w-32 rounded-xl border-4 border-slate-50 shadow-sm"
-                     />
-                   </div>
-                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-4 gap-x-4 flex-1 w-full">
-                      <FieldValue label="Vehicle Status" value={getEffectiveVehicleStatus(selectedLoanData)} />
-                      <FieldValue label="Brand / Make" value={selectedLoanData.vehicle?.brand} />
-                      <FieldValue label="Model" value={selectedLoanData.vehicle?.model} />
-                      <FieldValue label="Variant" value={selectedLoanData.vehicle?.variant} />
-                      <FieldValue label="Vehicle Type" value={selectedLoanData.vehicle?.type} />
-                      <FieldValue label="Fuel Type" value={selectedLoanData.vehicle?.fuelType} />
-                      <FieldValue label="Colour" value={selectedLoanData.vehicle?.colour} />
-                      <FieldValue label="Year" value={selectedLoanData.vehicle?.year} />
-                      <FieldValue label="Vehicle Amount" value={selectedLoanData.vehicle?.amount ? formatCurrency(selectedLoanData.vehicle.amount) : null} />
-                      <FieldValue label="Hypothecation" value={selectedLoanData.vehicle?.hypothecation} />
-                      <FieldValue label="Existing Financier" value={selectedLoanData.vehicle?.financier} />
-                   </div>
+                  <div className="shrink-0 w-full md:w-auto flex justify-center md:justify-start">
+                    <PhotoPlaceholder
+                      src={getVehicleDisplayImage(selectedLoanData)}
+                      icon={Car}
+                      alt={`${selectedLoanData.vehicle?.brand || 'Vehicle'} ${selectedLoanData.vehicle?.model || ''}`}
+                      className="h-32 w-32 rounded-xl border-4 border-slate-50 shadow-sm"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-4 gap-x-4 flex-1 w-full">
+                    <FieldValue label="Vehicle Status" value={getEffectiveVehicleStatus(selectedLoanData)} />
+                    <FieldValue label="Brand / Make" value={selectedLoanData.vehicle?.brand} />
+                    <FieldValue label="Model" value={selectedLoanData.vehicle?.model} />
+                    <FieldValue label="Variant" value={selectedLoanData.vehicle?.variant} />
+                    <FieldValue label="Vehicle Type" value={selectedLoanData.vehicle?.type} />
+                    <FieldValue label="Fuel Type" value={selectedLoanData.vehicle?.fuelType} />
+                    <FieldValue label="Colour" value={selectedLoanData.vehicle?.colour} />
+                    <FieldValue label="Year" value={selectedLoanData.vehicle?.year} />
+                    <FieldValue label="Vehicle Amount" value={selectedLoanData.vehicle?.amount ? formatCurrency(selectedLoanData.vehicle.amount) : null} />
+                    <FieldValue label="Hypothecation" value={selectedLoanData.vehicle?.hypothecation} />
+                    <FieldValue label="Existing Financier" value={selectedLoanData.vehicle?.financier} />
+                  </div>
                 </div>
               </div>
 
@@ -1089,40 +1191,40 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                     <FileTextIcon className="h-5 w-5 text-[#087F5B]" /> Registration & Identification
                   </div>
                   <div className="p-4 sm:p-5">
-                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
-                        <FieldValue label="Registration No." value={selectedLoanData.vehicle?.regNo} />
-                        <FieldValue label="Reg. Location (RTO)" value={selectedLoanData.vehicle?.rto} />
-                        <FieldValue label="Reg. Date" value={formatDate(selectedLoanData.vehicle?.regDate)} />
-                        <FieldValue label="Chassis Number" value={selectedLoanData.vehicle?.chassisNo} />
-                        <div className="col-span-1 sm:col-span-2">
-                          <FieldValue label="Engine Number" value={selectedLoanData.vehicle?.engineNo} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
+                      <FieldValue label="Registration No." value={selectedLoanData.vehicle?.regNo} />
+                      <FieldValue label="Reg. Location (RTO)" value={selectedLoanData.vehicle?.rto} />
+                      <FieldValue label="Reg. Date" value={formatDate(selectedLoanData.vehicle?.regDate)} />
+                      <FieldValue label="Chassis Number" value={selectedLoanData.vehicle?.chassisNo} />
+                      <div className="col-span-1 sm:col-span-2">
+                        <FieldValue label="Engine Number" value={selectedLoanData.vehicle?.engineNo} />
+                      </div>
+                    </div>
+                    <div className="border-t border-slate-100 pt-4 mt-5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          {selectedLoanData.vehicle?.rcFile ? (
+                            <PhotoPlaceholder
+                              src={selectedLoanData.vehicle.rcFile}
+                              icon={FileCheck}
+                              alt="RC Document"
+                              className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-14 items-center justify-center rounded bg-slate-50 border border-slate-100 text-slate-300">
+                              <FileTextIcon className="h-5 w-5" />
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-semibold text-slate-900">RC Document</p>
+                            <p className="text-sm text-slate-500 mt-0.5">Vehicle Registration</p>
+                          </div>
                         </div>
-                     </div>
-                     <div className="border-t border-slate-100 pt-4 mt-5">
-                       <div className="flex items-center justify-between">
-                         <div className="flex items-center gap-4">
-                           {selectedLoanData.vehicle?.rcFile ? (
-                              <PhotoPlaceholder 
-                                src={selectedLoanData.vehicle.rcFile} 
-                                icon={FileCheck} 
-                                alt="RC Document"
-                                className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
-                              />
-                           ) : (
-                              <div className="flex h-10 w-14 items-center justify-center rounded bg-slate-50 border border-slate-100 text-slate-300">
-                                <FileTextIcon className="h-5 w-5" />
-                              </div>
-                           )}
-                           <div>
-                             <p className="font-semibold text-slate-900">RC Document</p>
-                             <p className="text-sm text-slate-500 mt-0.5">Vehicle Registration</p>
-                           </div>
-                         </div>
-                         <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${selectedLoanData.vehicle?.rcFile ? 'bg-emerald-50 text-[#087F5B]' : 'bg-slate-100 text-slate-600'}`}>
-                           {selectedLoanData.vehicle?.rcFile ? 'Uploaded' : 'Not Provided'}
-                         </span>
-                       </div>
-                     </div>
+                        <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${selectedLoanData.vehicle?.rcFile ? 'bg-emerald-50 text-[#087F5B]' : 'bg-slate-100 text-slate-600'}`}>
+                          {selectedLoanData.vehicle?.rcFile ? 'Uploaded' : 'Not Provided'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1133,7 +1235,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                   <div className="p-4 sm:p-5">
                     {(() => {
                       const v = selectedLoanData.vehicle || {};
-                      
+
                       const isMeaningful = (val) => {
                         if (val === null || val === undefined || val === '') return false;
                         if (typeof val === 'string') {
@@ -1143,16 +1245,16 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                         return true;
                       };
 
-                      const hasInsuranceData = 
-                        isMeaningful(v.insuranceCompany) || 
-                        isMeaningful(v.policyNo) || 
-                        isMeaningful(v.insuranceExpiry) || 
-                        isMeaningful(v.taxExpiry) || 
-                        isMeaningful(v.financierEndorsement) || 
-                        isMeaningful(v.nocStatus) || 
-                        !!v.insuranceFile || 
+                      const hasInsuranceData =
+                        isMeaningful(v.insuranceCompany) ||
+                        isMeaningful(v.policyNo) ||
+                        isMeaningful(v.insuranceExpiry) ||
+                        isMeaningful(v.taxExpiry) ||
+                        isMeaningful(v.financierEndorsement) ||
+                        isMeaningful(v.nocStatus) ||
+                        !!v.insuranceFile ||
                         !!v.nocFile;
-                      
+
                       if (!hasInsuranceData) {
                         return (
                           <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -1167,102 +1269,102 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
 
                       return (
                         <>
-                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
-                              {v.insuranceCompany && (
-                                <div className="col-span-1 sm:col-span-2">
-                                  <FieldValue label="Insurance Company" value={v.insuranceCompany} />
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-4">
+                            {v.insuranceCompany && (
+                              <div className="col-span-1 sm:col-span-2">
+                                <FieldValue label="Insurance Company" value={v.insuranceCompany} />
+                              </div>
+                            )}
+                            {v.policyNo && <FieldValue label="Policy Number" value={v.policyNo} />}
+                            {v.insuranceExpiry && <FieldValue label="Insurance Expiry" value={formatDate(v.insuranceExpiry)} />}
+                            {v.taxExpiry && <FieldValue label="Tax Expiry" value={formatDate(v.taxExpiry)} />}
+                            {v.financierEndorsement && <FieldValue label="Fin. Endorsement" value={v.financierEndorsement} />}
+                            {v.nocStatus && <FieldValue label="NOC Status" value={v.nocStatus} />}
+                          </div>
+
+                          {(v.insuranceFile || v.nocFile) && (
+                            <div className="border-t border-slate-100 pt-4 mt-5 flex flex-col gap-4">
+                              {v.insuranceFile && (
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-4">
+                                    <PhotoPlaceholder
+                                      src={v.insuranceFile}
+                                      icon={FileCheck}
+                                      alt="Insurance Document"
+                                      className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
+                                    />
+                                    <div>
+                                      <p className="font-semibold text-slate-900">Insurance Policy</p>
+                                    </div>
+                                  </div>
+                                  <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-[#087F5B]">
+                                    Uploaded
+                                  </span>
                                 </div>
                               )}
-                              {v.policyNo && <FieldValue label="Policy Number" value={v.policyNo} />}
-                              {v.insuranceExpiry && <FieldValue label="Insurance Expiry" value={formatDate(v.insuranceExpiry)} />}
-                              {v.taxExpiry && <FieldValue label="Tax Expiry" value={formatDate(v.taxExpiry)} />}
-                              {v.financierEndorsement && <FieldValue label="Fin. Endorsement" value={v.financierEndorsement} />}
-                              {v.nocStatus && <FieldValue label="NOC Status" value={v.nocStatus} />}
-                           </div>
-                           
-                           {(v.insuranceFile || v.nocFile) && (
-                             <div className="border-t border-slate-100 pt-4 mt-5 flex flex-col gap-4">
-                               {v.insuranceFile && (
-                                 <div className="flex items-center justify-between">
-                                   <div className="flex items-center gap-4">
-                                      <PhotoPlaceholder 
-                                        src={v.insuranceFile} 
-                                        icon={FileCheck} 
-                                        alt="Insurance Document"
-                                        className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
-                                      />
-                                     <div>
-                                       <p className="font-semibold text-slate-900">Insurance Policy</p>
-                                     </div>
-                                   </div>
-                                   <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-[#087F5B]">
-                                     Uploaded
-                                   </span>
-                                 </div>
-                               )}
-                               
-                               {v.nocFile && (
-                                 <div className="flex items-center justify-between">
-                                   <div className="flex items-center gap-4">
-                                      <PhotoPlaceholder 
-                                        src={v.nocFile} 
-                                        icon={FileCheck} 
-                                        alt="NOC Document"
-                                        className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
-                                      />
-                                     <div>
-                                       <p className="font-semibold text-slate-900">NOC Document</p>
-                                     </div>
-                                   </div>
-                                   <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-[#087F5B]">
-                                     Uploaded
-                                   </span>
-                                 </div>
-                               )}
-                             </div>
-                           )}
+
+                              {v.nocFile && (
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-4">
+                                    <PhotoPlaceholder
+                                      src={v.nocFile}
+                                      icon={FileCheck}
+                                      alt="NOC Document"
+                                      className="h-10 w-14 rounded bg-slate-50 border border-slate-200 shadow-sm"
+                                    />
+                                    <div>
+                                      <p className="font-semibold text-slate-900">NOC Document</p>
+                                    </div>
+                                  </div>
+                                  <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-50 text-[#087F5B]">
+                                    Uploaded
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </>
                       );
                     })()}
                   </div>
                 </div>
               </div>
-              
+
             </div>
           )}
 
           {/* GUARANTOR TAB */}
           {activeTab === 'guarantor' && (
-             <>
-               {hasGuarantorDetails ? (
-                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden max-w-2xl">
-                   <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900">Guarantor Details</div>
-                   <div className="p-5">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-6 gap-x-4">
-                        <FieldValue label="Name" value={selectedGuarantor.fullName || selectedGuarantor.name} />
-                        <FieldValue
-                          label="Mobile Number"
-                          value={(selectedGuarantor.phone || selectedGuarantor.mobile)
-                            ? `${selectedGuarantor.countryCode || ''} ${selectedGuarantor.phone || selectedGuarantor.mobile}`
-                            : null}
-                        />
-                        <FieldValue label="Relationship" value={selectedGuarantor.relationship} />
-                        <div className="col-span-2 sm:col-span-3">
-                          <FieldValue label="Address" value={selectedGuarantor.address} />
-                        </div>
+            <>
+              {hasGuarantorDetails ? (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden max-w-2xl">
+                  <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900">Guarantor Details</div>
+                  <div className="p-5">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-6 gap-x-4">
+                      <FieldValue label="Name" value={selectedGuarantor.fullName || selectedGuarantor.name} />
+                      <FieldValue
+                        label="Mobile Number"
+                        value={(selectedGuarantor.phone || selectedGuarantor.mobile)
+                          ? `${selectedGuarantor.countryCode || ''} ${selectedGuarantor.phone || selectedGuarantor.mobile}`
+                          : null}
+                      />
+                      <FieldValue label="Relationship" value={selectedGuarantor.relationship} />
+                      <div className="col-span-2 sm:col-span-3">
+                        <FieldValue label="Address" value={selectedGuarantor.address} />
                       </div>
-                   </div>
-                 </div>
-               ) : (
-                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 flex flex-col items-center justify-center text-center">
-                    <div className="bg-emerald-50 h-16 w-16 rounded-full flex items-center justify-center mb-4 border border-emerald-100 shadow-sm">
-                      <UserCheck className="h-8 w-8 text-emerald-600" />
                     </div>
-                    <h3 className="text-lg font-bold text-slate-900">No guarantor details available.</h3>
-                    <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">No guarantor information has been added to this loan yet.</p>
-                 </div>
-               )}
-             </>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 flex flex-col items-center justify-center text-center">
+                  <div className="bg-emerald-50 h-16 w-16 rounded-full flex items-center justify-center mb-4 border border-emerald-100 shadow-sm">
+                    <UserCheck className="h-8 w-8 text-emerald-600" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">No guarantor details available.</h3>
+                  <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">No guarantor information has been added to this loan yet.</p>
+                </div>
+              )}
+            </>
           )}
 
           {/* PAYMENTS TAB */}
@@ -1379,7 +1481,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                 <h3 className="text-lg font-bold text-slate-900 mb-8 flex items-center gap-2">
                   <Activity className="h-5 w-5 text-[#087F5B]" /> Activity Log
                 </h3>
-                
+
                 <div className="relative border-l-2 border-slate-100 ml-3 sm:ml-4 space-y-8 pb-4">
                   {activities.map((act, index) => {
                     const Icon = act.icon || CheckCircle2;

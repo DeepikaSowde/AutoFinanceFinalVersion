@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { Clock, ChevronRight, SlidersHorizontal, Scale } from 'lucide-react';
 
 const SettingsOverview = () => {
   const navigate = useNavigate();
@@ -25,7 +25,8 @@ const SettingsOverview = () => {
       </div>
 
       {/* Settings Options Grid */}
-      <div className="max-w-3xl">
+      <div className="max-w-3xl space-y-4">
+        {/* 1. Penalty & Grace Period */}
         <div
           role="button"
           tabIndex={0}
@@ -53,6 +54,38 @@ const SettingsOverview = () => {
           </div>
 
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 group-hover:bg-emerald-50 group-hover:text-[#006052] transition-colors duration-200">
+            <ChevronRight className="h-5 w-5 group-hover:translate-x-0.5 transition-transform duration-200" />
+          </div>
+        </div>
+
+        {/* 2. Foreclosure & Vehicle Sale Settings */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/settings/foreclosure-vehicle-sale')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              navigate('/settings/foreclosure-vehicle-sale');
+            }
+          }}
+          className="group relative flex items-center justify-between rounded-2xl border border-slate-200/90 bg-white p-5 sm:p-6 shadow-xs hover:border-[#006052]/50 hover:shadow-md transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#006052] focus:ring-offset-2"
+        >
+          <div className="flex items-start gap-4 sm:gap-5 min-w-0 pr-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-700 border border-purple-100 group-hover:bg-[#006052] group-hover:text-white transition-colors duration-200">
+              <Scale className="h-6 w-6" strokeWidth={2} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-[#006052] transition-colors duration-200 leading-snug">
+                Foreclosure &amp; Vehicle Sale Settings
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 font-normal mt-1 leading-relaxed">
+                Configure calculation components, seized-period interest basis, and profit/loss rules.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 group-hover:bg-purple-50 group-hover:text-purple-700 transition-colors duration-200">
             <ChevronRight className="h-5 w-5 group-hover:translate-x-0.5 transition-transform duration-200" />
           </div>
         </div>

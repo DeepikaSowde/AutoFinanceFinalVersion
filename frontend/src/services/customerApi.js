@@ -86,6 +86,7 @@ const toVehicle = (vehicle) => ({
   manufacturingYear: vehicle.year || '',
   fuelType: vehicle.fuelType || '',
   vehicleValue: Number(vehicle.amount) || 0,
+  ownershipType: vehicle.ownershipType || '',
   photo: vehicle.photo
     ? {
         fileName: vehicle.photo.name || '',
@@ -286,18 +287,59 @@ const saleDetailsFrom = (sale) =>
       }
     : null
 
+const signedInr = (value) => `${value >= 0 ? '+' : '-'}₹${Math.abs(Math.round(Number(value) || 0)).toLocaleString('en-IN')}`
+
 // The vehicle's history, newest first, in the shape the Vehicles screens show.
+// A sale is followed by its "foreclosure finalized" entry (the loan closed
+// with it); a settlement with the customer has no status change.
 const statusHistoryFrom = (events = []) =>
   events
-    .filter((event) => event.fromStatus !== event.toStatus || event.type === 'SEIZURE_UPDATED')
-    .map((event) => ({
-      ...event,
-      fromStatus: EVENT_STATUS[event.fromStatus] || event.fromStatus,
-      toStatus: EVENT_STATUS[event.toStatus] || event.toStatus,
-      date: event.createdAt,
-      by: event.performedBy,
-    }))
+    .filter((event) => event.fromStatus !== event.toStatus || ['SEIZURE_UPDATED', 'SETTLEMENT'].includes(event.type))
+    .flatMap((event) => {
+      if (event.type === 'SETTLEMENT') {
+        return [{ ...event, fromStatus: undefined, toStatus: undefined, eventType: 'settlement', date: event.createdAt, by: event.performedBy }]
+      }
+      const entry = {
+        ...event,
+        fromStatus: EVENT_STATUS[event.fromStatus] || event.fromStatus,
+        toStatus: EVENT_STATUS[event.toStatus] || event.toStatus,
+        date: event.createdAt,
+        by: event.performedBy,
+      }
+      if (event.type !== 'SALE') return [entry]
+      return [
+        { ...entry, eventType: 'sale', saleAmount: event.salePrice, vehicleExpenses: event.saleExpenses },
+        {
+          vehicleId: event.vehicleId,
+          eventType: 'foreclosure_completed',
+          toStatus: 'Foreclosed',
+          date: new Date(new Date(event.createdAt).getTime() + 1000).toISOString(),
+          reason: `Foreclosure Finalized & Loan Account Closed. Status: Foreclosed. Profit/Loss: ${signedInr(event.profitLoss)}`,
+          totalCost: event.totalForeclosureCost,
+          salePrice: event.salePrice,
+          netSettlement: 0,
+          by: event.performedBy,
+          performedBy: event.performedBy,
+        },
+      ]
+    })
     .reverse()
+
+// A sold vehicle's foreclosure: the sale, the cost worked out by the server
+// when it was sold, and the settlement with the customer.
+const foreclosureFrom = (sale) =>
+  sale?.saleStatus === 'SOLD' && sale.finalizedCalculation
+    ? {
+        completedAt: sale.updatedAt || sale.soldAt,
+        saleDate: (sale.soldAt || '').slice(0, 10),
+        salePrice: Number(sale.salePrice) || 0,
+        finalizedCalculation: sale.finalizedCalculation,
+        settlement: sale.settlement || {},
+        buyerName: sale.buyerName || '',
+        buyerPhone: sale.buyerPhone || '',
+        notes: sale.notes || '',
+      }
+    : null
 
 const docAsFile = (meta) => (meta?.fileName ? { name: meta.fileName, type: meta.fileType, size: meta.fileSize, data: '' } : null)
 
@@ -414,6 +456,7 @@ const toEntry = (record, loan, commissions = []) => {
       year: vehicle.manufacturingYear || '',
       fuelType: vehicle.fuelType || '',
       amount: vehicle.vehicleValue || '',
+      ownershipType: vehicle.ownershipType || '',
       photo: photoFrom(vehicle.photo),
       regNo: rc.registrationNumber || '',
       rto: rc.location || '',
@@ -487,6 +530,9 @@ const toEntry = (record, loan, commissions = []) => {
     repaymentSchedule: toUiSchedule(loan.repaymentSchedule, loan.paymentHistory),
     paymentHistory: loan.paymentHistory || [],
     status: loan.status || 'Active',
+    // Only the loan the vehicle sale foreclosed carries the foreclosure.
+    isForeclosed: loan.status === 'Foreclosed',
+    foreclosure: loan.status === 'Foreclosed' ? foreclosureFrom(vehicle.sale) : null,
     createdAt: loan.createdAt,
   }
 }

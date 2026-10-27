@@ -19,6 +19,7 @@ import UserManagement from './pages/UserManagement'
 import Reminder from './pages/Reminder'
 import SettingsOverview from './pages/Settings/SettingsOverview'
 import PenaltyGraceSettings from './pages/Settings/PenaltyGraceSettings'
+import ForeclosureVehicleSaleSettings from './pages/Settings/ForeclosureVehicleSaleSettings'
 import SmartSearch from './pages/SmartSearch'
 import SmartSearchFloatingButton from './components/SmartSearchFloatingButton'
 import SubscriptionBanner from './components/SubscriptionBanner'
@@ -80,6 +81,7 @@ function AppShell() {
           <Route path="/reminders" element={gate('/reminders', <Reminder />)} />
           <Route path="/settings" element={gate('/settings', <SettingsOverview />)} />
           <Route path="/settings/penalty-grace" element={gate('/settings', <PenaltyGraceSettings />)} />
+          <Route path="/settings/foreclosure-vehicle-sale" element={gate('/settings', <ForeclosureVehicleSaleSettings />)} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         {canOpen(user, '/smart-search') && <SmartSearchFloatingButton />}
