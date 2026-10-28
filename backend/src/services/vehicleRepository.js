@@ -6,7 +6,7 @@
 // now applied server-side where they cannot be bypassed.
 
 import { query, withTransaction } from "../db/connection.js";
-import { currentTenantId } from "../db/tenantContext.js";
+import { currentTenantId, runWithTenant } from "../db/tenantContext.js";
 import { buildCustomerRecord, buildLoan, mapVehicle } from "./customerRepository.js";
 import {
   applySettlement,
@@ -43,11 +43,15 @@ const getVehicleRow = async (vehicleId) => {
   return result.rows[0];
 };
 
-const getLoanRowForVehicle = async (vehiclePk) => {
-  const result = await query(
-    "SELECT * FROM loans WHERE vehicle_pk = $1 ORDER BY is_primary DESC, pk ASC LIMIT 1",
-    [vehiclePk]
-  );
+// The loan a vehicle is held against. A re-loan on the same vehicle leaves
+// the earlier loan closed, so the open (or foreclosed) one wins, newest first.
+const LOAN_FOR_VEHICLE_SQL = `
+  SELECT * FROM loans WHERE vehicle_pk = $1
+   ORDER BY CASE WHEN status IN ('Closed', 'Midway Closed') THEN 1 ELSE 0 END, pk DESC
+   LIMIT 1`;
+
+const getLoanRowForVehicle = async (vehiclePk, db = { query }) => {
+  const result = await db.query(LOAN_FOR_VEHICLE_SQL, [vehiclePk]);
 
   return result.rows[0];
 };
@@ -419,7 +423,7 @@ export const settleVehicleSale = async (vehicleId, body = {}, performedBy) => {
     }
 
     const [loanResult, customerResult, rcResult] = await Promise.all([
-      client.query("SELECT id FROM loans WHERE vehicle_pk = $1 ORDER BY is_primary DESC, pk ASC LIMIT 1", [vehicleRow.pk]),
+      client.query(LOAN_FOR_VEHICLE_SQL, [vehicleRow.pk]),
       client.query("SELECT personal FROM customers WHERE pk = $1", [vehicleRow.customer_pk]),
       client.query("SELECT registration_number FROM rc_details WHERE vehicle_pk = $1", [vehicleRow.pk]),
     ]);
@@ -515,6 +519,79 @@ export const getCustomerForVehicle = async (vehicleId) => {
   const result = await query("SELECT * FROM customers WHERE pk = $1", [vehicleRow.customer_pk]);
 
   return result.rows[0] ? buildCustomerRecord(result.rows[0]) : null;
+};
+
+/*
+ * Vehicles sold before the foreclosure breakdown was saved with a sale have
+ * nothing to settle against. This rebuilds it once from the sale's own
+ * figures (price, date, the expenses entered then) and the loan it
+ * foreclosed, on the current Foreclosure and Penalty settings, with
+ * penalties as they stood on the sale date. The settlement starts Pending.
+ * The cash the sale already put in the Ledger (net proceeds, expenses) is
+ * left exactly as it was. Runs on every start; a vehicle that has its
+ * breakdown is never touched again.
+ */
+const rebuildForeclosure = (vehiclePk) =>
+  withTransaction(async (client) => {
+    const locked = await client.query("SELECT * FROM vehicles WHERE pk = $1 FOR UPDATE", [vehiclePk]);
+    const vehicleRow = locked.rows[0];
+    const sale = vehicleRow?.sale;
+    if (vehicleRow?.status !== VEHICLE_STATUS.SOLD || !sale || sale.finalizedCalculation) return false;
+
+    const loanRow = await getLoanRowForVehicle(vehicleRow.pk, client);
+    const loan = loanRow ? await buildLoan(loanRow) : null;
+    const saleExpenses = roundMoney(Math.max(0, Number(sale.saleExpenses) || 0));
+    const now = nowIso();
+
+    const finalizedCalculation = await computeForeclosure(client, {
+      vehicleRow,
+      loan,
+      salePrice: Number(sale.salePrice) || 0,
+      saleDate: String(sale.soldAt || sale.saleDate || vehicleRow.updated_at.toISOString()).slice(0, 10),
+      vehicleExpenses: saleExpenses,
+      beforeForeclosure: true,
+    });
+
+    const next = {
+      ...sale,
+      // Booked as one sale cost back then; no expense rows were linked to the vehicle.
+      recordedVehicleExpenses: sale.recordedVehicleExpenses ?? 0,
+      additionalSaleExpenses: sale.additionalSaleExpenses ?? saleExpenses,
+      finalizedCalculation,
+      settlement: sale.settlement ?? initialSettlement(finalizedCalculation, now),
+      foreclosureRebuiltAt: now,
+      updatedAt: now,
+    };
+
+    await client.query("UPDATE vehicles SET sale = $2, updated_at = now() WHERE pk = $1", [
+      vehicleRow.pk,
+      JSON.stringify(next),
+    ]);
+    return true;
+  });
+
+export const rebuildMissingForeclosures = async ({ log = console.log } = {}) => {
+  const pending = await query(
+    `SELECT pk, tenant_id FROM vehicles
+      WHERE status = 'SOLD' AND sale IS NOT NULL AND NOT (sale ? 'finalizedCalculation')
+      ORDER BY pk`
+  );
+  let rebuilt = 0;
+
+  for (const { pk, tenant_id: tenantId } of pending.rows) {
+    if (!tenantId) continue;
+
+    // One vehicle failing is logged and skipped; it is tried again next start.
+    const done = await runWithTenant(tenantId, () => rebuildForeclosure(pk)).catch((error) => {
+      log(`Could not rebuild the foreclosure breakdown for vehicle #${pk}: ${error.message}`);
+      return false;
+    });
+
+    if (done) rebuilt += 1;
+  }
+
+  if (rebuilt) log(`Rebuilt the foreclosure breakdown for ${rebuilt} vehicle(s) sold earlier`);
+  return rebuilt;
 };
 
 export { TransitionError };

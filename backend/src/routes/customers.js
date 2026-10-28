@@ -47,8 +47,9 @@ customersRouter.post(
   "/",
   requirePermission("customers.add", "loans.add"),
   asyncHandler(async (req, res) => {
-    // A re-loan on a different vehicle is created as its own customer record;
-    // reLoanOfCustomerId names the existing customer so the policy applies.
+    // A re-loan normally goes to POST /:customerId/loans (another vehicle is
+    // added to the same customer). Older clients still send reLoanOfCustomerId
+    // here, naming the existing customer so the Re-Loan policy applies.
     await assertReLoanAllowed(req.body?.reLoanOfCustomerId, req.user);
     res.status(201).json(await createCustomer(sanitizeCustomerPayload(req.body)));
   })
@@ -101,7 +102,9 @@ customersRouter.post(
   asyncHandler(async (req, res) => {
     // A further loan for an existing customer is a re-loan (Settings -> Re-Loan).
     await assertReLoanAllowed(req.params.customerId, req.user);
-    const customer = await addLoanForCustomer(req.params.customerId, req.body || {});
+    // The body is the loan; vehicleId, or vehicle + rc for another vehicle, say what it is taken on.
+    const { vehicleId, vehicle, rc, ...loan } = sanitizeCustomerPayload(req.body || {});
+    const customer = await addLoanForCustomer(req.params.customerId, loan, { vehicleId, vehicle, rc });
 
     if (!customer) {
       return res.status(404).json({ error: "Customer not found." });

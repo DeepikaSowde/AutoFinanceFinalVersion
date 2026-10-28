@@ -304,9 +304,16 @@ export const getPenalties = async ({ loanId = null } = {}) => {
 // One loan's penalties as they stand on `asOf` (a YYYY-MM-DD business date):
 // the pending total and how many instalments are pending / frozen /
 // cancelled, with the rule for the loan's frequency. Used for the penalty
-// part of a foreclosure cost.
-export const pendingPenaltySummary = async (db, loanId, asOf = businessToday()) => {
-  const [settings, entries] = await Promise.all([readSettings(db), loadLoans(db, { loanId })]);
+// part of a foreclosure cost. `beforeForeclosure` counts a loan that is
+// already foreclosed as it stood before its vehicle was sold (rebuilding the
+// cost of an earlier sale), since foreclosing drops its pending penalties.
+export const pendingPenaltySummary = async (db, loanId, asOf = businessToday(), { beforeForeclosure = false } = {}) => {
+  const [settings, loaded] = await Promise.all([readSettings(db), loadLoans(db, { loanId })]);
+  const entries = beforeForeclosure
+    ? loaded.map((entry) =>
+        entry.loan.status === "Foreclosed" ? { ...entry, loan: { ...entry.loan, status: "Active" } } : entry
+      )
+    : loaded;
   const frequency = entries[0]?.loan.frequency || "Monthly";
   const records = resolveAll(entries, settings, asOf);
   const pending = records.filter((r) => r.status === "Pending" && r.calculatedAmount > 0);

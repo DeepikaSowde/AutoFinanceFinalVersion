@@ -150,9 +150,13 @@ export const recordedVehicleExpenses = async (db, vehicleId) => {
  * The foreclosure cost and profit / loss of selling the vehicle for
  * `salePrice` on `saleDate`, in the shape the Vehicle and Loan screens read
  * (record.foreclosure.finalizedCalculation). `vehicleExpenses` defaults to the
- * expenses already booked against the vehicle.
+ * expenses already booked against the vehicle. `beforeForeclosure` is for
+ * rebuilding an earlier sale whose loan is already foreclosed.
  */
-export const computeForeclosure = async (db, { vehicleRow, loan, salePrice, saleDate, vehicleExpenses }) => {
+export const computeForeclosure = async (
+  db,
+  { vehicleRow, loan, salePrice, saleDate, vehicleExpenses, beforeForeclosure = false }
+) => {
   const settings = await getForeclosureSettings(db);
   const sale = roundMoney(salePrice);
   const date = String(saleDate || businessToday()).slice(0, 10);
@@ -183,7 +187,7 @@ export const computeForeclosure = async (db, { vehicleRow, loan, salePrice, sale
   const unpaidInterest = Math.max(0, scheduledUnpaidInterest - overlap);
 
   // Penalties still pending on the sale date, on the Penalty & Grace rules.
-  const penaltySummary = loan?.id ? await pendingPenaltySummary(db, loan.id, date) : null;
+  const penaltySummary = loan?.id ? await pendingPenaltySummary(db, loan.id, date, { beforeForeclosure }) : null;
   const rule = penaltySummary?.rule || {};
   const frequency = penaltySummary?.frequency || "Monthly";
   let penalty = 0;

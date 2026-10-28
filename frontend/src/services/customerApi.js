@@ -414,8 +414,9 @@ const referralFrom = (charges, commission) => {
 
 const toEntry = (record, loan, commissions = []) => {
   const personal = record.customer.personal || {}
-  const rc = record.rc || {}
-  const vehicle = record.vehicle || {}
+  // Each loan carries the vehicle it was taken on (a customer can have several).
+  const rc = loan.rc || record.rc || {}
+  const vehicle = loan.vehicle || record.vehicle || {}
   const guarantor = record.guarantor || {}
   const gPersonal = guarantor.personal || {}
   const charges = loan.charges || {}
@@ -549,40 +550,55 @@ export const loadCustomerEntries = async () => {
 
 export const getFundingSummary = () => apiGet('/investors/summary')
 
+const normalRegNo = (value) => String(value || '').replace(/\s+/g, '').toUpperCase()
+
+const vehiclesOf = (record) =>
+  record.vehicles?.length ? record.vehicles : record.vehicle?.id ? [{ ...record.vehicle, rc: record.rc }] : []
+
 /*
- * Creates the customer with their first loan, or adds a loan to an existing
- * customer when the mobile number and registration number both match one
- * already on file (the server keeps one vehicle per customer, so a loan on a
- * different vehicle is onboarded as its own customer record).
+ * Creates the customer with their first loan, or adds the loan to an existing
+ * customer: the one a Re-Loan was started from, or one whose mobile number
+ * and a vehicle's registration number both match. The server puts the loan on
+ * that customer's vehicle with this registration number, or adds the vehicle
+ * to them if it is a new one, and applies the Re-Loan policy.
  * Returns the entry for the new loan.
  */
 export const submitLoanApplication = async (form) => {
   const records = await apiGet('/customers')
   const mobile = (form.customer.mobile || '').trim()
-  const regNo = (form.vehicle.regNo || '').trim().toUpperCase()
+  const regNo = normalRegNo(form.vehicle.regNo)
+  const isReLoan = Boolean(form.customer?.isReLoanCustomer || form.loan?.isReLoan)
 
-  const existing = records.find(
-    (record) =>
-      mobile &&
-      record.customer.personal?.mobileNumber === mobile &&
-      (record.rc?.registrationNumber || '').toUpperCase() === regNo
-  )
+  const reLoanOf = isReLoan && form.customer?.customerId
+    ? records.find((record) => record.customer.id === form.customer.customerId)
+    : null
+  const existing =
+    reLoanOf ||
+    records.find(
+      (record) =>
+        mobile &&
+        regNo &&
+        record.customer.personal?.mobileNumber === mobile &&
+        vehiclesOf(record).some((vehicle) => normalRegNo(vehicle.rc?.registrationNumber) === regNo)
+    )
 
   const loan = toLoan(form)
   let record
 
   if (existing) {
-    record = await apiPost(`/customers/${existing.customer.id}/loans`, loan)
+    record = await apiPost(`/customers/${existing.customer.id}/loans`, {
+      ...loan,
+      vehicle: toVehicle(form.vehicle),
+      rc: toRc(form.vehicle),
+    })
   } else {
-    const isReLoan = Boolean(form.customer?.isReLoanCustomer || form.loan?.isReLoan)
     record = await apiPost('/customers', {
       customer: toCustomer(form.customer),
       vehicle: toVehicle(form.vehicle),
       rc: toRc(form.vehicle),
       guarantor: toGuarantor(form.guarantor, hasGuarantorIn(form)),
       loan,
-      // A re-loan on a different vehicle becomes its own customer record; the
-      // server applies the Re-Loan policy to the customer it came from.
+      // Still a re-loan if its customer was not found: the server applies the policy.
       ...(isReLoan && form.customer?.customerId ? { reLoanOfCustomerId: form.customer.customerId } : {}),
     })
   }

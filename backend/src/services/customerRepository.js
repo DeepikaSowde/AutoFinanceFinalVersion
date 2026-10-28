@@ -177,10 +177,19 @@ export const getCustomerRow = async (customerId) => {
   return result.rows[0];
 };
 
+// A customer can hold several vehicles (a re-loan on another vehicle adds
+// one); each loan points at its own. This is the first one, used where only
+// one is meant (editing the customer without naming a vehicle).
 export const getVehicleRowForCustomer = async (customerPk) => {
-  const result = await query("SELECT * FROM vehicles WHERE customer_pk = $1", [customerPk]);
+  const result = await query("SELECT * FROM vehicles WHERE customer_pk = $1 ORDER BY pk ASC LIMIT 1", [customerPk]);
 
   return result.rows[0];
+};
+
+const getVehicleRowsForCustomer = async (customerPk) => {
+  const result = await query("SELECT * FROM vehicles WHERE customer_pk = $1 ORDER BY pk ASC", [customerPk]);
+
+  return result.rows;
 };
 
 const getRcRow = async (vehiclePk) => {
@@ -233,29 +242,45 @@ export const buildLoan = async (loanRow) => {
   return mapLoan(loanRow, installmentRows, allocationRows, previousLoan);
 };
 
+const buildVehicle = async (vehicleRow) => {
+  const [rcRow, eventRows] = await Promise.all([
+    getRcRow(vehicleRow.pk),
+    query("SELECT * FROM vehicle_events WHERE vehicle_pk = $1 ORDER BY pk ASC", [vehicleRow.pk]).then((r) => r.rows),
+  ]);
+
+  return { pk: vehicleRow.pk, vehicle: { ...mapVehicle(vehicleRow), events: eventRows.map(mapVehicleEvent) }, rc: mapRc(rcRow) };
+};
+
+/*
+ * record.vehicle / record.rc are the first loan's vehicle (the customer's
+ * first vehicle), as before. Every loan also carries the vehicle and RC it
+ * was taken on (loan.vehicle / loan.rc), and record.vehicles lists them all.
+ */
 export const buildCustomerRecord = async (customerRow) => {
-  const [vehicleRow, guarantorRow, loanResult] = await Promise.all([
-    getVehicleRowForCustomer(customerRow.pk),
+  const [vehicleRows, guarantorRow, loanResult] = await Promise.all([
+    getVehicleRowsForCustomer(customerRow.pk),
     getGuarantorRow(customerRow.pk),
     query("SELECT * FROM loans WHERE customer_pk = $1 ORDER BY is_primary DESC, pk ASC", [
       customerRow.pk,
     ]),
   ]);
 
-  const [rcRow, eventRows] = await Promise.all([
-    getRcRow(vehicleRow?.pk),
-    vehicleRow
-      ? query("SELECT * FROM vehicle_events WHERE vehicle_pk = $1 ORDER BY pk ASC", [vehicleRow.pk]).then(
-          (r) => r.rows
-        )
-      : Promise.resolve([]),
+  const [vehicles, builtLoans] = await Promise.all([
+    Promise.all(vehicleRows.map(buildVehicle)),
+    Promise.all(loanResult.rows.map(buildLoan)),
   ]);
-  const loans = await Promise.all(loanResult.rows.map(buildLoan));
+  const byPk = new Map(vehicles.map((item) => [item.pk, item]));
+  const first = byPk.get(loanResult.rows[0]?.vehicle_pk) || vehicles[0];
+  const loans = builtLoans.map((loan, index) => {
+    const own = byPk.get(loanResult.rows[index].vehicle_pk) || first;
+    return { ...loan, vehicleId: own?.vehicle.id || "", vehicle: own?.vehicle || {}, rc: own?.rc || mapRc() };
+  });
 
   return {
     customer: mapCustomer(customerRow),
-    vehicle: vehicleRow ? { ...mapVehicle(vehicleRow), events: eventRows.map(mapVehicleEvent) } : {},
-    rc: mapRc(rcRow),
+    vehicle: first?.vehicle || {},
+    rc: first?.rc || mapRc(),
+    vehicles: vehicles.map(({ vehicle, rc }) => ({ ...vehicle, rc })),
     guarantor: mapGuarantor(guarantorRow),
     loan: loans[0] || {},
     loans: loans.slice(1),
@@ -290,8 +315,8 @@ export const getLoans = async () => {
         customerNumber: record.customer.customerNumber,
         customerName: record.customer.personal?.name || "",
         mobileNumber: record.customer.personal?.mobileNumber || "",
-        vehicle: record.vehicle,
-        rc: record.rc,
+        vehicle: loan.vehicle || record.vehicle,
+        rc: loan.rc || record.rc,
       }))
   );
 };
@@ -572,10 +597,21 @@ export const updateCustomer = async (customerId, payload = {}) => {
       ]
     );
 
-    const vehicleRow = await getVehicleRowForCustomer(customerRow.pk);
+    // payload.vehicleId picks which of the customer's vehicles to edit (the first by default).
+    const targetId = payload.vehicleId || payload.vehicle?.vehicleId;
+    const target = targetId ? (existing.vehicles || []).find((item) => item.id === targetId) : null;
+    if (targetId && !target) {
+      throw Object.assign(new Error("That vehicle does not belong to this customer."), { statusCode: 400 });
+    }
+    const vehicleRow = target
+      ? (await client.query("SELECT * FROM vehicles WHERE id = $1 AND customer_pk = $2", [target.id, customerRow.pk])).rows[0]
+      : await getVehicleRowForCustomer(customerRow.pk);
+    const currentVehicle = target || existing.vehicle;
+    const currentRc = target?.rc || existing.rc;
 
     if (vehicleRow && payload.vehicle) {
-      const merged = { ...existing.vehicle, ...payload.vehicle };
+      const { vehicleId: _ignored, ...vehicleFields } = payload.vehicle;
+      const merged = { ...currentVehicle, ...vehicleFields };
 
       await client.query(
         `UPDATE vehicles SET
@@ -601,10 +637,10 @@ export const updateCustomer = async (customerId, payload = {}) => {
 
     if (vehicleRow && payload.rc) {
       await updateRc(client, vehicleRow.pk, {
-        ...existing.rc,
+        ...currentRc,
         ...payload.rc,
-        insurance: { ...existing.rc.insurance, ...(payload.rc.insurance || {}) },
-        endorsement: { ...existing.rc.endorsement, ...(payload.rc.endorsement || {}) },
+        insurance: { ...currentRc.insurance, ...(payload.rc.insurance || {}) },
+        endorsement: { ...currentRc.endorsement, ...(payload.rc.endorsement || {}) },
       });
     }
 
@@ -667,25 +703,71 @@ export const deleteCustomer = async (customerId) =>
     return result.rowCount > 0;
   });
 
+const normalRegNo = (value) => String(value || "").replace(/\s+/g, "").toUpperCase();
+
 /*
- * Additional loan against an existing customer (the re-loan path).
+ * Additional loan against an existing customer (the re-loan path). The loan
+ * goes on:
+ *   - options.vehicleId, one of the customer's vehicles; else
+ *   - the customer's vehicle with options.rc's registration number; else
+ *   - a new vehicle from options.vehicle / options.rc, added to this customer;
+ *   - with none of those, the vehicle of the customer's latest loan.
  */
-export const addLoanForCustomer = async (customerId, loan = {}) => {
+export const addLoanForCustomer = async (customerId, loan = {}, options = {}) => {
   const customerRow = await getCustomerRow(customerId);
 
   if (!customerRow) {
     return null;
   }
 
-  const [vehicleRow, previousLoan] = await Promise.all([
-    getVehicleRowForCustomer(customerRow.pk),
+  const [vehicleRows, previousLoan] = await Promise.all([
+    getVehicleRowsForCustomer(customerRow.pk),
     query("SELECT * FROM loans WHERE customer_pk = $1 ORDER BY pk DESC LIMIT 1", [
       customerRow.pk,
     ]).then((r) => r.rows[0]),
   ]);
 
+  let vehiclePk = null;
+  let newVehicle = false;
+
+  if (options.vehicleId) {
+    const named = vehicleRows.find((row) => row.id === options.vehicleId);
+    if (!named) {
+      throw Object.assign(new Error("That vehicle does not belong to this customer."), { statusCode: 400 });
+    }
+    vehiclePk = named.pk;
+  } else if (normalRegNo(options.rc?.registrationNumber)) {
+    const regNo = normalRegNo(options.rc.registrationNumber);
+    const rcRows = vehicleRows.length
+      ? (await query("SELECT vehicle_pk, registration_number FROM rc_details WHERE vehicle_pk = ANY($1)", [
+          vehicleRows.map((row) => row.pk),
+        ])).rows
+      : [];
+    const match = rcRows.find((row) => normalRegNo(row.registration_number) === regNo);
+    if (match) vehiclePk = match.vehicle_pk;
+    else newVehicle = true;
+  } else if (options.vehicle && Object.keys(options.vehicle).length) {
+    newVehicle = true;
+  } else {
+    vehiclePk = previousLoan?.vehicle_pk ?? vehicleRows[0]?.pk ?? null;
+  }
+
+  if (vehiclePk) {
+    const held = vehicleRows.find((row) => row.pk === vehiclePk);
+    if (held && held.status === "SOLD") {
+      throw Object.assign(new Error("This vehicle has been sold; a new loan needs another vehicle."), {
+        statusCode: 409,
+      });
+    }
+  }
+
   await withTransaction(async (client) => {
-    const loanPk = await insertLoan(client, customerRow.pk, vehicleRow?.pk ?? null, loan, {
+    if (newVehicle) {
+      vehiclePk = await insertVehicle(client, customerRow.pk, options.vehicle || {});
+      await insertRc(client, vehiclePk, options.rc || {});
+    }
+
+    const loanPk = await insertLoan(client, customerRow.pk, vehiclePk, loan, {
       isPrimary: false,
       previousLoanPk: previousLoan?.pk ?? null,
     });
