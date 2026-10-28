@@ -25,3 +25,6 @@ dist-ssr
 
 # Scratch & test scripts
 scratch/
+
+# Translation reference review documents
+translation_reference_docs/
