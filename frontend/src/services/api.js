@@ -90,8 +90,9 @@ const request = async (path, options = {}) => {
     throw new ApiError('Cannot reach the server. Check your connection and try again.', 0)
   }
 
-  // Any successful write tells open views to reload (see DATA_CHANGED_EVENT).
-  const isWrite = options.method && options.method !== 'GET'
+  // Any successful write tells open views to reload (see DATA_CHANGED_EVENT),
+  // unless it is marked quiet (a preference that changes no business data).
+  const isWrite = options.method && options.method !== 'GET' && !options.quiet
   if (isWrite && response.ok) window.dispatchEvent(new Event(DATA_CHANGED_EVENT))
 
   if (response.status === 204) return null
@@ -123,7 +124,8 @@ const request = async (path, options = {}) => {
 
 export const apiGet = (path) => request(path)
 export const apiPost = (path, body) => request(path, { method: 'POST', body: JSON.stringify(body ?? {}) })
-export const apiPut = (path, body) => request(path, { method: 'PUT', body: JSON.stringify(body ?? {}) })
+export const apiPut = (path, body, { quiet = false } = {}) =>
+  request(path, { method: 'PUT', body: JSON.stringify(body ?? {}), quiet })
 export const apiDelete = (path) => request(path, { method: 'DELETE' })
 
 export const login = async (username, password) => {

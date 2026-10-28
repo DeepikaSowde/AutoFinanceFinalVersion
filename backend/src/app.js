@@ -15,6 +15,7 @@ import { chitsRouter } from "./routes/chits.js";
 import { penaltiesRouter } from "./routes/penalties.js";
 import { guarantorReferralsRouter } from "./routes/guarantorReferrals.js";
 import { settingsRouter } from "./routes/settings.js";
+import { dashboardLanguageRouter } from "./routes/dashboardLanguage.js";
 import { superadminRouter } from "./superadmin/routes.js";
 import {
   categoriesRouter,
@@ -72,6 +73,7 @@ export const createApp = () => {
   app.use("/api/categories", requireAuth, loadTenant, categoriesRouter);
   app.use("/api/reloan", requireAuth, loadTenant, reloanRouter);
   app.use("/api/settings", requireAuth, loadTenant, settingsRouter);
+  app.use("/api/dashboard-language", requireAuth, loadTenant, dashboardLanguageRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: "Not found." });

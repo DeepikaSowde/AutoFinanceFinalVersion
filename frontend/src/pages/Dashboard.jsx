@@ -24,8 +24,8 @@ const Dashboard = () => {
   const { data, loading } = useDashboardData(dateFilter);
   const [activeTab, setActiveTab] = useState('financial');
   const navigate = useNavigate();
-  const [language, setLanguage] = useDashboardLanguageState();
-  const t = translateDashboardText(language, 'Dashboard Module');
+  const { language, setLanguage, table, value: languageValue } = useDashboardLanguageState();
+  const t = translateDashboardText(language, 'Dashboard Module', table);
 
   if (loading) {
     return (
@@ -36,7 +36,7 @@ const Dashboard = () => {
   }
 
   return (
-    <DashboardLanguageProvider value={language}>
+    <DashboardLanguageProvider value={languageValue}>
     <div className="h-full w-full flex-1 min-h-screen flex flex-col p-4 sm:p-6 bg-white overflow-y-auto">
       <div className="w-full">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200">
