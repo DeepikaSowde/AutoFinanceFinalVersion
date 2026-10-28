@@ -16,7 +16,7 @@ import {
   Landmark,
   UserCog,
   BellRing,
-  LogOut,
+  Power,
   UserRound,
   PanelLeftClose,
   PanelLeftOpen,
@@ -26,7 +26,7 @@ import {
 
 const Sidebar = ({ onCollapsedChange }) => {
   const [isOpen, setIsOpen] = useState(false)
-  const [isCollapsed, setIsCollapsed] = useState(true)
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const { t } = useTranslation()
   const navigate = useNavigate()
   // The signed-in user and their page access come from the session.
@@ -305,13 +305,12 @@ const Sidebar = ({ onCollapsedChange }) => {
               <button
                 type="button"
                 onClick={handleSignOut}
-                className={`flex items-center rounded-lg bg-[#EF1111] hover:bg-red-700 text-[#FFFFFF] transition-colors duration-200 shadow-sm ${isCollapsed ? 'justify-center p-2 mx-auto w-10 h-10' : 'justify-center px-3 py-2 w-full'
+                className={`flex items-center rounded-lg bg-[#EF1111] hover:bg-red-700 text-[#FFFFFF] transition-colors duration-200 shadow-sm cursor-pointer ${isCollapsed ? 'justify-center p-2 mx-auto w-10 h-10' : 'justify-center gap-2 px-3 py-2 w-full'
                   }`}
                 title={isCollapsed ? 'Sign Out' : undefined}
               >
-                {isCollapsed ? (
-                  <LogOut className="h-[16px] w-[16px] shrink-0 text-[#FFFFFF]" />
-                ) : (
+                <Power className="h-[16px] w-[16px] shrink-0 text-[#FFFFFF]" />
+                {!isCollapsed && (
                   <span className="text-[13px] font-medium whitespace-nowrap text-[#FFFFFF]">Sign Out</span>
                 )}
               </button>

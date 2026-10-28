@@ -39,6 +39,7 @@ import {
 } from "../services/referralRepository.js";
 import {
   addReminder,
+  deleteReminder,
   getReminders,
   updateReminder,
 } from "../services/reminderRepository.js";
@@ -453,5 +454,18 @@ remindersRouter.put(
     }
 
     res.json(reminder);
+  })
+);
+
+// There is no separate delete permission for reminders; editing covers it.
+remindersRouter.delete(
+  "/:reminderId",
+  requirePermission("reminders.edit"),
+  asyncHandler(async (req, res) => {
+    if (!(await deleteReminder(req.params.reminderId))) {
+      return res.status(404).json({ error: "Reminder not found." });
+    }
+
+    res.status(204).send();
   })
 );

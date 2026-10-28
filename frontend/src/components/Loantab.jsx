@@ -297,9 +297,19 @@ const LoanTab = ({
   onReferralChange,
   onReferralClear,
   onViewSchedule,
+  activeSection: controlledActiveSection,
+  onSectionChange,
 }) => {
   const { t } = useTranslation()
-  const [activeSection, setActiveSection] = useState('loan')
+  const [internalActiveSection, setInternalActiveSection] = useState('loan')
+  const activeSection = controlledActiveSection !== undefined ? controlledActiveSection : internalActiveSection
+  const setActiveSection = (sec) => {
+    if (onSectionChange) {
+      onSectionChange(sec)
+    } else {
+      setInternalActiveSection(sec)
+    }
+  }
 
   /* -------------------------------------------------------
      VEHICLE / LOAN AMOUNT

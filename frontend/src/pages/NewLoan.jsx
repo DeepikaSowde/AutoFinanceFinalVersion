@@ -133,6 +133,7 @@ const NewLoan = () => {
   const { t } = useTranslation()
 
   const [step, setStep] = useState(0)
+  const [loanSubTab, setLoanSubTab] = useState('loan')
 
   const [form, setForm] = useState(() => {
     const saved = getCustomerOnboarding()
@@ -226,8 +227,32 @@ const NewLoan = () => {
   const current = STEPS[step]
   const isFirst = step === 0
   const isLast = step === STEPS.length - 1
-  const goNext = () => setStep((s) => Math.min(s + 1, STEPS.length - 1))
-  const goBack = () => setStep((s) => Math.max(s - 1, 0))
+
+  const goNext = () => {
+    if (step === 1) {
+      setLoanSubTab('loan')
+      setStep(2)
+      return
+    }
+    if (step === 2 && loanSubTab === 'loan') {
+      setLoanSubTab('guarantor')
+      return
+    }
+    setStep((s) => Math.min(s + 1, STEPS.length - 1))
+  }
+
+  const goBack = () => {
+    if (step === 3) {
+      setStep(2)
+      setLoanSubTab('guarantor')
+      return
+    }
+    if (step === 2 && loanSubTab === 'guarantor') {
+      setLoanSubTab('loan')
+      return
+    }
+    setStep((s) => Math.max(s - 1, 0))
+  }
 
   const [showSuccess, setShowSuccess] = useState(false)
   const [submittedLoan, setSubmittedLoan] = useState(null)
@@ -514,6 +539,8 @@ const NewLoan = () => {
               onGuarantorClear={clearGuarantor}
               onReferralChange={update('referral')}
               onReferralClear={clearReferral}
+              activeSection={loanSubTab}
+              onSectionChange={setLoanSubTab}
             />
           )}
           {step === 3 && <ReviewTab form={form} onViewSchedule={handleViewSchedule} />}
@@ -545,7 +572,15 @@ const NewLoan = () => {
               </button>
             ) : (
               <button type="button" onClick={goNext} className={`${primaryBtn} py-1.5 px-4 text-xs sm:text-sm`}>
-                {t('app.next')}: {t(STEPS[step + 1].labelKey)} <ArrowRight className="h-3.5 w-3.5" />
+                {step === 2 && loanSubTab === 'loan' ? (
+                  <>
+                    Next: Guarantor & Referral <ArrowRight className="h-3.5 w-3.5" />
+                  </>
+                ) : (
+                  <>
+                    {t('app.next')}: {t(STEPS[step + 1].labelKey)} <ArrowRight className="h-3.5 w-3.5" />
+                  </>
+                )}
               </button>
             )}
           </div>

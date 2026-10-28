@@ -48,7 +48,7 @@ function NoAccess() {
 }
 
 function AppShell() {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
   // Permissions come from the session, so an admin's change applies at the user's next sign-in.
   const user = getSessionUser()
