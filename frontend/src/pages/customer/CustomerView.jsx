@@ -1443,7 +1443,7 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                 <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-slate-900">Payment History</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Recorded collections for {activeSelectedLoanId || 'this loan'}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{`Recorded collections for ${activeSelectedLoanId || 'this loan'}`}</p>
                   </div>
                   <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full">
                     {selectedLoanPayments.length} payment{selectedLoanPayments.length > 1 ? 's' : ''}

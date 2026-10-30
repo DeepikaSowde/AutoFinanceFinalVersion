@@ -1875,7 +1875,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                     </h3>
                     <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                       <span className="font-semibold text-emerald-800">
-                        Installment #{selectedInstallmentForHistory.installmentNumber}
+                        {`Installment #${selectedInstallmentForHistory.installmentNumber ?? ''}`}
                       </span>
                       <span className="text-slate-300">|</span>
                       <span>

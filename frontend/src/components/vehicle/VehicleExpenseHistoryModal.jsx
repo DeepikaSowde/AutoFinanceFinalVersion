@@ -118,7 +118,7 @@ const VehicleExpenseHistoryModal = ({ isOpen, onClose, vehicleRecord }) => {
               <p className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight leading-tight">
                 {formatCurrency(totalExpenseAmount)}
               </p>
-              <span className="text-[10px] text-slate-400 font-semibold">{expenses.length} record{expenses.length === 1 ? '' : 's'}</span>
+              <span className="text-[10px] text-slate-400 font-semibold">{`${expenses.length} record${expenses.length === 1 ? '' : 's'}`}</span>
             </div>
 
           </div>

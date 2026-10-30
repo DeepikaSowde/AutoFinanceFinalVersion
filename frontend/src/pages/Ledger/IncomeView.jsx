@@ -707,13 +707,13 @@ const IncomeView = ({ data }) => {
                   {viewTransaction.installmentNumber && (
                     <div className="flex justify-between items-center py-1 border-b border-slate-100">
                       <span className="font-medium text-slate-500">Installment Reference</span>
-                      <span className="font-bold text-slate-900">Installment #{viewTransaction.installmentNumber}</span>
+                      <span className="font-bold text-slate-900">{`Installment #${viewTransaction.installmentNumber ?? ''}`}</span>
                     </div>
                   )}
                   {viewTransaction.penaltyType && (
                     <div className="flex justify-between items-center py-1 border-b border-slate-100">
                       <span className="font-medium text-slate-500">Penalty Rule</span>
-                      <span className="font-bold text-slate-900">{viewTransaction.penaltyType} ({viewTransaction.gracePeriod ?? 0} grace days)</span>
+                      <span className="font-bold text-slate-900">{`${viewTransaction.penaltyType ?? ''} (${viewTransaction.gracePeriod ?? 0} grace days)`}</span>
                     </div>
                   )}
                   <div className="flex justify-between items-center py-1 border-b border-slate-100">

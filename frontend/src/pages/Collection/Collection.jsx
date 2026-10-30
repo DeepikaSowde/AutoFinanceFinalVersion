@@ -2115,7 +2115,7 @@ const Collection = () => {
                           {formatCurrency(totalOutstanding)}
                         </p>
                         <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">
-                          {unpaidCount} Unpaid {unpaidCount === 1 ? "Installment" : "Installments"}
+                          {`${unpaidCount} Unpaid ${unpaidCount === 1 ? "Installment" : "Installments"}`}
                         </p>
                       </div>
                     </div>

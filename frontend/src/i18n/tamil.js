@@ -10,6 +10,10 @@ import { MOTOLEND_TAMIL } from './motolendTamil';
 // workbook, then Sheet1 (the general glossary), then Loan Details View 2 (the
 // app-wide list). A row whose Tamil is the English itself ("Moto") is a
 // vote to keep the English; when it wins, the text stays English.
+//
+// The corrections in MotoLend_Missing_Tamil_Translations.docx come later
+// and are kept as their own sheet; where it has a value, that value wins.
+export const CORRECTIONS_SHEET = 'MotoLend_Missing_Tamil_Translations.docx';
 
 // Workbook order. The server returns sheets alphabetically, so order comes
 // from here, not from the object.
@@ -59,8 +63,14 @@ export const resolveTranslations = (table = MOTOLEND_TAMIL) => {
   const resolved = {};
   Object.entries(byEnglish).forEach(([english, options]) => {
     const ranked = Object.entries(options)
-      .map(([tamil, sheets]) => ({ tamil, sheets, count: sheets.length, rank: Math.min(...sheets.map(sheetRank)) }))
-      .sort((a, b) => b.count - a.count || a.rank - b.rank);
+      .map(([tamil, sheets]) => ({
+        tamil,
+        sheets,
+        corrected: sheets.includes(CORRECTIONS_SHEET),
+        count: sheets.length,
+        rank: Math.min(...sheets.map(sheetRank)),
+      }))
+      .sort((a, b) => b.corrected - a.corrected || b.count - a.count || a.rank - b.rank);
     resolved[english] = { tamil: ranked[0].tamil, sheets: ranked[0].sheets, options: ranked };
   });
   return resolved;
@@ -81,7 +91,16 @@ export const buildDictionary = (table = MOTOLEND_TAMIL) => {
     // own and the Tamil keeps every placeholder.
     const names = english.match(PLACEHOLDER);
     if (!hasLetters(english.replace(PLACEHOLDER, '')) || names.some((name) => !tamil.includes(name))) return;
-    const pattern = new RegExp(`^${english.split(PLACEHOLDER).map(escapeRegExp).join('(.+?)')}$`);
+    // ${n} is a count and ${amount} a number, so they match only digits;
+    // any other placeholder matches any text.
+    const parts = english.split(PLACEHOLDER).map(escapeRegExp);
+    const source = parts.reduce((acc, part, index) => {
+      if (index === 0) return part;
+      const name = names[index - 1];
+      const value = name === '${n}' ? '(\\d[\\d,]*)' : name === '${amount}' ? '(\\d[\\d,.]*)' : '(.+?)';
+      return acc + value + part;
+    }, '');
+    const pattern = new RegExp(`^${source}$`);
     templates.push({ pattern, names, tamil });
   });
 

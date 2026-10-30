@@ -1131,7 +1131,7 @@ const ReLoanDetails = () => {
               <div className="px-5 py-2.5 bg-slate-50/40 border-b border-slate-100 flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-600">Verification Progress</span>
                 <span className="font-bold text-[#006052]">
-                  {Math.min(currentStepIndex, 8)} of 8 checks completed
+                  {`${Math.min(currentStepIndex, 8)} of 8 checks completed`}
                 </span>
               </div>
 

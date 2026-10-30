@@ -2013,7 +2013,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory, backL
                         </span>
                       ) : overdueInfo.hasOverdue ? (
                         <span className="font-bold text-red-600">
-                          {overdueInfo.overdueCount} {overdueInfo.overdueCount === 1 ? 'installment' : 'installments'} overdue
+                          {`${overdueInfo.overdueCount} ${overdueInfo.overdueCount === 1 ? 'installment' : 'installments'} overdue`}
                         </span>
                       ) : (
                         <span className="font-semibold text-emerald-700">No overdue</span>
