@@ -368,6 +368,20 @@ const allocationsByInstallment = (paymentHistory = []) => {
 // views must not apply payments to them a second time.
 const toUiSchedule = (rows = [], paymentHistory = []) => {
   const allocations = allocationsByInstallment(paymentHistory)
+  // Principal still owed after each instalment: the loan principal (the
+  // schedule's principal in total) less the principal paid on that instalment
+  // and every one before it. A midway closure settles all the remaining
+  // principal at once, so from its first instalment on nothing is owed.
+  const principalOutstanding = {}
+  let owed = rows.reduce((sum, row) => sum + (Number(row.principal) || 0), 0)
+  ;[...rows]
+    .sort((a, b) => a.installmentNumber - b.installmentNumber)
+    .forEach((row) => {
+      owed = row.midwayClosed
+        ? 0
+        : Math.max(0, Math.round((owed - (Number(row.paidPrincipal) || 0)) * 100) / 100)
+      principalOutstanding[row.installmentNumber] = owed
+    })
   return rows.map((row) => ({
     installmentNumber: row.installmentNumber,
     dueDate: row.dueDate,
@@ -377,6 +391,7 @@ const toUiSchedule = (rows = [], paymentHistory = []) => {
     interest: row.interest,
     principalPaid: row.paidPrincipal,
     interestPaid: row.paidInterest,
+    principalOutstanding: principalOutstanding[row.installmentNumber],
     // Interest waived by a midway closure, and whether the closure settled it.
     waivedInterest: row.waivedInterest || 0,
     closureAdjusted: Boolean(row.midwayClosed),
