@@ -359,9 +359,6 @@ const ReferralCommission = () => {
             <h1 className="page-title">
               Referral Commission
             </h1>
-            <p className="mt-1.5 text-xs sm:text-sm text-slate-500 font-medium">
-              Manage referral payouts, commission rates, and payout history for referrers.
-            </p>
           </div>
         </div>
 

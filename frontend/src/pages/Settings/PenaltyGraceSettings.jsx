@@ -323,9 +323,6 @@ const PenaltyGraceSettings = () => {
             <h1 className="page-title">
               Penalty Configuration
             </h1>
-            <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
-              Configure grace periods and penalty rules for monthly, weekly, and daily repayment frequencies.
-            </p>
           </div>
 
           {persistedSettings?.updatedAt && (

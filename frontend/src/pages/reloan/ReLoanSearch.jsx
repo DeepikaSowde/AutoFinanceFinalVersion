@@ -358,9 +358,6 @@ const ReLoanSearch = () => {
           <h1 className="page-title">
             Re-Loans
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Manage and track all Re-Loan accounts issued to existing onboarded borrowers.
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5">

@@ -1,7 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Settings,
   Clock,
   Scale,
   ArrowDownUp,
@@ -81,16 +80,10 @@ const SettingsOverview = () => {
         {/* Settings Page Header */}
         <div className="mb-5 pb-5 sm:pb-6 border-b border-slate-200/80">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-[#006052] border border-emerald-100/90 shadow-2xs">
-              <Settings className="h-6 w-6 stroke-[2.2]" />
-            </div>
             <div>
               <h1 className="page-title">
                 Settings
               </h1>
-              <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
-                Manage your finance business rules and configurations.
-              </p>
             </div>
           </div>
         </div>

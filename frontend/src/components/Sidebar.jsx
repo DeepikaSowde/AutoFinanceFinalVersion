@@ -17,6 +17,7 @@ import {
   UserCog,
   BellRing,
   Power,
+  Crown,
   UserRound,
   PanelLeftClose,
   PanelLeftOpen,
@@ -288,16 +289,23 @@ const Sidebar = ({ onCollapsedChange }) => {
                 </>
               )}
 
-              {/* Active Profile Card */}
-              <div className={`flex items-center gap-3 rounded-xl bg-[#005344] border border-[#145247] p-2.5 transition-all duration-300 ${isCollapsed ? 'justify-center' : ''}`}>
-                <div className="h-8 w-8 rounded-full bg-[#006B52] flex items-center justify-center shrink-0 shadow-inner text-[#39D6A3] font-bold text-xs">
-                  {currentUser?.name ? currentUser.name[0].toUpperCase() : <UserRound className="h-4 w-4 text-[#39D6A3]" />}
+              {/* Active Profile Card: a crown and "Admin" for an admin; a staff
+                  member keeps the person icon and their name. */}
+              <div
+                className={`flex items-center gap-2.5 rounded-xl bg-[#005344] border border-[#145247] p-2.5 transition-all duration-300 ${isCollapsed ? 'justify-center' : ''}`}
+                title={isCollapsed ? (isAdmin ? 'Admin' : currentUser?.name || 'User') : undefined}
+              >
+                <div className="h-8 w-8 rounded-full bg-[#006B52] flex items-center justify-center shrink-0 shadow-inner">
+                  {isAdmin ? (
+                    <Crown className="h-4 w-4 text-[#FACC15]" aria-hidden="true" />
+                  ) : (
+                    <UserRound className="h-4 w-4 text-[#39D6A3]" aria-hidden="true" />
+                  )}
                 </div>
                 {!isCollapsed && (
-                  <div className="flex flex-col overflow-hidden">
-                    <span className="text-[12px] font-bold text-[#E8F5F1] leading-tight truncate">{currentUser?.name || 'User'}</span>
-                    <span className="text-[10px] font-medium text-[#A8D5C8] truncate">{isAdmin ? 'Administrator' : 'Staff'}</span>
-                  </div>
+                  <span className="min-w-0 text-[13px] font-bold text-[#E8F5F1] leading-tight truncate">
+                    {isAdmin ? 'Admin' : currentUser?.name || 'User'}
+                  </span>
                 )}
               </div>
 
@@ -305,14 +313,12 @@ const Sidebar = ({ onCollapsedChange }) => {
               <button
                 type="button"
                 onClick={handleSignOut}
-                className={`flex items-center rounded-lg bg-[#EF1111] hover:bg-red-700 text-[#FFFFFF] transition-colors duration-200 shadow-sm cursor-pointer ${isCollapsed ? 'justify-center p-2 mx-auto w-10 h-10' : 'justify-center gap-2 px-3 py-2 w-full'
+                className={`flex items-center justify-center rounded-lg bg-[#EF1111] hover:bg-red-700 text-[#FFFFFF] transition-colors duration-200 shadow-sm cursor-pointer ${isCollapsed ? 'mx-auto w-10 h-10' : 'w-full h-9'
                   }`}
-                title={isCollapsed ? 'Sign Out' : undefined}
+                title="Sign Out"
+                aria-label="Sign Out"
               >
-                <Power className="h-[16px] w-[16px] shrink-0 text-[#FFFFFF]" />
-                {!isCollapsed && (
-                  <span className="text-[13px] font-medium whitespace-nowrap text-[#FFFFFF]">Sign Out</span>
-                )}
+                <Power className="h-[18px] w-[18px] shrink-0 text-[#FFFFFF]" aria-hidden="true" />
               </button>
 
               {/* Collapse Button */}

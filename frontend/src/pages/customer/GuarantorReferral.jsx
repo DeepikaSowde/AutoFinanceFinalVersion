@@ -360,9 +360,6 @@ const GuarantorReferral = () => {
           <h1 className="page-title">
             Guarantor / Referral
           </h1>
-          <p className="mt-1.5 text-xs sm:text-sm text-slate-500 font-medium">
-            Manage and view all guarantor and referral records in one shared directory.
-          </p>
         </div>
       </div>
 

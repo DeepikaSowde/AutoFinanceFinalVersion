@@ -168,14 +168,8 @@ const UserManagement = () => {
         <div className="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
           <div>
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-[#006B52] text-white flex items-center justify-center shadow-xs">
-                <UserCog className="h-5 w-5" />
-              </div>
               <div>
                 <h1 className="page-title">User Management</h1>
-                <p className="text-xs sm:text-sm text-slate-500 font-medium">
-                  Manage staff accounts, credentials, and role-based navigation permissions.
-                </p>
               </div>
             </div>
           </div>

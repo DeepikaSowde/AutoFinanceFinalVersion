@@ -255,20 +255,12 @@ export default function Reminder() {
           PAGE HEADER
       ========================================================= */}
       <div className="mb-5">
-        {/* Breadcrumb matching design reference */}
-        <p className="text-xs font-semibold text-slate-400 mb-2">
-          Operations <span className="text-slate-300 mx-1">/</span>{' '}
-          <span className="text-emerald-700">Reminders</span>
-        </p>
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="page-title">
               Reminders
             </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              Monitor payment dues and manage customer follow-ups.
-            </p>
           </div>
 
           {canAdd && (

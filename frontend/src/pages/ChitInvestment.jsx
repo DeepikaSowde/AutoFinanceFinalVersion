@@ -631,9 +631,6 @@ const ChitInvestment = () => {
           <h1 className="page-title">
             Chit Investment
           </h1>
-          <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5">
-            Manage company chits, track monthly payments, and record chit income
-          </p>
         </div>
 
         {/* Top-right Actions: Month filter, Add Chit Transaction, Add Company */}
