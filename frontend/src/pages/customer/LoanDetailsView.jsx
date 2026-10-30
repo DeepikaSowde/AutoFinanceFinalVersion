@@ -1651,7 +1651,9 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Principal</th>
                       <th className="px-3.5 py-3 text-right font-bold text-slate-700">Interest</th>
                       <th className="px-3.5 py-3 text-center font-bold text-slate-700">Type / Mode</th>
-                      <th className="px-3.5 py-3 text-center font-bold text-slate-700">Reference</th>
+                      <th className="px-3.5 py-3 text-center font-bold text-slate-700">
+                        {String(loan?.paymentFrequency || loanRecord?.paymentFrequency || "").toLowerCase() === "monthly" ? "EMI No." : "Installment No."}
+                      </th>
                       <th className="px-3.5 py-3 text-left font-bold text-slate-700">Activity &amp; Remarks</th>
                     </tr>
                   </thead>
