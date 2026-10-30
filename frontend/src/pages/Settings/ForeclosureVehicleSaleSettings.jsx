@@ -108,13 +108,13 @@ const ForeclosureVehicleSaleSettings = () => {
         </div>
 
         {/* Page Header: Left Title Section & Right Action Controls */}
-        <div className="mb-6 sm:mb-8 pb-5 sm:pb-6 border-b border-[#E4EBF2] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="mb-5 pb-5 sm:pb-6 border-b border-[#E4EBF2] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div className="flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-[#078B70] border border-emerald-100/90 shadow-2xs">
               <Scale className="h-6 w-6 stroke-[2.2]" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-[#163153] leading-tight">
+              <h1 className="page-title">
                 Foreclosure &amp; Vehicle Sale Settings
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">

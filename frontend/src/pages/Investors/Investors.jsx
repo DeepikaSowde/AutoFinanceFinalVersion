@@ -220,7 +220,7 @@ const Investors = () => {
       {/* PAGE HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between shrink-0">
         <div>
-          <h1 className="text-2xl font-bold leading-tight tracking-tight text-[#06483f] sm:text-3xl">
+          <h1 className="page-title">
             Investor Management
           </h1>
         </div>
@@ -251,7 +251,7 @@ const Investors = () => {
       </div>
 
       {/* KPI CARDS */}
-      <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 sm:gap-4 shrink-0">
+      <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 sm:gap-4 shrink-0">
         <SummaryCard icon={Users} title="Total Investors" value={filteredInvestors.length} />
         <SummaryCard icon={Database} title="Total Amount Invested" value={formatCurrency(totalInvestedGlobal)} />
         <SummaryCard icon={Wallet} title="Total Available Balance" value={formatCurrency(totalAvailableBalance)} />

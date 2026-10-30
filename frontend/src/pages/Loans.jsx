@@ -332,7 +332,7 @@ export default function Loans() {
         ========================================================= */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+            <h1 className="page-title">
               Loans
             </h1>
           </div>

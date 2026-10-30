@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* The main title of every module page, the same in English and Tamil.
+   The 20px below the heading block is set on each page's header row. */
+@layer components {
+  .page-title {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 32px;
+    letter-spacing: -0.025em;
+    color: #374151;
+  }
+}
+
 html,
 body,
 #root {

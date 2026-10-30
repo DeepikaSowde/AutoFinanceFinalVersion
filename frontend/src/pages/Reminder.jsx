@@ -254,7 +254,7 @@ export default function Reminder() {
       {/* =========================================================
           PAGE HEADER
       ========================================================= */}
-      <div className="mb-6">
+      <div className="mb-5">
         {/* Breadcrumb matching design reference */}
         <p className="text-xs font-semibold text-slate-400 mb-2">
           Operations <span className="text-slate-300 mx-1">/</span>{' '}
@@ -263,7 +263,7 @@ export default function Reminder() {
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
+            <h1 className="page-title">
               Reminders
             </h1>
             <p className="text-sm text-slate-500 mt-1">

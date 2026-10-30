@@ -335,9 +335,9 @@ const Customer = () => {
       {/* =========================
           PAGE HEADER
       ========================== */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold leading-tight tracking-tight text-[#06483f] sm:text-3xl lg:text-[34px]">
+          <h1 className="page-title">
             Customers
           </h1>
         </div>

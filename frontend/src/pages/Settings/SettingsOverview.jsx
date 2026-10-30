@@ -79,13 +79,13 @@ const SettingsOverview = () => {
     <div className="flex flex-col flex-1 min-h-screen w-full max-w-full overflow-x-hidden bg-[#F8FAFC] px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       <div className="w-full max-w-6xl mx-auto flex flex-col">
         {/* Settings Page Header */}
-        <div className="mb-6 sm:mb-8 pb-5 sm:pb-6 border-b border-slate-200/80">
+        <div className="mb-5 pb-5 sm:pb-6 border-b border-slate-200/80">
           <div className="flex items-center gap-3.5">
             <div className="flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-[#006052] border border-emerald-100/90 shadow-2xs">
               <Settings className="h-6 w-6 stroke-[2.2]" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 leading-tight">
+              <h1 className="page-title">
                 Settings
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">

@@ -630,7 +630,7 @@ const Ledger = () => {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between shrink-0">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 sm:text-3xl">
+            <h1 className="page-title">
               {filter === 'Ledger' ? 'Ledger' : filter}
             </h1>
           </div>
@@ -708,7 +708,7 @@ const Ledger = () => {
       {filter === 'Ledger' && (
         <>
           {/* KPI CARDS */}
-          <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 sm:gap-4 shrink-0 pb-2">
+          <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 sm:gap-4 shrink-0 pb-2">
             <SummaryCard
               icon={Database}
               title="Opening Balance"

@@ -355,7 +355,7 @@ const ReLoanSearch = () => {
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>Back to Customers</span>
           </button>
-          <h1 className="text-2xl font-bold leading-tight tracking-tight text-[#06483f] sm:text-3xl">
+          <h1 className="page-title">
             Re-Loans
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">

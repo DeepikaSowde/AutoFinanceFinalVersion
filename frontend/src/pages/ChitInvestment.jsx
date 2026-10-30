@@ -626,9 +626,9 @@ const ChitInvestment = () => {
       {/* =========================================================================
           1. MAIN PAGE HEADER & ACTIONS
       ========================================================================= */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5 shrink-0">
         <div>
-          <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 sm:text-3xl">
+          <h1 className="page-title">
             Chit Investment
           </h1>
           <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5">

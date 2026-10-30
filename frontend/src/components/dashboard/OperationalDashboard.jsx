@@ -199,9 +199,9 @@ const OperationalDashboard = ({
 
   return (
     <div className="min-w-0 space-y-5">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-5 gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-800">Operational Dashboard</h1>
+          <h1 className="page-title">Operational Dashboard</h1>
         </div>
 
         <div className="flex items-center gap-2.5 sm:gap-3 self-stretch sm:self-auto justify-end flex-wrap">

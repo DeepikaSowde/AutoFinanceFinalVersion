@@ -239,7 +239,7 @@ const Vehicle = () => {
             1. PAGE HEADER (Clean, left-aligned, no admin/bell controls)
         ========================================================= */}
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+          <h1 className="page-title">
             Vehicle Management
           </h1>
         </div>

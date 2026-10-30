@@ -356,7 +356,7 @@ const ReferralCommission = () => {
             <Undo2 className="h-4 w-4" strokeWidth={2.2} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
+            <h1 className="page-title">
               Referral Commission
             </h1>
             <p className="mt-1.5 text-xs sm:text-sm text-slate-500 font-medium">
@@ -381,7 +381,7 @@ const ReferralCommission = () => {
       {/* =========================================================
           KPI SUMMARY CARDS
       ========================================================= */}
-      <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 lg:mt-8">
+      <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
         <SummaryCard
           icon={Coins}
           title="Total Commission"

@@ -428,12 +428,12 @@ export default function SmartSearch() {
         {/* =========================================================================
             1. HEADING & SUBTITLE WITH CHARCOAL + YELLOW SEARCH ICON ACCENT
         ========================================================================= */}
-        <div className="flex items-center gap-2.5">
+        <div className="mb-2 flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#252525] border border-[#333333] text-white shadow-2xs shrink-0">
             <Search className="h-4.5 w-4.5 text-[#FACC15] stroke-[2.5]" />
           </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-[#252525] tracking-tight leading-tight">
+            <h1 className="page-title">
               Smart Search
             </h1>
             <p className="text-xs sm:text-[13px] text-[#6B7280] mt-0.5 font-medium leading-normal">

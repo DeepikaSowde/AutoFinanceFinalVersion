@@ -318,9 +318,9 @@ const PenaltyGraceSettings = () => {
         )}
 
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 sm:mb-8 pb-5 border-b border-slate-200">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5 pb-5 border-b border-slate-200">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 leading-tight">
+            <h1 className="page-title">
               Penalty Configuration
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">

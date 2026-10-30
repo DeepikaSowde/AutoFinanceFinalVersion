@@ -86,13 +86,13 @@ const ReLoanSettings = () => {
       </div>
 
       {/* Page Header */}
-      <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-slate-200/80">
+      <div className="mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-slate-200/80">
         <div className="flex items-start sm:items-center gap-3.5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#006052] text-white shadow-xs">
             <RefreshCw className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            <h1 className="page-title">
               Re-Loan Configuration
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 font-normal mt-0.5 max-w-2xl">

@@ -425,7 +425,7 @@ const ForeclosureDetailsView = ({
             TOP BAR: BACK BUTTON & TITLE WITH FORECLOSED BADGE
             (Breadcrumb removed as requested; clean gutters preserved)
         ========================================================= */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -436,7 +436,7 @@ const ForeclosureDetailsView = ({
               <span>{backLabel || 'Back'}</span>
             </button>
             <div className="h-4 w-px bg-slate-300 hidden sm:block" />
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+            <h1 className="page-title">
               Foreclosure Overview
             </h1>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200/80">

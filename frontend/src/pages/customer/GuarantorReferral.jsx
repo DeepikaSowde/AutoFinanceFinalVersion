@@ -357,7 +357,7 @@ const GuarantorReferral = () => {
           <Undo2 className="h-4 w-4" strokeWidth={2.2} />
         </button>
         <div>
-          <h1 className="text-2xl font-bold leading-none tracking-tight text-[#06483f] sm:text-[32px]">
+          <h1 className="page-title">
             Guarantor / Referral
           </h1>
           <p className="mt-1.5 text-xs sm:text-sm text-slate-500 font-medium">
@@ -369,7 +369,7 @@ const GuarantorReferral = () => {
       {/* =========================================================
           RECORDS TABLE SECTION
       ========================================================= */}
-      <div className="mt-5 sm:mt-6 rounded-md border border-slate-200 bg-white p-4">
+      <div className="mt-5 rounded-md border border-slate-200 bg-white p-4">
         {/* Horizontal Toolbar: Flexible Search Bar (Left) & + Add Button (Right) */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4">
           <div className="relative flex-1 min-w-0">
