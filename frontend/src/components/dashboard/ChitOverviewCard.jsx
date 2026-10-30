@@ -4,10 +4,8 @@ import { Link } from 'react-router-dom';
 import { formatCurrency } from '../../utils/currencyFormatter';
 import { CHIT_UPDATE_EVENT, getChitTransactions } from '../../utils/chitStorage';
 import DashboardEmptyState from './DashboardEmptyState';
-import { useDashboardText } from '../../i18n/dashboardLanguage';
 
 const ChitOverviewCard = ({ data }) => {
-  const t = useDashboardText('Capital, Chit & Outstanding');
   // Saved chit transactions (from the API). They arrive after the first
   // render, so redraw whenever a fresh copy comes in.
   const [transactions, setTransactions] = useState(() => getChitTransactions());
@@ -45,13 +43,13 @@ const ChitOverviewCard = ({ data }) => {
           <div className="h-8 w-8 rounded-full bg-emerald-50 flex items-center justify-center shrink-0">
             <Users className="h-4 w-4 text-emerald-700" strokeWidth={1.8} />
           </div>
-          <h3 className="text-base font-bold text-slate-800">{t('Chit Overview')}</h3>
+          <h3 className="text-base font-bold text-slate-800">Chit Overview</h3>
         </div>
         <Link 
           to="/chit-investment"
           className="text-xs text-emerald-600 font-semibold hover:text-emerald-700 hover:underline select-none transition-colors"
         >
-          {t('View Details →')}
+          View Details &rarr;
         </Link>
       </div>
 
@@ -59,8 +57,8 @@ const ChitOverviewCard = ({ data }) => {
         <div className="flex-1 flex items-center justify-center min-h-0">
           <DashboardEmptyState
             icon={Users}
-            title={t('No chit records available.')}
-            subtitle={t('Chit details will appear here when records are added.')}
+            title="No chit records available."
+            subtitle="Chit details will appear here when records are added."
           />
         </div>
       ) : (
@@ -71,7 +69,7 @@ const ChitOverviewCard = ({ data }) => {
             <div className="flex flex-col min-w-0">
               <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider truncate flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#006052] shrink-0" />
-                {t('Chit Income')}
+                Chit Income
               </span>
               <span className="text-xs sm:text-sm font-bold text-[#006052] truncate mt-0.5" title={formatCurrency(chitIncome)}>
                 {formatCurrency(chitIncome)}
@@ -82,7 +80,7 @@ const ChitOverviewCard = ({ data }) => {
             <div className="flex flex-col min-w-0 border-x border-slate-100 px-2">
               <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider truncate flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-rose-600 shrink-0" />
-                {t('Chit Expense')}
+                Chit Expense
               </span>
               <span className="text-xs sm:text-sm font-bold text-rose-600 truncate mt-0.5" title={formatCurrency(chitExpense)}>
                 {formatCurrency(chitExpense)}
@@ -92,7 +90,7 @@ const ChitOverviewCard = ({ data }) => {
             {/* 3. Total Transactions (Full Label, No abbreviation) */}
             <div className="flex flex-col min-w-0 pl-1 text-right">
               <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider truncate">
-                {t('Total Transactions')}
+                Total Transactions
               </span>
               <span className="text-xs sm:text-sm font-bold text-slate-800 truncate mt-0.5">
                 {totalTransactions}
@@ -104,7 +102,7 @@ const ChitOverviewCard = ({ data }) => {
           <div className="flex-1 w-full min-h-0 pt-3 pb-1 flex flex-col justify-end">
             {!hasChartData ? (
               <div className="flex-1 flex items-center justify-center text-xs text-slate-400 italic">
-                {t('No financial amounts recorded yet.')}
+                No financial amounts recorded yet.
               </div>
             ) : (
               <div className="w-full h-full flex flex-col justify-end">
@@ -143,10 +141,10 @@ const ChitOverviewCard = ({ data }) => {
                 {/* Full Category Names Below Bars */}
                 <div className="flex items-center justify-center gap-12 sm:gap-16 px-4 pt-2">
                   <div className="w-24 text-center">
-                    <span className="text-xs font-bold text-slate-700">{t('Chit Income')}</span>
+                    <span className="text-xs font-bold text-slate-700">Chit Income</span>
                   </div>
                   <div className="w-24 text-center">
-                    <span className="text-xs font-bold text-slate-700">{t('Chit Expense')}</span>
+                    <span className="text-xs font-bold text-slate-700">Chit Expense</span>
                   </div>
                 </div>
               </div>

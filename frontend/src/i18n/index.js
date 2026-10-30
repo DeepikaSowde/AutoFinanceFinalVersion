@@ -16,7 +16,10 @@ i18n
       },
     },
 
-    lng: window.localStorage.getItem("app-language") || "en",
+    // Always English: the Tamil the app shows comes only from the approved
+    // workbook (see LanguageProvider), not from locales/ta, whose text was
+    // not taken from it.
+    lng: "en",
     fallbackLng: "en",
     supportedLngs: ["en", "ta"],
 

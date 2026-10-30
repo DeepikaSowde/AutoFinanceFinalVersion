@@ -2,25 +2,23 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { TrendingUp } from 'lucide-react';
 import { formatCurrency } from '../../utils/currencyFormatter';
 import DashboardEmptyState from './DashboardEmptyState';
-import { useDashboardText } from '../../i18n/dashboardLanguage';
 
 const COLORS = ['#0f4a36', '#3b82f6', '#10b981', '#f59e0b', '#64748b', '#8b5cf6'];
 
 const IncomeBreakdownChart = ({ data, total }) => {
-  const t = useDashboardText('Dashboard Charts');
   const hasData = Array.isArray(data) && data.length > 0 && data.some(d => Number(d.value || 0) > 0);
 
   if (!hasData) {
     return (
       <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm flex flex-col h-[360px] min-h-[360px] col-span-1 lg:col-span-5 min-w-0">
         <div className="flex items-center justify-between mb-4 shrink-0">
-          <h3 className="text-base font-bold text-slate-800">{t('Income Overview')}</h3>
+          <h3 className="text-base font-bold text-slate-800">Income Overview</h3>
         </div>
         <div className="flex-1 flex items-center justify-center min-h-0">
           <DashboardEmptyState
             icon={TrendingUp}
-            title={t('No income data available for this period.')}
-            subtitle={t('Income trends will appear when transactions are recorded.')}
+            title="No income data available for this period."
+            subtitle="Income trends will appear when transactions are recorded."
           />
         </div>
       </div>
@@ -30,7 +28,7 @@ const IncomeBreakdownChart = ({ data, total }) => {
   return (
     <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm flex flex-col h-[360px] min-h-[360px] col-span-1 lg:col-span-5 min-w-0">
       <div className="flex items-center justify-between mb-4 shrink-0">
-        <h3 className="text-base font-bold text-slate-800">{t('Income Overview')}</h3>
+        <h3 className="text-base font-bold text-slate-800">Income Overview</h3>
       </div>
       <div className="flex-1 flex flex-col md:flex-row items-center justify-between min-h-0">
         <div className="h-44 w-44 sm:h-48 sm:w-48 relative shrink-0 mx-auto md:mx-0">
@@ -55,7 +53,7 @@ const IncomeBreakdownChart = ({ data, total }) => {
           </ResponsiveContainer>
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-2">
             <span className="text-xs sm:text-sm font-bold text-slate-800 leading-tight">{formatCurrency(total)}</span>
-            <span className="text-xs text-slate-500">{t('Total Credit')}</span>
+            <span className="text-xs text-slate-500">Total Credit</span>
           </div>
         </div>
         

@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getLocalDateString } from '../../utils/dateUtils';
-import { useDashboardLanguage, useDashboardText } from '../../i18n/dashboardLanguage';
 
 export const monthNameList = [
   { value: '01', label: 'January', short: 'Jan' },
@@ -162,8 +161,6 @@ const MonthYearFilter = ({
   selectedYear,
   setSelectedYear,
 }) => {
-  const t = useDashboardText('Dashboard Module');
-  const language = useDashboardLanguage();
   const [showPicker, setShowPicker] = useState(false);
   const [extraYearsBack, setExtraYearsBack] = useState(0);
 
@@ -426,29 +423,6 @@ const MonthYearFilter = ({
     dateFilter.filterType === 'year' &&
     dateFilter.selectedYear === String(curYear);
 
-  // The filter keeps its English label; in Tamil the shown label is rebuilt
-  // from the same filter fields using the Excel's label templates.
-  const shownLabel = (() => {
-    const label = dateFilter?.label;
-    if (language === 'en') return label;
-    const [y, m, d] = (dateFilter?.startDate || '').split('-').map(Number);
-    const monthObj = monthNameList[m - 1];
-    switch (dateFilter?.filterType) {
-      case 'all':
-        return t('All Months');
-      case 'today':
-        return monthObj
-          ? t.template('Today (${today.getDate()} ${monthNameList[today.getMonth()].short})', d, monthObj.short)
-          : label;
-      case 'this_month':
-        return monthObj ? t.template('This Month (${monthNameList[m].short} ${y})', monthObj.short, y) : label;
-      case 'year':
-        return t.template('Year ${year}', dateFilter.selectedYear);
-      default:
-        return label;
-    }
-  })();
-
   return (
     <div className="relative inline-block text-left" ref={containerRef}>
       {/* TRIGGER BUTTON */}
@@ -460,10 +434,10 @@ const MonthYearFilter = ({
             ? 'border-[#006052] bg-emerald-50 text-[#006052] ring-1 ring-[#006052]'
             : 'border-slate-300 bg-white text-slate-700 hover:border-[#006052] hover:text-[#006052] hover:bg-slate-50'
         }`}
-        title={t('Filter by Date, Month, or Year')}
+        title="Filter by Date, Month, or Year"
       >
         <Calendar className="h-4 w-4 text-[#006052] shrink-0" />
-        <span className="truncate max-w-[210px] sm:max-w-[260px]">{shownLabel || t('All Months')}</span>
+        <span className="truncate max-w-[210px] sm:max-w-[260px]">{dateFilter?.label || 'All Months'}</span>
         <ChevronDown
           className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 shrink-0 ${
             showPicker ? 'rotate-180 text-[#006052]' : ''
@@ -485,7 +459,7 @@ const MonthYearFilter = ({
                   : 'bg-slate-50 text-slate-600 hover:bg-emerald-50 hover:text-[#006052]'
               }`}
             >
-              {t('Today')}
+              Today
             </button>
             <button
               type="button"
@@ -496,7 +470,7 @@ const MonthYearFilter = ({
                   : 'bg-slate-50 text-slate-600 hover:bg-emerald-50 hover:text-[#006052]'
               }`}
             >
-              {t('This Month')}
+              This Month
             </button>
             <button
               type="button"
@@ -507,7 +481,7 @@ const MonthYearFilter = ({
                   : 'bg-slate-50 text-slate-600 hover:bg-emerald-50 hover:text-[#006052]'
               }`}
             >
-              {t('All Months')}
+              All Months
             </button>
           </div>
 
@@ -517,8 +491,8 @@ const MonthYearFilter = ({
               type="button"
               onClick={handlePrevMonth}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-emerald-50 hover:text-[#006052] transition-colors cursor-pointer shrink-0"
-              title={t('Previous Month')}
-              aria-label={t('Previous Month')}
+              title="Previous Month"
+              aria-label="Previous Month"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -532,12 +506,12 @@ const MonthYearFilter = ({
                     const newM = Number(e.target.value);
                     setViewDate(new Date(curYear, newM, 1));
                   }}
-                  aria-label={t('Select Month')}
+                  aria-label="Select Month"
                   className="h-8 rounded-lg border border-slate-200 bg-white pl-2.5 pr-6 text-xs font-bold text-slate-800 hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] cursor-pointer outline-none appearance-none transition-all shadow-2xs"
                 >
                   {monthNameList.map((m, idx) => (
                     <option key={m.value} value={idx}>
-                      {t(m.label)}
+                      {m.label}
                     </option>
                   ))}
                 </select>
@@ -556,7 +530,7 @@ const MonthYearFilter = ({
                     const newY = Number(e.target.value);
                     setViewDate(new Date(newY, curMonthIndex, 1));
                   }}
-                  aria-label={t('Select Year')}
+                  aria-label="Select Year"
                   className="h-8 rounded-lg border border-slate-200 bg-white pl-2.5 pr-6 text-xs font-bold text-slate-800 hover:border-[#006052] focus:border-[#006052] focus:ring-1 focus:ring-[#006052] cursor-pointer outline-none appearance-none transition-all shadow-2xs"
                 >
                   {availableYears.map((yr) => (
@@ -564,7 +538,7 @@ const MonthYearFilter = ({
                       {yr}
                     </option>
                   ))}
-                  <option value="__load_more__">{t('« Older years... »')}</option>
+                  <option value="__load_more__">« Older years... »</option>
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               </div>
@@ -574,8 +548,8 @@ const MonthYearFilter = ({
               type="button"
               onClick={handleNextMonth}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-emerald-50 hover:text-[#006052] transition-colors cursor-pointer shrink-0"
-              title={t('Next Month')}
-              aria-label={t('Next Month')}
+              title="Next Month"
+              aria-label="Next Month"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -591,9 +565,9 @@ const MonthYearFilter = ({
                   ? 'bg-[#006052] text-white border-[#006052] shadow-xs'
                   : 'bg-emerald-50 text-[#006052] border-emerald-100 hover:bg-emerald-100'
               }`}
-              title={t.template('Filter by all of ${curMonthObj?.label} ${curYear}', t(curMonthObj?.label), curYear)}
+              title={`Filter by all of ${curMonthObj?.label} ${curYear}`}
             >
-              {t('Select Month')} ({curMonthObj?.short} {curYear})
+              Select Month ({curMonthObj?.short} {curYear})
             </button>
             <button
               type="button"
@@ -603,9 +577,9 @@ const MonthYearFilter = ({
                   ? 'bg-[#006052] text-white border-[#006052] shadow-xs'
                   : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-emerald-50 hover:text-[#006052]'
               }`}
-              title={t.template('Filter by all of ${curYear}', curYear)}
+              title={`Filter by all of ${curYear}`}
             >
-              {t('Select Year')} ({curYear})
+              Select Year ({curYear})
             </button>
           </div>
 
@@ -615,7 +589,7 @@ const MonthYearFilter = ({
             <div className="grid grid-cols-7 gap-1 text-center mb-1.5">
               {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
                 <span key={d} className="text-[11px] font-bold text-slate-400">
-                  {t(d)}
+                  {d}
                 </span>
               ))}
             </div>
@@ -674,17 +648,17 @@ const MonthYearFilter = ({
           <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
             <span className="text-[11px] text-slate-400 truncate max-w-[210px]">
               {rangeStart && !rangeEnd
-                ? t('Select end date...')
+                ? 'Select end date...'
                 : dateFilter?.filterType === 'all'
-                ? t('Showing all time')
-                : shownLabel}
+                ? 'Showing all time'
+                : dateFilter?.label}
             </span>
             <button
               type="button"
               onClick={() => setShowPicker(false)}
               className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-md hover:bg-slate-100 cursor-pointer transition-colors"
             >
-              {t('Close')}
+              Close
             </button>
           </div>
         </div>

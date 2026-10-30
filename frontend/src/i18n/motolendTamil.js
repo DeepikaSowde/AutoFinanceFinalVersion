@@ -1,7 +1,7 @@
 // English → Tamil text approved in MotoLend-English-to-Tamil.xlsx.
 // One object per sheet of the workbook, keyed by the English text exactly as
-// written there. Rows whose Tamil is the same as the English (code strings,
-// brand words) are left out; repeated rows appear once.
+// written there; repeated rows appear once. Rows whose Tamil is the English
+// itself ("Moto", "Lend") are approved choices to keep the English.
 export const MOTOLEND_TAMIL = {
   "Sheet1": {
     "Customer": "வாடிக்கையாளர்",
@@ -78,6 +78,8 @@ export const MOTOLEND_TAMIL = {
     "Closing Balance": "முடிவு இருப்புத் தொகை",
   },
   "Login Module": {
+    "Moto": "Moto",
+    "Lend": "Lend",
     "Welcome to MotoLend": "MotoLend-க்கு நல்வரவு",
     "Sign in to manage your finance operations.": "உங்கள் நிதிச் செயல்பாடுகளை நிர்வகிக்க உள்நுழையவும்.",
     "Username or Mobile Number": "பயனர் பெயர் அல்லது மொபைல் எண்",
@@ -191,6 +193,7 @@ export const MOTOLEND_TAMIL = {
     "No customers match your search or filter.": "உங்கள் தேடல் அல்லது வடிகட்டலுக்குப் பொருந்தும் வாடிக்கையாளர்கள் இல்லை.",
     "Previous": "முந்தையது",
     "Next": "அடுத்து",
+    "ellipsis-${idx}": "ellipsis-${idx}",
     "Page ${page}": "பக்கம் ${page}",
     "Search customer name, ID or loan no.": "வாடிக்கையாளர் பெயர், அடையாள எண் அல்லது கடன் எண்ணைத் தேடவும்",
     "Total Customers": "மொத்த வாடிக்கையாளர்கள்",
@@ -325,6 +328,7 @@ export const MOTOLEND_TAMIL = {
     "Editing the percentage recalculates the payout without overwriting payment records or creating duplicate expenses.": "சதவீதத்தைத் திருத்தினால், ஏற்கனவே உள்ள பணம் செலுத்திய பதிவுகளை மாற்றாமலும், இரட்டிப்புச் செலவுகளை உருவாக்காமலும், கமிஷன் செலுத்த வேண்டிய தொகை மீண்டும் கணக்கிடப்படும்.",
   },
   "Dashboard Module": {
+    "flex flex-col items-center justify-center text-center p-6 my-auto select-none ${className}": "flex flex-col items-center justify-center text-center p-6 my-auto select-none ${className}",
     "Financial Dashboard": "நிதி டாஷ்போர்டு",
     "Export": "ஏற்றுமதி செய்",
     "Notifications": "அறிவிப்புகள்",
@@ -335,6 +339,8 @@ export const MOTOLEND_TAMIL = {
     "Close": "மூடு",
     "Filter by all of ${curMonthObj?.label} ${curYear}": "${curMonthObj?.label} ${curYear} முழுவதற்கும் வடிகட்டு",
     "Filter by all of ${curYear}": "${curYear} ஆண்டு முழுவதற்கும் வடிகட்டு",
+    "prev-${i}": "prev-${i}",
+    "curr-${dayNum}": "curr-${dayNum}",
     "Filter by Date, Month, or Year": "தேதி, மாதம் அல்லது ஆண்டு அடிப்படையில் வடிகட்டு",
     "Previous Month": "முந்தைய மாதம்",
     "Next Month": "அடுத்த மாதம்",
@@ -354,6 +360,7 @@ export const MOTOLEND_TAMIL = {
     "December": "டிசம்பர்",
     "Today (${today.getDate()} ${monthNameList[today.getMonth()].short})": "இன்று (${today.getDate()} ${monthNameList[today.getMonth()].short})",
     "This Month (${monthNameList[m].short} ${y})": "இந்த மாதம் (${monthNameList[m].short} ${y})",
+    "${monthNameList[monthIndex].short} ${year}": "${monthNameList[monthIndex].short} ${year}",
     "Year ${year}": "ஆண்டு ${year}",
     "Operational Dashboard": "செயல்பாட்டு டாஷ்போர்டு",
     "Smart Search": "விரைவுத் தேடல்",
@@ -361,6 +368,7 @@ export const MOTOLEND_TAMIL = {
   "Dashboard Charts": {
     "Expense Overview": "செலவு விவரம்",
     "Total Debit": "மொத்தச் செலவு",
+    "cell-${index}": "cell-${index}",
     "No expense records available.": "செலவுப் பதிவுகள் எதுவும் இல்லை.",
     "Recorded expenses will appear here.": "பதிவு செய்யப்பட்ட செலவுகள் இங்கே காட்டப்படும்.",
     "Income Overview": "வரவு விவரம்",
@@ -710,6 +718,7 @@ export const MOTOLEND_TAMIL = {
     "December": "டிசம்பர்",
     "Today (${today.getDate()} ${monthNameList[today.getMonth()].short})": "இன்று (${today.getDate()} ${monthNameList[today.getMonth()].short})",
     "This Month (${monthNameList[m].short} ${y})": "இந்த மாதம் (${monthNameList[m].short} ${y})",
+    "${monthNameList[monthIndex].short} ${year}": "${monthNameList[monthIndex].short} ${year}",
     "Year ${year}": "${year} ஆம் ஆண்டு",
     "Operational Dashboard": "செயல்பாட்டு டாஷ்போர்டு",
     "Smart Search": "விரைவுத் தேடல்",

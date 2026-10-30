@@ -2,25 +2,23 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Receipt } from 'lucide-react';
 import { formatCurrency } from '../../utils/currencyFormatter';
 import DashboardEmptyState from './DashboardEmptyState';
-import { useDashboardText } from '../../i18n/dashboardLanguage';
 
 const COLORS = ['#0f4a36', '#10b981', '#f59e0b', '#8b5cf6', '#64748b', '#3b82f6'];
 
 const ExpenseBreakdownChart = ({ data, total }) => {
-  const t = useDashboardText('Dashboard Charts');
   const hasData = Array.isArray(data) && data.length > 0 && data.some(d => Number(d.value || 0) > 0);
 
   if (!hasData) {
     return (
       <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm flex flex-col h-[360px] min-h-[360px] col-span-1 lg:col-span-4 w-full min-w-0">
         <div className="flex items-center justify-between mb-4 shrink-0">
-          <h3 className="text-base font-bold text-slate-800">{t('Expense Overview')}</h3>
+          <h3 className="text-base font-bold text-slate-800">Expense Overview</h3>
         </div>
         <div className="flex-1 flex items-center justify-center min-h-0">
           <DashboardEmptyState
             icon={Receipt}
-            title={t('No expense records available.')}
-            subtitle={t('Recorded expenses will appear here.')}
+            title="No expense records available."
+            subtitle="Recorded expenses will appear here."
           />
         </div>
       </div>
@@ -30,7 +28,7 @@ const ExpenseBreakdownChart = ({ data, total }) => {
   return (
     <div className="bg-white rounded-xl p-5 border border-slate-100 shadow-sm flex flex-col h-[360px] min-h-[360px] col-span-1 lg:col-span-4 w-full min-w-0">
       <div className="flex items-center justify-between mb-4 shrink-0">
-        <h3 className="text-base font-bold text-slate-800">{t('Expense Overview')}</h3>
+        <h3 className="text-base font-bold text-slate-800">Expense Overview</h3>
       </div>
       <div className="flex-1 flex flex-col sm:flex-row lg:flex-col xl:flex-row items-center justify-between min-h-0">
         <div className="h-44 w-44 sm:h-48 sm:w-48 relative shrink-0 mx-auto sm:mx-0 lg:mx-auto xl:mx-0">
@@ -55,7 +53,7 @@ const ExpenseBreakdownChart = ({ data, total }) => {
           </ResponsiveContainer>
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-2">
             <span className="text-xs sm:text-sm font-bold text-slate-800 leading-tight">{formatCurrency(total)}</span>
-            <span className="text-xs text-slate-500">{t('Total Debit')}</span>
+            <span className="text-xs text-slate-500">Total Debit</span>
           </div>
         </div>
         

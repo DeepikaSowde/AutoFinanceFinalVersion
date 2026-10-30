@@ -10,11 +10,7 @@ import OutstandingOverviewCard from '../components/dashboard/OutstandingOverview
 import CapitalPositionCard from '../components/dashboard/CapitalPositionCard';
 import OperationalDashboard from '../components/dashboard/OperationalDashboard';
 import DashboardLanguageSwitch from '../components/dashboard/DashboardLanguageSwitch';
-import {
-  DashboardLanguageProvider,
-  translateDashboardText,
-  useDashboardLanguageState,
-} from '../i18n/dashboardLanguage';
+import { useLanguage } from '../i18n/languageContext';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
@@ -24,8 +20,7 @@ const Dashboard = () => {
   const { data, loading } = useDashboardData(dateFilter);
   const [activeTab, setActiveTab] = useState('financial');
   const navigate = useNavigate();
-  const { language, setLanguage, table, value: languageValue } = useDashboardLanguageState();
-  const t = translateDashboardText(language, 'Dashboard Module', table);
+  const { language, setLanguage } = useLanguage();
 
   if (loading) {
     return (
@@ -36,7 +31,6 @@ const Dashboard = () => {
   }
 
   return (
-    <DashboardLanguageProvider value={languageValue}>
     <div className="h-full w-full flex-1 min-h-screen flex flex-col p-4 sm:p-6 bg-white overflow-y-auto">
       <div className="w-full">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200">
@@ -51,7 +45,7 @@ const Dashboard = () => {
               }`}
               aria-current={activeTab === 'financial' ? 'page' : undefined}
             >
-              {t('Financial Dashboard')}
+              Financial Dashboard
             </button>
             <button
               type="button"
@@ -63,7 +57,7 @@ const Dashboard = () => {
               }`}
               aria-current={activeTab === 'operational' ? 'page' : undefined}
             >
-              {t('Operational Dashboard')}
+              Operational Dashboard
             </button>
           </div>
 
@@ -73,11 +67,11 @@ const Dashboard = () => {
               type="button"
               onClick={() => navigate('/smart-search')}
               className="inline-flex items-center gap-2 rounded-xl bg-[#07111F] hover:bg-[#0e1f36] border border-slate-700/60 px-3.5 py-1.5 sm:py-2 text-xs sm:text-[13px] font-semibold text-white shadow-sm hover:shadow transition-all duration-150 active:scale-[0.98] cursor-pointer group focus:outline-none focus:ring-2 focus:ring-[#FACC15]/40"
-              title={t('Smart Search')}
-              aria-label={t('Smart Search')}
+              title="Smart Search"
+              aria-label="Smart Search"
             >
               <Search className="h-4 w-4 text-[#FACC15] stroke-[2.5] transition-transform duration-200 group-hover:scale-110 shrink-0" />
-              <span className="text-white">{t('Smart Search')}</span>
+              <span className="text-white">Smart Search</span>
             </button>
           </div>
         </div>
@@ -112,7 +106,6 @@ const Dashboard = () => {
         )}
       </div>
     </div>
-    </DashboardLanguageProvider>
   );
 };
 

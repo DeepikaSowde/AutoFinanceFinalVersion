@@ -4,10 +4,12 @@ const OPTIONS = [
 ];
 
 // Compact English | தமிழ் toggle shown beside Smart Search on the Dashboard.
+// It sets the language of the whole app; its own labels are never translated.
 const DashboardLanguageSwitch = ({ language, onChange }) => (
   <div
     role="group"
     aria-label="Language"
+    translate="no"
     className="inline-flex items-center rounded-xl border border-emerald-200 bg-white p-0.5 shadow-sm"
   >
     {OPTIONS.map((option, index) => {

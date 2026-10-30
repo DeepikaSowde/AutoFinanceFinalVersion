@@ -31,6 +31,7 @@ import Login from './pages/auth/Login'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import { getSessionUser } from './services/api'
 import { canOpen, homePageFor } from './config/permissions'
+import { LanguageProvider } from './i18n/LanguageProvider'
 
 // Shown for a page the signed-in user's permissions don't cover. The server
 // refuses the data anyway; this just says so plainly.
@@ -102,17 +103,19 @@ function AppShell() {
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route
-          path="/*"
-          element={
-            <ProtectedRoute>
-              <AppShell />
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
+      <LanguageProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <AppShell />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </LanguageProvider>
     </BrowserRouter>
   )
 }

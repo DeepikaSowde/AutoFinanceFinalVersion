@@ -18,7 +18,6 @@ import { formatCurrency, formatCompactCurrency } from '../../utils/currencyForma
 import { calculateLoanOutstanding } from '../../utils/loanCalculations';
 import { calculateVehicleLoanOverdue } from '../../utils/vehicleOverdueCalculation';
 import MonthYearFilter, { matchesDashboardDate, matchesMonthYear } from './MonthYearFilter';
-import { useDashboardText } from '../../i18n/dashboardLanguage';
 
 const cardClass = 'rounded-xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5';
 const chartColors = ['#047857', '#d97706', '#64748b', '#be123c'];
@@ -72,7 +71,6 @@ const OperationalDashboard = ({
   selectedYear = 'All',
   setSelectedYear,
 }) => {
-  const t = useDashboardText('Operational Dashboard');
   const operational = data?.operational;
   // Loans and payments from the API, loaded by useDashboardData (which also
   // refreshes them after any save); the date filter below narrows them.
@@ -191,10 +189,10 @@ const OperationalDashboard = ({
     rate: item.expected > 0 ? (item.collected / item.expected) * 100 : 0,
   }));
   const loanDistribution = [
-    { name: t('Active Loans'), value: dashboardOnlyData.portfolio.Active, color: chartColors[0] },
-    { name: t('Overdue Loans'), value: dashboardOnlyData.portfolio.Overdue, color: chartColors[1] },
-    { name: t('Closed Loans'), value: dashboardOnlyData.portfolio.Closed, color: chartColors[2] },
-    { name: t('Seized Vehicle Loans'), value: dashboardOnlyData.portfolio.Seized, color: chartColors[3] },
+    { name: 'Active Loans', value: dashboardOnlyData.portfolio.Active, color: chartColors[0] },
+    { name: 'Overdue Loans', value: dashboardOnlyData.portfolio.Overdue, color: chartColors[1] },
+    { name: 'Closed Loans', value: dashboardOnlyData.portfolio.Closed, color: chartColors[2] },
+    { name: 'Seized Vehicle Loans', value: dashboardOnlyData.portfolio.Seized, color: chartColors[3] },
   ];
   const totalVehicleLoans = dashboardOnlyData.vehicleCounts.reduce((sum, item) => sum + item.value, 0);
   const sectionHeadingClass = 'flex items-center gap-2';
@@ -203,7 +201,7 @@ const OperationalDashboard = ({
     <div className="min-w-0 space-y-5">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-800">{t('Operational Dashboard')}</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-800">Operational Dashboard</h1>
         </div>
 
         <div className="flex items-center gap-2.5 sm:gap-3 self-stretch sm:self-auto justify-end flex-wrap">
@@ -216,7 +214,7 @@ const OperationalDashboard = ({
             setSelectedYear={setSelectedYear}
           />
           <button 
-            aria-label={t('Notifications')}
+            aria-label="Notifications"
             className="bg-white border border-slate-200/80 rounded-lg p-2 text-slate-600 hover:bg-slate-50 cursor-not-allowed opacity-80 shadow-xs"
           >
             <Bell className="h-4 w-4" />
@@ -225,7 +223,7 @@ const OperationalDashboard = ({
             className="bg-emerald-700 hover:bg-emerald-800 text-white flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors cursor-not-allowed opacity-80 shadow-xs"
           >
             <Download className="h-4 w-4" />
-            <span>{t('Export')}</span>
+            <span>Export</span>
           </button>
         </div>
       </div>
@@ -233,14 +231,14 @@ const OperationalDashboard = ({
       <section>
         <div className="mb-3 flex items-center gap-2">
           <Gauge className="h-5 w-5 text-emerald-700" />
-          <h2 className="text-base font-bold text-slate-800">{t('Key Metrics')}</h2>
+          <h2 className="text-base font-bold text-slate-800">Key Metrics</h2>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-5">
-          <MetricCard icon={Users} label={t('Total Customers')} value={keyMetrics.activeCustomers.toLocaleString('en-IN')} tone="blue" />
-          <MetricCard icon={ClipboardList} label={t('Total Active Loans')} value={activeLoans.toLocaleString('en-IN')} />
-          <MetricCard icon={ShieldCheck} label={t('Closed Loans')} value={dashboardOnlyData.portfolio.Closed.toLocaleString('en-IN')} tone="blue" />
-          <MetricCard icon={CircleDollarSign} label={t("Today's Collections")} value={formatCurrency(dashboardOnlyData.collectionToday)} tone="violet" />
-          <MetricCard icon={Gauge} label={t('Overdue Amount')} value={formatCurrency(keyMetrics.overdueAmount)} tone="amber" />
+          <MetricCard icon={Users} label="Total Customers" value={keyMetrics.activeCustomers.toLocaleString('en-IN')} tone="blue" />
+          <MetricCard icon={ClipboardList} label="Total Active Loans" value={activeLoans.toLocaleString('en-IN')} />
+          <MetricCard icon={ShieldCheck} label="Closed Loans" value={dashboardOnlyData.portfolio.Closed.toLocaleString('en-IN')} tone="blue" />
+          <MetricCard icon={CircleDollarSign} label="Today's Collections" value={formatCurrency(dashboardOnlyData.collectionToday)} tone="violet" />
+          <MetricCard icon={Gauge} label="Overdue Amount" value={formatCurrency(keyMetrics.overdueAmount)} tone="amber" />
         </div>
       </section>
 
@@ -249,12 +247,12 @@ const OperationalDashboard = ({
         <div className="mb-4 flex items-center gap-2">
           <BarChart3 className="h-5 w-5 text-emerald-700" />
           <div>
-            <h2 className="text-base font-bold text-slate-800">{t('Loan Activity')}</h2>
+            <h2 className="text-base font-bold text-slate-800">Loan Activity</h2>
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
-          <MetricCard icon={CircleDollarSign} label={t('New Loans Created')} value={loanActivity.newLoans.toLocaleString('en-IN')} helper={t('First loan for a customer')} />
-          <MetricCard icon={CreditCard} label={t('Re-loans Created')} value={loanActivity.reLoans.toLocaleString('en-IN')} helper={t('Additional loans for existing customers')} tone="blue" />
+          <MetricCard icon={CircleDollarSign} label="New Loans Created" value={loanActivity.newLoans.toLocaleString('en-IN')} helper="First loan for a customer" />
+          <MetricCard icon={CreditCard} label="Re-loans Created" value={loanActivity.reLoans.toLocaleString('en-IN')} helper="Additional loans for existing customers" tone="blue" />
         </div>
       </section>
 
@@ -262,7 +260,7 @@ const OperationalDashboard = ({
           <div className="mb-3">
             <div className={sectionHeadingClass}>
               <BarChart3 className="h-5 w-5 text-emerald-700" />
-              <h2 className="text-base font-bold text-slate-800">{t('Collection Performance')}</h2>
+              <h2 className="text-base font-bold text-slate-800">Collection Performance</h2>
             </div>
           </div>
           {collectionChartData.length ? (
@@ -275,15 +273,15 @@ const OperationalDashboard = ({
                   <YAxis yAxisId="rate" orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={(value) => `${value}%`} />
                   <Tooltip content={<CurrencyTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="amount" dataKey="expected" name={t('Expected Collections')} fill="#34d399" radius={[4, 4, 0, 0]} />
-                  <Bar yAxisId="amount" dataKey="collected" name={t('Actual Collections')} fill="#047857" radius={[4, 4, 0, 0]} />
-                  <Line yAxisId="rate" dataKey="rate" name={t('Collection Rate')} type="monotone" stroke="#65a30d" strokeWidth={2.5} dot={{ r: 3, fill: '#65a30d' }} />
+                  <Bar yAxisId="amount" dataKey="expected" name="Expected Collections" fill="#34d399" radius={[4, 4, 0, 0]} />
+                  <Bar yAxisId="amount" dataKey="collected" name="Actual Collections" fill="#047857" radius={[4, 4, 0, 0]} />
+                  <Line yAxisId="rate" dataKey="rate" name="Collection Rate" type="monotone" stroke="#65a30d" strokeWidth={2.5} dot={{ r: 3, fill: '#65a30d' }} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
-          ) : <EmptyChart message={t('No scheduled collections available.')} />}
+          ) : <EmptyChart message="No scheduled collections available." />}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-            <span className="text-sm text-slate-500">{t('Collection Achievement')}</span>
+            <span className="text-sm text-slate-500">Collection Achievement</span>
             <span className="text-lg font-bold text-emerald-700">
               {(dashboardOnlyData.collectionExpected > 0
                 ? (dashboardOnlyData.collectionCollected / dashboardOnlyData.collectionExpected) * 100
@@ -299,16 +297,16 @@ const OperationalDashboard = ({
         <section className={`${cardClass} min-w-0 overflow-hidden`}>
           <div className={sectionHeadingClass}>
             <Banknote className="h-5 w-5 text-emerald-700" />
-            <h2 className="text-base font-bold text-slate-800">{t('Money Movement')}</h2>
+            <h2 className="text-base font-bold text-slate-800">Money Movement</h2>
           </div>
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <MetricCard icon={Banknote} label={t('Cash')} value={formatCurrency(moneyMovement.cash)} />
-            <MetricCard icon={CreditCard} label={t('UPI')} value={formatCurrency(moneyMovement.upi)} tone="blue" />
-            <MetricCard icon={Landmark} label={t('Bank Transfer')} value={formatCurrency(moneyMovement.bankTransfer)} tone="violet" />
+            <MetricCard icon={Banknote} label="Cash" value={formatCurrency(moneyMovement.cash)} />
+            <MetricCard icon={CreditCard} label="UPI" value={formatCurrency(moneyMovement.upi)} tone="blue" />
+            <MetricCard icon={Landmark} label="Bank Transfer" value={formatCurrency(moneyMovement.bankTransfer)} tone="violet" />
           </div>
           <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-semibold text-emerald-800">{t('Total Money Movement')}</span>
+              <span className="text-xs font-semibold text-emerald-800">Total Money Movement</span>
               <span className="text-lg font-bold text-emerald-900">{formatCurrency(moneyMovement.total)}</span>
             </div>
           </div>
@@ -318,7 +316,7 @@ const OperationalDashboard = ({
         <div className="mb-4">
           <div className={sectionHeadingClass}>
             <PieChartIcon className="h-5 w-5 text-emerald-700" />
-            <h2 className="text-base font-bold text-slate-800">{t('Loan Portfolio')}</h2>
+            <h2 className="text-base font-bold text-slate-800">Loan Portfolio</h2>
           </div>
         </div>
         <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(220px,0.9fr)_minmax(0,1.1fr)]">
@@ -333,9 +331,9 @@ const OperationalDashboard = ({
                     <Tooltip formatter={(value, name) => [value, name]} />
                   </PieChart>
                 </ResponsiveContainer>
-              ) : <EmptyChart message={t('No loan data available.')} />}
+              ) : <EmptyChart message="No loan data available." />}
             </div>
-            <p className="text-xs text-slate-500">{t('Total Loans')}</p>
+            <p className="text-xs text-slate-500">Total Loans</p>
             <p className="text-2xl font-bold text-slate-900">{dashboardOnlyData.totalLoans.toLocaleString('en-IN')}</p>
           </div>
           <div className="grid content-center gap-2 sm:grid-cols-2">
@@ -350,14 +348,14 @@ const OperationalDashboard = ({
             ))}
             <div className="mt-2 border-t border-slate-100 pt-3 sm:col-span-2">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-700">{t('Vehicle Type')}</h3>
-                <span className="text-xs text-slate-400">{totalVehicleLoans.toLocaleString('en-IN')} {t('loans')}</span>
+                <h3 className="text-sm font-semibold text-slate-700">Vehicle Type</h3>
+                <span className="text-xs text-slate-400">{totalVehicleLoans.toLocaleString('en-IN')} loans</span>
               </div>
               <div className="space-y-2">
                 {dashboardOnlyData.vehicleCounts.map((item) => {
                   return (
                     <div key={item.name} className="flex items-center gap-3 text-xs">
-                      <span className="w-24 shrink-0 text-slate-500">{t(item.name)}</span>
+                      <span className="w-24 shrink-0 text-slate-500">{item.name}</span>
                       <span className="ml-auto font-semibold text-slate-700">{item.value}</span>
                     </div>
                   );

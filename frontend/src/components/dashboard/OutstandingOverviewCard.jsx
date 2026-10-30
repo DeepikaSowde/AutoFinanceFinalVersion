@@ -1,9 +1,7 @@
 import { Database, Wallet } from 'lucide-react';
 import { formatCurrency } from '../../utils/currencyFormatter';
-import { useDashboardText } from '../../i18n/dashboardLanguage';
 
 const OutstandingOverviewCard = ({ data }) => {
-  const t = useDashboardText('Capital, Chit & Outstanding');
   const safeData = data || { totalOutstanding: 0, debit: 0, credit: 0, balance: 0 };
   const hasRecords = Boolean(
     data && (Number(data.debit || 0) > 0 || Number(data.credit || 0) > 0 || Number(data.totalOutstanding || 0) > 0)
@@ -17,9 +15,9 @@ const OutstandingOverviewCard = ({ data }) => {
   };
 
   const items = [
-    { label: t('Debit Outstanding'), value: safeData.debit },
-    { label: t('Credit'), value: safeData.credit },
-    { label: t('Balance'), value: safeData.balance }
+    { label: 'Debit Outstanding', value: safeData.debit },
+    { label: 'Credit', value: safeData.credit },
+    { label: 'Balance', value: safeData.balance }
   ];
 
   return (
@@ -28,12 +26,12 @@ const OutstandingOverviewCard = ({ data }) => {
         <div className="h-8 w-8 rounded-full bg-emerald-50 flex items-center justify-center shrink-0">
           <Database className="h-4 w-4 text-emerald-700" strokeWidth={1.8} />
         </div>
-        <h3 className="text-base font-bold text-slate-800">{t('Outstanding Overview')}</h3>
+        <h3 className="text-base font-bold text-slate-800">Outstanding Overview</h3>
       </div>
       
       <div className="mb-5 shrink-0">
         <p className="text-2xl font-bold text-slate-800 tracking-tight">{formatCurrency(safeData.totalOutstanding)}</p>
-        <p className="text-xs text-slate-500 mt-0.5">{t('Total Outstanding')}</p>
+        <p className="text-xs text-slate-500 mt-0.5">Total Outstanding</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 flex-1 items-center min-h-0">
@@ -68,8 +66,8 @@ const OutstandingOverviewCard = ({ data }) => {
             <div className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center mb-1.5 shrink-0 ring-4 ring-emerald-50/50">
               <Wallet className="h-4 w-4 text-emerald-700" strokeWidth={1.8} />
             </div>
-            <p className="text-xs font-semibold text-slate-700">{t('No outstanding records')}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{t('Balances will reflect once loans are recorded')}</p>
+            <p className="text-xs font-semibold text-slate-700">No outstanding records</p>
+            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">Balances will reflect once loans are recorded</p>
           </div>
         )}
       </div>
