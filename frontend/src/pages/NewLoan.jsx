@@ -20,7 +20,7 @@ import {
 } from '../utils/customerOnboardingStorage'
 import { deleteDraft, getDraft, listDrafts, saveDraft } from '../services/draftApi'
 
-import { getFundingSummary, hasGuarantorIn, principalOf, submitLoanApplication } from '../services/customerApi'
+import { getFundingSummary, hasGuarantorIn, hasReferralIn, principalOf, submitLoanApplication } from '../services/customerApi'
 import { CheckCircle2, FileText, Trash2, X, RefreshCw } from 'lucide-react'
 import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
 import { formatDate } from '../utils/dateUtils'
@@ -228,23 +228,21 @@ const NewLoan = () => {
   const isFirst = step === 0
   const isLast = step === STEPS.length - 1
 
+  // Guarantor & Referral is optional: Next on the Loan step goes straight to
+  // Review from either sub-tab; the Guarantor & Referral tab stays one click away.
   const goNext = () => {
     if (step === 1) {
       setLoanSubTab('loan')
       setStep(2)
       return
     }
-    if (step === 2 && loanSubTab === 'loan') {
-      setLoanSubTab('guarantor')
-      return
-    }
     setStep((s) => Math.min(s + 1, STEPS.length - 1))
   }
 
+  // Back from Review returns to the Loan sub-tab the user left from.
   const goBack = () => {
     if (step === 3) {
       setStep(2)
-      setLoanSubTab('guarantor')
       return
     }
     if (step === 2 && loanSubTab === 'guarantor') {
@@ -375,13 +373,14 @@ const NewLoan = () => {
     setSubmitting(true)
     try {
       // A guarantor / referrer is saved to the register after the loan, so
-      // check their details first rather than fail half way.
-      const relOpt = form.loan?.relationshipOption || 'none'
+      // check their details first rather than fail half way. Both are
+      // optional: only details that were actually entered are checked.
       // Entered guarantor details count even if the option was left unset.
       const withGuarantor = hasGuarantorIn(form)
+      const withReferral = hasReferralIn(form)
       const people = [
         withGuarantor && ['Guarantor', form.guarantor],
-        (relOpt === 'both' || relOpt === 'referral') && ['Referral', form.referral],
+        withReferral && ['Referral', form.referral],
       ].filter(Boolean)
       for (const [label, person] of people) {
         const name = (person?.fullName || person?.name || '').trim()
@@ -415,7 +414,7 @@ const NewLoan = () => {
       // register (with the referral commission, and its expense if paid now).
       const links = []
       if (withGuarantor) links.push({ person: form.guarantor, type: 'Guarantor' })
-      if (relOpt === 'both' || relOpt === 'referral') {
+      if (withReferral) {
         links.push({
           person: form.referral,
           type: 'Referral',
@@ -572,15 +571,7 @@ const NewLoan = () => {
               </button>
             ) : (
               <button type="button" onClick={goNext} className={`${primaryBtn} py-1.5 px-4 text-xs sm:text-sm`}>
-                {step === 2 && loanSubTab === 'loan' ? (
-                  <>
-                    Next: Guarantor & Referral <ArrowRight className="h-3.5 w-3.5" />
-                  </>
-                ) : (
-                  <>
-                    {t('app.next')}: {t(STEPS[step + 1].labelKey)} <ArrowRight className="h-3.5 w-3.5" />
-                  </>
-                )}
+                {t('app.next')}: {t(STEPS[step + 1].labelKey)} <ArrowRight className="h-3.5 w-3.5" />
               </button>
             )}
           </div>

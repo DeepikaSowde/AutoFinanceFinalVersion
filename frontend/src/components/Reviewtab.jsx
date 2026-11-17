@@ -10,6 +10,7 @@ import {
   formatDate,
 } from './Formcontrols'
 import { getVehicleDisplayImage } from '../utils/vehicleImageHelper'
+import { hasGuarantorIn, hasReferralIn } from '../services/customerApi'
 
 
 const dash = (value) =>
@@ -120,9 +121,9 @@ const ReviewTab = ({
   const reducingBalance =
     loan.interestType === 'Reducing Balance'
 
-  const relationshipOption = loan.relationshipOption || 'none'
-  const hasGuarantor = relationshipOption === 'both' || relationshipOption === 'guarantor'
-  const hasReferral = relationshipOption === 'both' || relationshipOption === 'referral'
+  // Shown as they will be saved: optional, so only when details were entered.
+  const hasGuarantor = hasGuarantorIn({ loan, guarantor })
+  const hasReferral = hasReferralIn({ loan, referral })
 
   const formatPersonAddress = (person) => {
     if (!person) return '—'
