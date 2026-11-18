@@ -1776,7 +1776,7 @@ const ForeclosureAnalyticsTab = ({ allVehicles = [], rawRecords = [], onViewDeta
                         <td className="py-2 px-1.5 font-bold text-slate-900 whitespace-nowrap">
                           {g.makeModel || g.name}
                         </td>
-                        <td className="py-2 px-1.5 text-slate-700 whitespace-nowrap">
+                        <td className="py-2 px-1.5 text-slate-700">
                           {g.ownershipType}
                         </td>
                         <td className="py-2 px-1.5 text-center text-slate-700 font-medium">

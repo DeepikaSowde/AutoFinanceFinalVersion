@@ -1523,6 +1523,8 @@ export const MOTOLEND_TAMIL = {
     "₹${amount} / Week": "₹${amount} / வாரம்",
     "— / Month": "— / மாதம்",
     "— / Week": "— / வாரம்",
+    "Not Recorded": "பதிவு செய்யப்படவில்லை",
+    "Not recorded": "பதிவு செய்யப்படவில்லை",
     "No expenses recorded for this vehicle yet": "இந்த வாகனத்திற்கான செலவுகள் இன்னும் பதிவு செய்யப்படவில்லை.",
     "Expenses added with category \"Vehicle Expense\" for this vehicle will automatically appear here.": "இந்த வாகனத்திற்காக Vehicle Expense பிரிவில் சேர்க்கப்படும் செலவுகள் தானாகவே இங்கே தோன்றும்.",
     "Vehicle expenses are linked directly to": "வாகனச் செலவுகள் நேரடியாக இந்த வாகனத்துடன் இணைக்கப்பட்டுள்ளன.",
