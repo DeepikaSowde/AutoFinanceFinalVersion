@@ -414,14 +414,14 @@ export default function Loans() {
                 setStatusDropdownOpen(!statusDropdownOpen);
                 setFrequencyDropdownOpen(false);
               }}
-              className="flex h-10 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-xs sm:text-sm font-medium text-slate-700 shadow-2xs hover:border-slate-300 transition-colors cursor-pointer"
+              className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1 text-[13px] sm:text-[15px] font-medium text-slate-700 shadow-2xs hover:border-slate-300 transition-colors cursor-pointer"
             >
-              <span>{statusFilter}</span>
+              <span className="leading-snug">{statusFilter}</span>
               <ChevronDown className="h-4 w-4 text-slate-400" />
             </button>
 
             {statusDropdownOpen && (
-              <div className="absolute left-0 top-[44px] z-30 w-full rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+              <div className="absolute left-0 top-full mt-1 z-30 w-full rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
                 {["All Statuses", "Active", "Overdue", "Closed", "Midway Closed", "Foreclosed"].map((option) => (
                   <button
                     key={option}
