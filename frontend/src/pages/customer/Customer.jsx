@@ -76,7 +76,7 @@ const StatusBadge = ({ status }) => {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-3 py-1 text-xs sm:text-[13px] font-semibold ${styles[status] || "bg-slate-100 text-slate-700 border border-slate-200/60"
+      className={`inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs sm:text-[13px] font-semibold ${styles[status] || "bg-slate-100 text-slate-700 border border-slate-200/60"
         }`}
     >
       {status}
@@ -476,17 +476,11 @@ const Customer = () => {
             TABLE
         ========================== */}
         <div className="overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full min-w-[940px] table-fixed border-collapse">
-            <colgroup>
-              <col style={{ width: "12%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "12%" }} />
-              <col style={{ width: "13%" }} />
-              <col style={{ width: "15%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "12%" }} />
-            </colgroup>
+          {/* Columns size to their content, so nothing can spill into the next
+              column in English or Tamil: values stay on one line (long names end
+              in "…"), headers wrap only between words, and the box scrolls
+              sideways when the table is wider than the screen. */}
+          <table className="w-full min-w-[940px] border-collapse">
 
             <thead>
               <tr className="h-12 sm:h-14 bg-slate-50 border-b border-slate-200">
@@ -528,7 +522,9 @@ const Customer = () => {
                       </td>
 
                       <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] font-bold text-slate-900 whitespace-nowrap">
-                        {item.customer?.name}
+                        <span className="block max-w-[220px] truncate" title={item.customer?.name}>
+                          {item.customer?.name}
+                        </span>
                       </td>
 
                       <td className="px-3.5 py-3.5 sm:py-4 text-sm sm:text-[15px] text-slate-700 whitespace-nowrap">
@@ -691,7 +687,7 @@ const Customer = () => {
 ========================= */
 
 const TableHeader = ({ children }) => (
-  <th className="whitespace-nowrap px-3.5 py-3.5 text-left text-xs sm:text-sm font-bold text-slate-700 tracking-wide">
+  <th className="whitespace-normal leading-snug align-middle px-3.5 py-3 text-left text-xs sm:text-sm font-bold text-slate-700 tracking-wide">
     {children}
   </th>
 );
