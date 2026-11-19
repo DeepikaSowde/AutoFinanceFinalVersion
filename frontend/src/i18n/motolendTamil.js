@@ -1528,6 +1528,7 @@ export const MOTOLEND_TAMIL = {
     "Chassis Number (VIN)": "சேசிஸ் எண் (VIN)",
     "Dashboard": "முகப்புப்பலகை",
     "Reminder": "நினைவூட்டல்",
+    "All Statuses": "அனைத்து நிலைகளும்",
     "View Loan": "கடனைக் காண்க",
     "Configure rules": "விதியை அமைக்கவும்",
     "Configure Rule": "விதியை அமைக்கவும்",
