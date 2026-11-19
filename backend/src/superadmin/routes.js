@@ -10,6 +10,7 @@ import { asyncHandler } from "../util/asyncHandler.js";
 import { getAuditLogs } from "./audit.js";
 import { loginSuperAdmin, logoutSuperAdmin, requireSuperAdmin } from "./auth.js";
 import { getDashboard } from "./dashboard.js";
+import { createDemoTenant } from "./demoTenant.js";
 import { createPlan, getPlans, updatePlan } from "./planRepository.js";
 import { loginRateLimit, recordLoginFailure, recordLoginSuccess } from "./rateLimit.js";
 import * as tenants from "./tenantRepository.js";
@@ -82,6 +83,9 @@ superadminRouter.get(
 );
 
 superadminRouter.post("/tenants", asyncHandler(async (req, res) => res.status(201).json(await tenants.createTenant(req.body || {}, req.superAdmin))));
+
+// A free demo: tenant + admin login + sample data in one step.
+superadminRouter.post("/tenants/demo", asyncHandler(async (req, res) => res.status(201).json(await createDemoTenant(req.body || {}, req.superAdmin))));
 
 superadminRouter.get("/tenants/:id", asyncHandler(async (req, res) => res.json(await tenants.getTenant(tenantId(req)))));
 

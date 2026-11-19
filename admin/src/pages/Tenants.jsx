@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, X } from 'lucide-react'
+import { Copy, Plus, Search, X } from 'lucide-react'
 
 import { api, query } from '../api'
 import { Alert, Button, Field, PageHeader, PlanBadge, ProductBadge, StatusBadge, Table, Td, Th } from '../components/ui'
@@ -98,6 +98,129 @@ function AddTenantDialog({ plans, onClose, onCreated }) {
   )
 }
 
+function DemoTenantDialog({ onClose, onDone }) {
+  const [form, setForm] = useState({ name: '', ownerName: '', phone: '', email: '', product: 'auto_finance', withSampleData: true })
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }))
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      setResult(await api.post('/tenants/demo', form))
+    } catch (err) {
+      setError(err.message)
+    }
+    setBusy(false)
+  }
+
+  const details = result
+    ? `MotoLend free demo (${result.days} days)\nUsername: ${result.admin.user.username}\nTemporary password: ${result.admin.temporaryPassword}\nValid until: ${formatDate(result.tenant.validUntil)}`
+    : ''
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(details)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" role="dialog" aria-modal="true" aria-labelledby="demo-tenant-title">
+      <form onSubmit={handleSubmit} className="w-full max-w-lg rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <h2 id="demo-tenant-title" className="text-base font-semibold text-slate-900">Create demo tenant</h2>
+          <button type="button" onClick={() => (result ? onDone(result.tenant) : onClose())} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {result ? (
+          <div className="space-y-3 p-5">
+            <Alert tone="info">
+              <p className="font-semibold">{result.tenant.name} is ready — free for {result.days} days.</p>
+              <pre className="mt-2 whitespace-pre-wrap rounded bg-white px-3 py-2 font-mono text-sm text-slate-900 ring-1 ring-teal-200">{details}</pre>
+              <button type="button" onClick={copy} className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-teal-900 hover:underline">
+                <Copy className="h-4 w-4" aria-hidden="true" /> {copied ? 'Copied' : 'Copy login details'}
+              </button>
+              <p className="mt-2 text-xs">The password is shown only now. Share it securely.</p>
+            </Alert>
+            {result.sampleData.created && (
+              <p className="text-sm text-slate-600">
+                Sample data added: {result.sampleData.customers} customers, {result.sampleData.loans} loans and {result.sampleData.collections} collections (made-up names, numbers and vehicles).
+              </p>
+            )}
+            {!result.sampleData.created && result.sampleData.error && (
+              <Alert>The tenant and login were created, but the sample data could not be added: {result.sampleData.error}</Alert>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+            <p className="text-sm text-slate-600 sm:col-span-2">
+              Creates a Premium tenant that runs for 30 days, with the lender's admin login. Nothing is shared with other lenders.
+            </p>
+            <div className="sm:col-span-2">
+              <Field label="Lender name" id="d-name" hint="“(Demo)” is added to the name.">
+                <input id="d-name" required value={form.name} onChange={set('name')} className={inputClass} placeholder="e.g. Sri Murugan Finance" />
+              </Field>
+            </div>
+            <Field label="Owner name" id="d-owner">
+              <input id="d-owner" value={form.ownerName} onChange={set('ownerName')} className={inputClass} />
+            </Field>
+            <Field label="Phone" id="d-phone">
+              <input id="d-phone" type="tel" inputMode="tel" value={form.phone} onChange={set('phone')} className={inputClass} placeholder="10-digit mobile" />
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Email (their username)" id="d-email">
+                <input id="d-email" type="email" required value={form.email} onChange={set('email')} className={inputClass} />
+              </Field>
+            </div>
+            <Field label="Product" id="d-product">
+              <select
+                id="d-product"
+                value={form.product}
+                onChange={(e) => setForm((current) => ({ ...current, product: e.target.value }))}
+                className={inputClass}
+              >
+                {PRODUCTS.map((key) => <option key={key} value={key}>{PRODUCT_LABELS[key]}</option>)}
+              </select>
+            </Field>
+            <div className="flex items-end">
+              <label className={`flex items-center gap-2 text-sm ${form.product === 'auto_finance' ? 'text-slate-700' : 'text-slate-400'}`}>
+                <input
+                  type="checkbox"
+                  checked={form.withSampleData && form.product === 'auto_finance'}
+                  disabled={form.product !== 'auto_finance'}
+                  onChange={(e) => setForm((current) => ({ ...current, withSampleData: e.target.checked }))}
+                  className="h-4 w-4 accent-teal-700"
+                />
+                Add sample data{form.product !== 'auto_finance' && ' (Auto Finance only)'}
+              </label>
+            </div>
+            {error && <div className="sm:col-span-2"><Alert>{error}</Alert></div>}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3.5">
+          {result ? (
+            <Button onClick={() => onDone(result.tenant)}>Open tenant</Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
+              <Button type="submit" busy={busy}>Create demo</Button>
+            </>
+          )}
+        </div>
+      </form>
+    </div>
+  )
+}
+
 export default function Tenants() {
   const navigate = useNavigate()
   const [searchInput, setSearchInput] = useState('')
@@ -107,6 +230,7 @@ export default function Tenants() {
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [adding, setAdding] = useState(false)
+  const [demoing, setDemoing] = useState(false)
 
   // Search after typing pauses.
   useEffect(() => {
@@ -131,9 +255,14 @@ export default function Tenants() {
         title="Tenants"
         subtitle="Every lender using MotoLend."
         actions={
-          <Button onClick={() => setAdding(true)} disabled={!plans.data}>
-            <Plus className="h-4 w-4" aria-hidden="true" /> Add tenant
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setDemoing(true)}>
+              <Plus className="h-4 w-4" aria-hidden="true" /> Create demo tenant
+            </Button>
+            <Button onClick={() => setAdding(true)} disabled={!plans.data}>
+              <Plus className="h-4 w-4" aria-hidden="true" /> Add tenant
+            </Button>
+          </div>
         }
       />
 
@@ -231,6 +360,8 @@ export default function Tenants() {
           </div>
         </div>
       </div>
+
+      {demoing && <DemoTenantDialog onClose={() => setDemoing(false)} onDone={(tenant) => navigate(`/tenants/${tenant.id}`)} />}
 
       {adding && plans.data && (
         <AddTenantDialog plans={plans.data} onClose={() => setAdding(false)} onCreated={(tenant) => navigate(`/tenants/${tenant.id}`)} />
