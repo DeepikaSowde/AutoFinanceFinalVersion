@@ -124,7 +124,7 @@ export default function Loans() {
   const loans = useMemo(() => {
     const todayTimestamp = parseToDayTimestamp(new Date());
 
-    return rawCustomers.map((record, index) => {
+    const rows = rawCustomers.map((record, index) => {
       const customer = record.customer || {};
       const vehicle = record.vehicle || {};
       const loan = record.loan || {};
@@ -214,6 +214,14 @@ export default function Loans() {
         frequency,
       };
     });
+
+    // Newest first, by when the loan was created (not its ID or due date).
+    // Loans created at the same instant keep the later-listed one first.
+    const createdAt = (loan) => Date.parse(loan.createdAt) || 0;
+    return rows
+      .map((loan, index) => ({ loan, index }))
+      .sort((a, b) => createdAt(b.loan) - createdAt(a.loan) || b.index - a.index)
+      .map(({ loan }) => loan);
   }, [rawCustomers, allPayments]);
 
   // KPI Calculations
