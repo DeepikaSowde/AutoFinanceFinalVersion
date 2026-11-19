@@ -64,10 +64,17 @@ const fileToBase64 = (file) => {
   });
 };
 
-const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
+const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChassisBlur, revealRegistration = 0 }) => {
   const { t } = useTranslation();
 
   const [activeSection, setActiveSection] = useState("vehicle");
+
+  // When Next fails on the chassis number, open the section that shows it.
+  const [seenReveal, setSeenReveal] = useState(revealRegistration);
+  if (revealRegistration !== seenReveal) {
+    setSeenReveal(revealRegistration);
+    setActiveSection("registration");
+  }
 
   const set = (key) => (e) => onChange(key, e.target.value);
 
@@ -383,10 +390,23 @@ const VehicleTab = ({ data, onChange, onFetchVehicle }) => {
               />
             </Field>
 
-            <Field label={t("vehicle.chassisNumber")}>
+            <Field
+              label={t("vehicle.chassisNumber")}
+              required
+              hint={t("vehicle.chassisNumberHint")}
+              error={chassisError}
+            >
               <Input
                 value={data.chassisNo || ""}
-                onChange={set("chassisNo")}
+                onChange={(e) =>
+                  onChange("chassisNo", e.target.value.replace(/^\s+/, "").toUpperCase())
+                }
+                onBlur={() => onChassisBlur?.()}
+                maxLength={17}
+                autoComplete="off"
+                spellCheck={false}
+                aria-invalid={chassisError ? "true" : undefined}
+                className={chassisError ? "border-red-400 focus:border-red-500 focus:ring-red-200" : ""}
                 placeholder={t("vehicle.enterChassisNumber")}
               />
             </Field>

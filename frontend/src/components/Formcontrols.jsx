@@ -42,7 +42,7 @@ export const SectionCard = ({ title, right, children, className = '' }) => (
   </section>
 )
 
-export const Field = ({ label, required, hint, children, className = '' }) => (
+export const Field = ({ label, required, hint, error, children, className = '' }) => (
   <div className={className}>
     {label && (
       <label className="mb-1 block text-xs font-medium text-slate-700">
@@ -51,6 +51,7 @@ export const Field = ({ label, required, hint, children, className = '' }) => (
       </label>
     )}
     {children}
+    {error && <p role="alert" className="mt-0.5 text-[11px] font-medium text-red-600">{error}</p>}
     {hint && <p className="mt-0.5 text-[11px] text-slate-500">{hint}</p>}
   </div>
 )

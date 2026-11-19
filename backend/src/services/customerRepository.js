@@ -11,6 +11,7 @@ import { generateRepaymentSchedule } from "./repaymentSchedule.js";
 import { fundLoanInTransaction } from "./investorRepository.js";
 import { syncDocumentChargeIncome, deleteDocumentChargeIncomes } from "./incomeRepository.js";
 import { describeInstallment, summariseOutstanding } from "./repaymentEngine.js";
+import { assertChassisAcceptable, normalizeChassis } from "./chassis.js";
 
 const pad = (number, length = 5) => String(number).padStart(length, "0");
 
@@ -539,6 +540,14 @@ const fundIfRequested = (client, loanPk, loan = {}) =>
 
 export const createCustomer = async (payload = {}) => {
   const customerId = await withTransaction(async (client) => {
+    // The chassis number must be valid and not already on a live vehicle.
+    // Checked first so a rejected one leaves no customer number used up.
+    const chassisNumber = await assertChassisAcceptable(
+      payload.rc?.chassisNumber,
+      payload.vehicle?.manufacturingYear,
+      { db: client }
+    );
+
     const result = await client.query(
       `INSERT INTO customers (id, customer_number, status, personal, kyc, documents, photo, tenant_id)
        VALUES ('', '', $1, $2, $3, $4, $5, $6)
@@ -562,7 +571,7 @@ export const createCustomer = async (payload = {}) => {
     ]);
 
     const vehiclePk = await insertVehicle(client, customerPk, payload.vehicle);
-    await insertRc(client, vehiclePk, payload.rc);
+    await insertRc(client, vehiclePk, { ...payload.rc, chassisNumber });
     await insertGuarantor(client, customerPk, payload.guarantor || { hasGuarantor: false });
     const loanPk = await insertLoan(client, customerPk, vehiclePk, payload.loan || {});
     await fundIfRequested(client, loanPk, payload.loan);
@@ -636,9 +645,24 @@ export const updateCustomer = async (customerId, payload = {}) => {
     }
 
     if (vehicleRow && payload.rc) {
+      // Only a changed chassis number is checked, so records saved before this
+      // rule (blank or older formats) can still be edited without touching it.
+      let chassisNumber = payload.rc.chassisNumber;
+      if (
+        chassisNumber !== undefined &&
+        normalizeChassis(chassisNumber) !== normalizeChassis(currentRc?.chassisNumber)
+      ) {
+        chassisNumber = await assertChassisAcceptable(
+          chassisNumber,
+          { ...currentVehicle, ...(payload.vehicle || {}) }.manufacturingYear,
+          { db: client, exceptVehiclePk: vehicleRow.pk }
+        );
+      }
+
       await updateRc(client, vehicleRow.pk, {
         ...currentRc,
         ...payload.rc,
+        ...(chassisNumber !== undefined ? { chassisNumber } : {}),
         insurance: { ...currentRc.insurance, ...(payload.rc.insurance || {}) },
         endorsement: { ...currentRc.endorsement, ...(payload.rc.endorsement || {}) },
       });
@@ -763,8 +787,13 @@ export const addLoanForCustomer = async (customerId, loan = {}, options = {}) =>
 
   await withTransaction(async (client) => {
     if (newVehicle) {
+      const chassisNumber = await assertChassisAcceptable(
+        options.rc?.chassisNumber,
+        options.vehicle?.manufacturingYear,
+        { db: client }
+      );
       vehiclePk = await insertVehicle(client, customerRow.pk, options.vehicle || {});
-      await insertRc(client, vehiclePk, options.rc || {});
+      await insertRc(client, vehiclePk, { ...(options.rc || {}), chassisNumber });
     }
 
     const loanPk = await insertLoan(client, customerRow.pk, vehiclePk, loan, {

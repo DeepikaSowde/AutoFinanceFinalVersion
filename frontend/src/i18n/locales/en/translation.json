@@ -321,8 +321,9 @@
     "selectRtoLocation": "Select RTO location",
 
     "dateOfRegistration": "Date of Registration",
-    "chassisNumber": "Chassis Number",
-    "enterChassisNumber": "Enter chassis number",
+    "chassisNumber": "Chassis Number (VIN)",
+    "enterChassisNumber": "Enter 17-character chassis number",
+    "chassisNumberHint": "Enter the 17-character VIN as mentioned in the RC document.",
 
     "engineNumber": "Engine Number",
     "enterEngineNumber": "Enter engine number",

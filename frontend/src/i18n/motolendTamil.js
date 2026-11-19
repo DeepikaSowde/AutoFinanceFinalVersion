@@ -1525,6 +1525,7 @@ export const MOTOLEND_TAMIL = {
     "— / Week": "— / வாரம்",
     "Not Recorded": "பதிவு செய்யப்படவில்லை",
     "Not recorded": "பதிவு செய்யப்படவில்லை",
+    "Chassis Number (VIN)": "சேசிஸ் எண் (VIN)",
     "View Loan": "கடனைக் காண்க",
     "Configure rules": "விதியை அமைக்கவும்",
     "Configure Rule": "விதியை அமைக்கவும்",

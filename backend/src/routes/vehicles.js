@@ -17,6 +17,7 @@ import {
   settleVehicleSale,
   updateSeizureDetails,
 } from "../services/vehicleRepository.js";
+import { assertChassisAcceptable } from "../services/chassis.js";
 import { requirePermission } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
@@ -30,6 +31,22 @@ vehiclesRouter.get(
     res.json(
       status ? await getVehiclesByStatus(String(status).toUpperCase()) : await getVehicles()
     );
+  })
+);
+
+// New Loan asks this when the user clicks Next, so a bad or already used
+// chassis number is shown on the form instead of failing at submit. The same
+// rules run again when the loan is saved.
+vehiclesRouter.get(
+  "/chassis-check",
+  asyncHandler(async (req, res) => {
+    try {
+      await assertChassisAcceptable(req.query.chassis, req.query.year);
+      res.json({ ok: true, error: "" });
+    } catch (error) {
+      if (!error.statusCode || error.statusCode >= 500) throw error;
+      res.json({ ok: false, error: error.message });
+    }
   })
 );
 

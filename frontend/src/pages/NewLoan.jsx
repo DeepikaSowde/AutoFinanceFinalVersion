@@ -24,6 +24,8 @@ import { getFundingSummary, hasGuarantorIn, hasReferralIn, principalOf, submitLo
 import { CheckCircle2, FileText, Trash2, X, RefreshCw } from 'lucide-react'
 import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
 import { formatDate } from '../utils/dateUtils'
+import { validateChassis } from '../utils/chassis'
+import { apiGet } from '../services/api'
 
 const STEPS = [
   { key: 'customer', labelKey: 'app.steps.customer', titleKey: 'app.titles.customer', subtitleKey: 'app.subtitles.customer' },
@@ -224,19 +226,65 @@ const NewLoan = () => {
     }))
   }
 
+  // Chassis Number (VIN): checked when the user leaves the field and again
+  // before leaving the Vehicle step (format here, then the server also looks
+  // for a live vehicle that already has it).
+  const [chassisError, setChassisError] = useState('')
+  const [revealRegistration, setRevealRegistration] = useState(0)
+
+  const checkChassisFormat = () => {
+    const { value, error } = validateChassis(form.vehicle.chassisNo, form.vehicle.year)
+    // Stored trimmed and upper-case, whatever way it got into the form.
+    if (value !== form.vehicle.chassisNo) update('vehicle')('chassisNo', value)
+    setChassisError(error)
+    return error
+  }
+
+  const chassisAcceptable = async () => {
+    const formatError = checkChassisFormat()
+    let message = formatError
+    if (!formatError) {
+      try {
+        const { value } = validateChassis(form.vehicle.chassisNo, form.vehicle.year)
+        const result = await apiGet(
+          `/vehicles/chassis-check?chassis=${encodeURIComponent(value)}&year=${encodeURIComponent(form.vehicle.year || '')}`
+        )
+        message = result?.error || ''
+      } catch {
+        // Offline or the check is unavailable: the server checks again on submit.
+        message = ''
+      }
+      setChassisError(message)
+    }
+    if (message) {
+      setStep(1)
+      setRevealRegistration((n) => n + 1)
+      return false
+    }
+    return true
+  }
+
   const current = STEPS[step]
   const isFirst = step === 0
   const isLast = step === STEPS.length - 1
 
   // Guarantor & Referral is optional: Next on the Loan step goes straight to
   // Review from either sub-tab; the Guarantor & Referral tab stays one click away.
-  const goNext = () => {
+  const goNext = async () => {
     if (step === 1) {
+      if (!(await chassisAcceptable())) return
       setLoanSubTab('loan')
       setStep(2)
       return
     }
     setStep((s) => Math.min(s + 1, STEPS.length - 1))
+  }
+
+  // The stepper may jump ahead; moving past the Vehicle step needs a valid
+  // chassis number, going back never does.
+  const goToStep = async (target) => {
+    if (target > 1 && !(await chassisAcceptable())) return
+    setStep(target)
   }
 
   // Back from Review returns to the Loan sub-tab the user left from.
@@ -391,6 +439,16 @@ const NewLoan = () => {
         }
       }
 
+      // A draft or the stepper can reach Review without passing the Vehicle step.
+      const chassisProblem = validateChassis(form.vehicle.chassisNo, form.vehicle.year).error
+      if (chassisProblem) {
+        setChassisError(chassisProblem)
+        setStep(1)
+        setRevealRegistration((n) => n + 1)
+        alert(chassisProblem)
+        return
+      }
+
       const vehicleAmount = form.loan.vehicleAmount !== null && form.loan.vehicleAmount !== '' && form.loan.vehicleAmount !== undefined
         ? Number(form.loan.vehicleAmount)
         : Number(form.vehicle.amount || 0)
@@ -504,7 +562,7 @@ const NewLoan = () => {
             <h1 className="text-base sm:text-lg font-bold text-[#0F1E36] tracking-tight leading-tight">{t(current.titleKey)}</h1>
             <p className="text-xs text-slate-500 leading-tight mt-0.5">{t(current.subtitleKey)}</p>
           </div>
-          <Stepper current={step} onStepClick={setStep} t={t} />
+          <Stepper current={step} onStepClick={goToStep} t={t} />
         </div>
 
         {/* Re-Loan Banner if in Re-Loan workflow */}
@@ -525,7 +583,19 @@ const NewLoan = () => {
         {/* Consistent content area with fixed available height based on viewport */}
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 sm:px-5 sm:py-3.5 bg-white">
           {step === 0 && <CustomerTab data={form.customer} onChange={update('customer')} />}
-          {step === 1 && <VehicleTab data={form.vehicle} onChange={update('vehicle')} onFetchVehicle={handleFetchVehicle} />}
+          {step === 1 && (
+            <VehicleTab
+              data={form.vehicle}
+              onChange={(field, value) => {
+                if (field === 'chassisNo') setChassisError('')
+                update('vehicle')(field, value)
+              }}
+              onFetchVehicle={handleFetchVehicle}
+              chassisError={chassisError}
+              onChassisBlur={checkChassisFormat}
+              revealRegistration={revealRegistration}
+            />
+          )}
           {step === 2 && (
             <LoanTab
               data={form.loan}
