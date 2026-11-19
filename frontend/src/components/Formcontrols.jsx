@@ -118,7 +118,7 @@ export const AdornedInput = ({ prefix, suffix, disabled, className = '', ...prop
   </div>
 )
 
-export const PhoneInput = ({ code, mobile, onCodeChange, onMobileChange, className = '' }) => {
+export const PhoneInput = ({ code, mobile, onCodeChange, onMobileChange, onMobileBlur, invalid = false, className = '' }) => {
   const { t } = useTranslation()
 
   return (
@@ -139,8 +139,10 @@ export const PhoneInput = ({ code, mobile, onCodeChange, onMobileChange, classNa
       maxLength={10}
       value={mobile}
       onChange={(e) => onMobileChange(e.target.value.replace(/\D/g, ''))}
+      onBlur={onMobileBlur}
+      aria-invalid={invalid ? 'true' : undefined}
       placeholder={t('common.enterMobileNumber')}
-      className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs sm:text-sm font-mono tracking-wider text-slate-800 placeholder:text-slate-400 placeholder:tracking-normal focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30"
+      className={`h-9 min-w-0 flex-1 rounded-md border ${invalid ? 'border-red-400' : 'border-slate-300'} bg-white px-2.5 text-xs sm:text-sm font-mono tracking-wider text-slate-800 placeholder:text-slate-400 placeholder:tracking-normal focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30`}
     />
   </div>
   )

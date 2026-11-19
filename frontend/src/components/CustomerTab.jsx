@@ -53,7 +53,7 @@ const fileToBase64 = (file) => {
    CUSTOMER TAB
 ============================================================= */
 
-const CustomerTab = ({ data = {}, onChange }) => {
+const CustomerTab = ({ data = {}, onChange, mobileError = "", onMobileBlur }) => {
   const { t } = useTranslation();
   const [previewDoc, setPreviewDoc] = useState(null);
 
@@ -165,12 +165,14 @@ const CustomerTab = ({ data = {}, onChange }) => {
                 </Field>
 
                 {/* Mobile Number */}
-                <Field label={t("customer.mobileNumber")} required>
+                <Field label={t("customer.mobileNumber")} required error={mobileError}>
                   <PhoneInput
                     code={data.countryCode || "+91"}
                     mobile={data.mobile || ""}
                     onCodeChange={(value) => onChange("countryCode", value)}
                     onMobileChange={(value) => onChange("mobile", value)}
+                    onMobileBlur={onMobileBlur}
+                    invalid={Boolean(mobileError)}
                   />
                 </Field>
               </div>

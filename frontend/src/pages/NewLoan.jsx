@@ -25,6 +25,7 @@ import { CheckCircle2, FileText, Trash2, X, RefreshCw } from 'lucide-react'
 import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
 import { formatDate } from '../utils/dateUtils'
 import { validateChassis } from '../utils/chassis'
+import { validateMobile } from '../utils/mobile'
 import { apiGet } from '../services/api'
 
 const STEPS = [
@@ -226,6 +227,19 @@ const NewLoan = () => {
     }))
   }
 
+  // Customer mobile number: a 10-digit Indian number starting 6-9. Checked
+  // when the user leaves the field and before leaving the Customer step. A
+  // re-loan keeps the existing customer's number as it is.
+  const [mobileError, setMobileError] = useState('')
+
+  const mobileAcceptable = () => {
+    if (isReLoan) return true
+    const error = validateMobile(form.customer.mobile)
+    setMobileError(error)
+    if (error) setStep(0)
+    return !error
+  }
+
   // Chassis Number (VIN): checked when the user leaves the field and again
   // before leaving the Vehicle step (format here, then the server also looks
   // for a live vehicle that already has it).
@@ -271,6 +285,7 @@ const NewLoan = () => {
   // Guarantor & Referral is optional: Next on the Loan step goes straight to
   // Review from either sub-tab; the Guarantor & Referral tab stays one click away.
   const goNext = async () => {
+    if (step === 0 && !mobileAcceptable()) return
     if (step === 1) {
       if (!(await chassisAcceptable())) return
       setLoanSubTab('loan')
@@ -283,6 +298,7 @@ const NewLoan = () => {
   // The stepper may jump ahead; moving past the Vehicle step needs a valid
   // chassis number, going back never does.
   const goToStep = async (target) => {
+    if (target > 0 && !mobileAcceptable()) return
     if (target > 1 && !(await chassisAcceptable())) return
     setStep(target)
   }
@@ -439,7 +455,16 @@ const NewLoan = () => {
         }
       }
 
-      // A draft or the stepper can reach Review without passing the Vehicle step.
+      // A draft or the stepper can reach Review without passing earlier steps.
+      if (!isReLoan) {
+        const mobileProblem = validateMobile(form.customer.mobile)
+        if (mobileProblem) {
+          setMobileError(mobileProblem)
+          setStep(0)
+          alert(mobileProblem)
+          return
+        }
+      }
       const chassisProblem = validateChassis(form.vehicle.chassisNo, form.vehicle.year).error
       if (chassisProblem) {
         setChassisError(chassisProblem)
@@ -582,7 +607,18 @@ const NewLoan = () => {
 
         {/* Consistent content area with fixed available height based on viewport */}
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 sm:px-5 sm:py-3.5 bg-white">
-          {step === 0 && <CustomerTab data={form.customer} onChange={update('customer')} />}
+          {step === 0 && (
+            <CustomerTab
+              data={form.customer}
+              onChange={(field, value) => {
+                // Once an error is showing, it follows the number as it is fixed.
+                if (field === 'mobile' && mobileError) setMobileError(validateMobile(value))
+                update('customer')(field, value)
+              }}
+              mobileError={mobileError}
+              onMobileBlur={() => !isReLoan && setMobileError(validateMobile(form.customer.mobile))}
+            />
+          )}
           {step === 1 && (
             <VehicleTab
               data={form.vehicle}

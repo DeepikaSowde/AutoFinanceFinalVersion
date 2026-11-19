@@ -12,6 +12,7 @@ import { fundLoanInTransaction } from "./investorRepository.js";
 import { syncDocumentChargeIncome, deleteDocumentChargeIncomes } from "./incomeRepository.js";
 import { describeInstallment, summariseOutstanding } from "./repaymentEngine.js";
 import { assertChassisAcceptable, normalizeChassis } from "./chassis.js";
+import { assertValidMobile } from "./mobile.js";
 
 const pad = (number, length = 5) => String(number).padStart(length, "0");
 
@@ -539,6 +540,8 @@ const fundIfRequested = (client, loanPk, loan = {}) =>
     : null;
 
 export const createCustomer = async (payload = {}) => {
+  assertValidMobile(payload.customer?.personal?.mobileNumber);
+
   const customerId = await withTransaction(async (client) => {
     // The chassis number must be valid and not already on a live vehicle.
     // Checked first so a rejected one leaves no customer number used up.
@@ -590,6 +593,13 @@ export const updateCustomer = async (customerId, payload = {}) => {
   }
 
   const existing = await buildCustomerRecord(customerRow);
+
+  // Only a changed mobile number is checked, so a customer saved before this
+  // rule can still be edited without touching it.
+  const newMobile = payload.customer?.personal?.mobileNumber;
+  if (newMobile !== undefined && String(newMobile).trim() !== String(existing.customer.personal?.mobileNumber ?? "").trim()) {
+    assertValidMobile(newMobile);
+  }
 
   await withTransaction(async (client) => {
     await client.query(
