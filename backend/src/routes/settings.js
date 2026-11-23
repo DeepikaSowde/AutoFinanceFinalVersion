@@ -11,6 +11,7 @@ import {
   savePaymentAllocationSettings,
 } from "../services/paymentAllocationSettings.js";
 import { getReLoanPolicy, saveReLoanPolicy } from "../services/reloanPolicy.js";
+import { getVehicleCatalog } from "../services/vehicleCatalogRepository.js";
 import { requireRole } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
@@ -47,6 +48,20 @@ settingsRouter.put(
   requireRole("admin"),
   asyncHandler(async (req, res) => {
     res.json(await saveReLoanPolicy(req.body || {}, actor(req)));
+  })
+);
+
+// Vehicle catalog (Category -> Subcategory -> Brand -> Model) for New Loan:
+// the master list minus what this lender hid, plus its own brands/models.
+// ?all=1 (admin only) returns every entry with a `hidden` flag instead.
+settingsRouter.get(
+  "/vehicle-catalog",
+  asyncHandler(async (req, res) => {
+    const includeHidden = req.query.all === "1";
+    if (includeHidden && req.user?.role !== "admin") {
+      return res.status(403).json({ error: "Only an admin can view hidden catalog entries." });
+    }
+    res.json(await getVehicleCatalog({ includeHidden }));
   })
 );
 

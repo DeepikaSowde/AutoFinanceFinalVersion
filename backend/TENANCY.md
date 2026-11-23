@@ -65,6 +65,14 @@ Per-tenant keys: `app_settings (tenant_id, key)`, `reloan_rules (tenant_id)`,
 `categories UNIQUE (tenant_id, type, name)`. Public ids (CUS-00001, LN-00001,
 …) stay globally unique.
 
+Vehicle catalog (migration 028): `vehicle_categories` and
+`vehicle_subcategories` are global (super admin). `vehicle_makes` and
+`vehicle_models` have a **nullable** `tenant_id`: NULL = master row every
+lender sees, set = a brand/model one lender added for itself. Every lender
+query reads `tenant_id IS NULL OR tenant_id = currentTenantId()`.
+`vehicle_catalog_hidden (tenant_id, kind, ref_id)` is what a lender's admin
+switched off. See `services/vehicleCatalogRepository.js`.
+
 ## Query audit (step c, 2026-10-13)
 
 Before this change **no query** filtered by tenant (the app was single-lender).
