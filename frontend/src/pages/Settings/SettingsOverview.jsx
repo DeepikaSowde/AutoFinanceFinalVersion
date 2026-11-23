@@ -6,6 +6,7 @@ import {
   ArrowDownUp,
   RotateCcw,
   ArrowRight,
+  Car,
 } from 'lucide-react';
 
 const SettingsOverview = () => {
@@ -71,6 +72,21 @@ const SettingsOverview = () => {
         'bg-blue-50 text-blue-700 border-blue-100 group-hover:bg-blue-600 group-hover:text-white',
       arrowButtonHoverStyles:
         'group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600',
+    },
+    {
+      id: 'vehicle-catalog',
+      title: 'Vehicle Catalog',
+      description:
+        'Choose which vehicle types, brands and models your staff can pick in New Loan, and add your own.',
+      category: 'Vehicles',
+      icon: Car,
+      route: '/settings/vehicle-catalog',
+      accentColor: 'bg-amber-500',
+      badgeStyles: 'bg-amber-50/90 text-amber-800 border-amber-200/80',
+      iconContainerStyles:
+        'bg-amber-50 text-amber-700 border-amber-100 group-hover:bg-amber-600 group-hover:text-white',
+      arrowButtonHoverStyles:
+        'group-hover:bg-amber-600 group-hover:text-white group-hover:border-amber-600',
     },
   ];
 

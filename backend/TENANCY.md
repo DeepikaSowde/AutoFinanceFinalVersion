@@ -72,6 +72,12 @@ lender sees, set = a brand/model one lender added for itself. Every lender
 query reads `tenant_id IS NULL OR tenant_id = currentTenantId()`.
 `vehicle_catalog_hidden (tenant_id, kind, ref_id)` is what a lender's admin
 switched off. See `services/vehicleCatalogRepository.js`.
+Lender admin endpoints (Settings → Vehicle Catalog, admin only):
+`PUT /api/settings/vehicle-catalog/hidden` (`{kind, id, hidden}` or `{items: [...]}`),
+`POST /api/settings/vehicle-catalog/models` (`makeId` or a `brandName`; a new
+name becomes this lender's own brand), `PATCH` / `DELETE
+/api/settings/vehicle-catalog/models/:id` (this lender's own models only).
+The super admin side is in `SUPERADMIN.md`.
 
 ## Query audit (step c, 2026-10-13)
 

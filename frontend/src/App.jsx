@@ -22,6 +22,7 @@ import PenaltyGraceSettings from './pages/Settings/PenaltyGraceSettings'
 import ForeclosureVehicleSaleSettings from './pages/Settings/ForeclosureVehicleSaleSettings'
 import PaymentAllocationSettings from './pages/Settings/PaymentAllocationSettings'
 import ReLoanSettings from './pages/Settings/ReLoanSettings'
+import VehicleCatalogSettings from './pages/Settings/VehicleCatalogSettings'
 import ReLoanSearch from './pages/reloan/ReLoanSearch'
 import ReLoanDetails from './pages/reloan/ReLoanDetails'
 import SmartSearch from './pages/SmartSearch'
@@ -89,6 +90,7 @@ function AppShell() {
           <Route path="/settings/foreclosure-vehicle-sale" element={gate('/settings', <ForeclosureVehicleSaleSettings />)} />
           <Route path="/settings/payment-allocation" element={gate('/settings', <PaymentAllocationSettings />)} />
           <Route path="/settings/re-loan" element={gate('/settings', <ReLoanSettings />)} />
+          <Route path="/settings/vehicle-catalog" element={gate('/settings', <VehicleCatalogSettings />)} />
           <Route path="/re-loan" element={gate('/re-loan', <ReLoanSearch />)} />
           <Route path="/re-loan/:customerId" element={gate('/re-loan', <ReLoanDetails />)} />
           <Route path="/customers/re-loan" element={gate('/re-loan', <ReLoanSearch />)} />

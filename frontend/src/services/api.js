@@ -127,6 +127,7 @@ export const apiPost = (path, body) => request(path, { method: 'POST', body: JSO
 export const apiPut = (path, body, { quiet = false } = {}) =>
   request(path, { method: 'PUT', body: JSON.stringify(body ?? {}), quiet })
 export const apiDelete = (path) => request(path, { method: 'DELETE' })
+export const apiPatch = (path, body) => request(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) })
 
 export const login = async (username, password) => {
   const { token, user } = await apiPost('/auth/login', { username, password })

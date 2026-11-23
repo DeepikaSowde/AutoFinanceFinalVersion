@@ -11,7 +11,13 @@ import {
   savePaymentAllocationSettings,
 } from "../services/paymentAllocationSettings.js";
 import { getReLoanPolicy, saveReLoanPolicy } from "../services/reloanPolicy.js";
-import { getVehicleCatalog } from "../services/vehicleCatalogRepository.js";
+import {
+  addOwnModel,
+  deleteOwnModel,
+  getVehicleCatalog,
+  setCatalogEntryHidden,
+  updateOwnModel,
+} from "../services/vehicleCatalogRepository.js";
 import { requireRole } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
@@ -62,6 +68,42 @@ settingsRouter.get(
       return res.status(403).json({ error: "Only an admin can view hidden catalog entries." });
     }
     res.json(await getVehicleCatalog({ includeHidden }));
+  })
+);
+
+// Settings -> Vehicle Catalog (admin): what this lender's staff see. Each
+// returns the catalog with hidden flags (as ?all=1).
+// { kind: "category" | "subcategory" | "make" | "model", id, hidden }
+settingsRouter.put(
+  "/vehicle-catalog/hidden",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.json(await setCatalogEntryHidden(req.body || {}, actor(req)));
+  })
+);
+
+// The lender's own models: { categoryId, subcategoryId?, makeId? | brandName?, name, isEv? }
+settingsRouter.post(
+  "/vehicle-catalog/models",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await addOwnModel(req.body || {}, actor(req)));
+  })
+);
+
+settingsRouter.patch(
+  "/vehicle-catalog/models/:id",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.json(await updateOwnModel(req.params.id, req.body || {}));
+  })
+);
+
+settingsRouter.delete(
+  "/vehicle-catalog/models/:id",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.json(await deleteOwnModel(req.params.id));
   })
 );
 
