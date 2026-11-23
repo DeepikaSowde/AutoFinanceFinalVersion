@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Building2, LayoutDashboard, LogOut, ScrollText, Tags } from 'lucide-react'
+import { Bike, Building2, LayoutDashboard, LogOut, ScrollText, Tags } from 'lucide-react'
 
 import { getSignedInAdmin, signOut } from '../api'
 
@@ -7,6 +7,7 @@ const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/tenants', label: 'Tenants', icon: Building2 },
   { to: '/plans', label: 'Plans', icon: Tags },
+  { to: '/vehicle-catalog', label: 'Vehicle Catalog', icon: Bike },
   { to: '/audit-log', label: 'Audit log', icon: ScrollText },
 ]
 

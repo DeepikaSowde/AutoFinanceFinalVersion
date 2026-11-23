@@ -76,6 +76,30 @@ const ACTION_LABELS = {
   'tenant.admin_password_reset': 'Admin password reset',
   'payment.recorded': 'Payment recorded',
   'plan.updated': 'Plan updated',
+  'vehicle_catalog.category_created': 'Vehicle category added',
+  'vehicle_catalog.category_updated': 'Vehicle category edited',
+  'vehicle_catalog.subcategory_created': 'Vehicle subcategory added',
+  'vehicle_catalog.subcategory_updated': 'Vehicle subcategory edited',
+  'vehicle_catalog.brand_created': 'Vehicle brand added',
+  'vehicle_catalog.brand_updated': 'Vehicle brand edited',
+  'vehicle_catalog.model_created': 'Vehicle model added',
+  'vehicle_catalog.model_updated': 'Vehicle model edited',
+  'vehicle_catalog.model_promoted': 'Lender model added to master list',
+}
+
+// "renamed to X", "switched off", ... for a catalog edit's changes.
+const catalogChanges = (changes = {}) => {
+  const parts = []
+  if (changes.name) parts.push(`renamed to ${changes.name}`)
+  if (changes.active === false) parts.push('switched off')
+  if (changes.active === true) parts.push('switched on')
+  if (changes.is_ev !== undefined) parts.push(changes.is_ev ? 'electric' : 'not electric')
+  if (changes.discontinued === true) parts.push('discontinued')
+  if (changes.discontinued === false) parts.push('not discontinued')
+  if (changes.make_id) parts.push('brand changed')
+  if (changes.category_id) parts.push('category changed')
+  else if (changes.subcategory_id !== undefined) parts.push('subcategory changed')
+  return parts.join(', ')
 }
 
 export const actionLabel = (action) => ACTION_LABELS[action] || action
@@ -111,6 +135,22 @@ export const auditSummary = (log) => {
       if (c.isActive !== undefined) parts.push(c.isActive ? 'activated' : 'deactivated')
       return `${d.plan}: ${parts.join('; ') || 'no change'}`
     }
+    case 'vehicle_catalog.category_created':
+    case 'vehicle_catalog.brand_created':
+      return d.name || ''
+    case 'vehicle_catalog.subcategory_created':
+      return `${d.category} → ${d.name}`
+    case 'vehicle_catalog.model_created':
+      return `${d.brand} ${d.name} (${[d.category, d.subcategory].filter(Boolean).join(' · ')})`
+    case 'vehicle_catalog.category_updated':
+    case 'vehicle_catalog.brand_updated':
+      return `${d.name}: ${catalogChanges(d.changes) || 'no change'}`
+    case 'vehicle_catalog.subcategory_updated':
+      return `${d.category} → ${d.name}: ${catalogChanges(d.changes) || 'no change'}`
+    case 'vehicle_catalog.model_updated':
+      return `${d.brand} ${d.name}: ${catalogChanges(d.changes) || 'no change'}`
+    case 'vehicle_catalog.model_promoted':
+      return `${d.brand} ${d.name}${d.alreadyInMaster ? ' (already listed; lender copy removed)' : ''}`
     default:
       return ''
   }

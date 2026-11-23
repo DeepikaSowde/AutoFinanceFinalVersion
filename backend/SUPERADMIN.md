@@ -46,7 +46,21 @@ Errors are `{ "error": "message" }` with 400 (invalid input), 401, 404, 409
 | GET | `/plans` | `product?` | product, features, limits, tenantCount |
 | POST | `/plans` | `{ product, name, priceMonthly?, features?, limits? }` | a new plan for that product; the code is made from the name (`gf_gold`) |
 | PUT | `/plans/:id` | `{ name?, priceMonthly?, isActive?, features?, limits? }` | features replace the list; limits only for features the plan has. The product cannot change |
+| GET | `/vehicle-catalog` | | the master list (categories with subcategories, brands, models, incl. switched-off; model counts) + `lenderAdded.models` (models lenders added for themselves, with lender name and `inMaster`) |
+| POST | `/vehicle-catalog/categories` | `{ name }` | |
+| PATCH | `/vehicle-catalog/categories/:id` | `{ name?, active? }` | `active: false` hides the category and everything in it from every lender |
+| POST | `/vehicle-catalog/subcategories` | `{ categoryId, name }` | |
+| PATCH | `/vehicle-catalog/subcategories/:id` | `{ name?, active? }` | |
+| POST | `/vehicle-catalog/brands` | `{ name }` | |
+| PATCH | `/vehicle-catalog/brands/:id` | `{ name?, active? }` | switching a brand off hides all its models |
+| POST | `/vehicle-catalog/models` | `{ makeId, categoryId, subcategoryId?, name, isEv?, discontinued? }` | the subcategory must belong to the category; brand + model unique per category |
+| PATCH | `/vehicle-catalog/models/:id` | same fields + `active?` | moving to another category drops the old subcategory |
+| POST | `/vehicle-catalog/lender-models/:id/promote` | `{ subcategoryId? }` | copies a lender's own model into the master list (master brand of the same name, created if needed) and removes the lender's copy (and its own brand once empty). `alreadyInMaster: true` when only the copy was removed |
 | GET | `/audit-logs` | `tenantId?, page, pageSize` | newest first, with actor and tenant name |
+
+Vehicle catalog entries are never deleted, only switched off. Renaming changes
+the list only: loans keep the brand/model text they were saved with. Names are
+unique ignoring case (409 otherwise).
 
 ## Products
 

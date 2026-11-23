@@ -9,6 +9,7 @@ import Login from './pages/Login'
 import Plans from './pages/Plans'
 import TenantDetail from './pages/TenantDetail'
 import Tenants from './pages/Tenants'
+import VehicleCatalog from './pages/VehicleCatalog'
 
 // Renders the app only while signed in; an expired session (401) sends the
 // super admin back to the sign-in page.
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="tenants" element={<Tenants />} />
           <Route path="tenants/:id" element={<TenantDetail />} />
           <Route path="plans" element={<Plans />} />
+          <Route path="vehicle-catalog" element={<VehicleCatalog />} />
           <Route path="audit-log" element={<AuditLog />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

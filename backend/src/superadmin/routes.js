@@ -15,6 +15,7 @@ import { createPlan, getPlans, updatePlan } from "./planRepository.js";
 import { loginRateLimit, recordLoginFailure, recordLoginSuccess } from "./rateLimit.js";
 import * as tenants from "./tenantRepository.js";
 import * as v from "./validate.js";
+import * as catalog from "./vehicleCatalogRepository.js";
 
 export const superadminRouter = Router();
 
@@ -135,6 +136,30 @@ superadminRouter.get(
 superadminRouter.post("/plans", asyncHandler(async (req, res) => res.status(201).json(await createPlan(req.body || {}, req.superAdmin))));
 
 superadminRouter.put("/plans/:id", asyncHandler(async (req, res) => res.json(await updatePlan(v.id(req.params.id, "Plan id"), req.body || {}, req.superAdmin))));
+
+/* ---------- vehicle catalog (master list every lender sees) ---------- */
+
+const catalogId = (req) => v.id(req.params.id, "id");
+
+superadminRouter.get("/vehicle-catalog", asyncHandler(async (req, res) => res.json(await catalog.getMasterCatalog())));
+
+superadminRouter.post("/vehicle-catalog/categories", asyncHandler(async (req, res) => res.status(201).json(await catalog.createCategory(req.body || {}, req.superAdmin))));
+superadminRouter.patch("/vehicle-catalog/categories/:id", asyncHandler(async (req, res) => res.json(await catalog.updateCategory(catalogId(req), req.body || {}, req.superAdmin))));
+
+superadminRouter.post("/vehicle-catalog/subcategories", asyncHandler(async (req, res) => res.status(201).json(await catalog.createSubcategory(req.body || {}, req.superAdmin))));
+superadminRouter.patch("/vehicle-catalog/subcategories/:id", asyncHandler(async (req, res) => res.json(await catalog.updateSubcategory(catalogId(req), req.body || {}, req.superAdmin))));
+
+superadminRouter.post("/vehicle-catalog/brands", asyncHandler(async (req, res) => res.status(201).json(await catalog.createMake(req.body || {}, req.superAdmin))));
+superadminRouter.patch("/vehicle-catalog/brands/:id", asyncHandler(async (req, res) => res.json(await catalog.updateMake(catalogId(req), req.body || {}, req.superAdmin))));
+
+superadminRouter.post("/vehicle-catalog/models", asyncHandler(async (req, res) => res.status(201).json(await catalog.createModel(req.body || {}, req.superAdmin))));
+superadminRouter.patch("/vehicle-catalog/models/:id", asyncHandler(async (req, res) => res.json(await catalog.updateModel(catalogId(req), req.body || {}, req.superAdmin))));
+
+// A model a lender added for itself -> the master list.
+superadminRouter.post(
+  "/vehicle-catalog/lender-models/:id/promote",
+  asyncHandler(async (req, res) => res.json(await catalog.promoteLenderModel(catalogId(req), req.body || {}, req.superAdmin)))
+);
 
 /* ---------- audit log ---------- */
 
