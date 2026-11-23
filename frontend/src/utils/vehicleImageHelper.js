@@ -62,7 +62,9 @@ export const normalizeVehicleType = (vehicleType) => {
     return 'Three Wheeler';
   }
 
-  if (type.includes('four') || type.includes('4') || type.includes('car')) {
+  // Commercial Vehicle / Passenger Commercial (trucks, pickups, maxi cabs)
+  // use the four-wheeler picture until they get their own.
+  if (type.includes('four') || type.includes('4') || type.includes('car') || type.includes('commercial')) {
     return 'Four Wheeler';
   }
 

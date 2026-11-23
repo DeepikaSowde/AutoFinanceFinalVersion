@@ -94,15 +94,21 @@ export const Select = ({
           </option>
         )}
 
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {translationKey
-              ? t(`${translationKey}.${option}`, {
-                  defaultValue: option,
-                })
-              : option}
-          </option>
-        ))}
+        {options.map((option) => {
+          // An option is a string, or { value, label } when the shown text
+          // differs from the saved value.
+          const value = typeof option === "object" ? option.value : option;
+          const label = typeof option === "object" ? option.label : option;
+          return (
+            <option key={value} value={value}>
+              {translationKey
+                ? t(`${translationKey}.${value}`, {
+                    defaultValue: label,
+                  })
+                : label}
+            </option>
+          );
+        })}
       </select>
 
       <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />

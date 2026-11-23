@@ -79,6 +79,7 @@ const toCustomer = (customer) => ({
 
 const toVehicle = (vehicle) => ({
   vehicleType: vehicle.type || '',
+  subcategory: vehicle.subcategory || '',
   brand: vehicle.brand || '',
   model: vehicle.model || '',
   variant: vehicle.variant || '',
@@ -466,6 +467,7 @@ const toEntry = (record, loan, commissions = []) => {
       saleDetails: saleDetailsFrom(vehicle.sale),
       statusHistory: statusHistoryFrom(vehicle.events),
       type: vehicle.vehicleType || '',
+      subcategory: vehicle.subcategory || '',
       brand: vehicle.brand || '',
       model: vehicle.model || '',
       variant: vehicle.variant || '',

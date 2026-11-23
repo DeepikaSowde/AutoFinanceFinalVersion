@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, ChevronDown, Check } from 'lucide-react';
 import { VEHICLE_TYPES } from '../../../Options';
+import { useVehicleCatalog } from '../../services/vehicleCatalogApi';
 
 /**
  * Search Bar and Vehicle-Type Filter matching reference screenshot:
@@ -27,7 +28,13 @@ const VehicleSearchAndFilter = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const typeOptions = ['All Vehicle Types', ...(VEHICLE_TYPES || ['Two Wheeler', 'Three Wheeler', 'Four Wheeler'])];
+  // Categories from the vehicle catalog (what this lender uses); the fixed
+  // list until it loads.
+  const catalog = useVehicleCatalog();
+  const categories = catalog?.categories?.length
+    ? catalog.categories.map((category) => category.name)
+    : VEHICLE_TYPES;
+  const typeOptions = ['All Vehicle Types', ...categories];
 
   return (
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">

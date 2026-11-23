@@ -18,10 +18,6 @@ import {
 } from "./Formcontrols";
 
 import {
-  VEHICLE_TYPES,
-  BRANDS,
-  MODELS,
-  VARIANTS,
   COLOURS,
   FUEL_TYPES,
   MANUFACTURING_YEARS,
@@ -32,8 +28,20 @@ import {
   INSURANCE_COMPANIES,
 } from "../../Options";
 import { getVehicleModelImage } from "../utils/vehicleImageHelper";
+import {
+  OTHER,
+  useVehicleCatalog,
+  catalogChoices,
+  findModel,
+} from "../services/vehicleCatalogApi";
 
 const YES_NO = ["Yes", "No"];
+
+const sameName = (a, b) =>
+  String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+
+// The option text matching a stored value (old records may differ in case).
+const pick = (list, value) => list.find((item) => sameName(item, value)) || "";
 
 /* =========================================================
    FILE → BASE64
@@ -79,6 +87,123 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
   const set = (key) => (e) => onChange(key, e.target.value);
 
   const hypothecated = data.hypothecation === "Yes";
+
+  /* =========================================================
+     VEHICLE CATALOG: Type -> Subcategory -> Brand -> Model
+     "Other" lets staff type a brand/model that is not listed.
+  ========================================================= */
+  const catalog = useVehicleCatalog();
+  const [brandOther, setBrandOther] = useState(false);
+  const [modelOther, setModelOther] = useState(false);
+  // True when the subcategory was filled in from the picked model (not
+  // chosen by the user); it then stops filtering once the brand/model changes.
+  const [subcategoryAuto, setSubcategoryAuto] = useState(false);
+  // True while Fuel Type is the "Electric" filled in from an electric model.
+  const [fuelAuto, setFuelAuto] = useState(false);
+  // Undo an auto-filled "Electric" when the vehicle changes to a non-EV.
+  const clearAutoFuel = () => {
+    if (!fuelAuto) return {};
+    setFuelAuto(false);
+    return data.fuelType === "Electric" ? { fuelType: "" } : {};
+  };
+
+  // Only a subcategory the user picked narrows the Brand / Model lists.
+  const filterSubcategory = subcategoryAuto ? "" : data.subcategory;
+  const choices = catalogChoices(catalog, {
+    type: data.type,
+    subcategory: filterSubcategory,
+    brand: data.brand,
+  });
+
+  // A saved brand/model that is not in the list (older records, or typed
+  // under "Other") opens in "Other" mode with its text kept.
+  const brandIsOther =
+    brandOther || (Boolean(catalog) && Boolean(data.brand) && !pick(choices.brands, data.brand));
+  const modelNames = choices.models.map((item) => item.name);
+  const modelIsOther =
+    brandIsOther ||
+    modelOther ||
+    (Boolean(catalog) && Boolean(data.model) && !pick(modelNames, data.model));
+
+  const typeValue = pick(choices.categories, data.type) || data.type || "";
+  const typeOptions =
+    data.type && !pick(choices.categories, data.type)
+      ? [...choices.categories, data.type]
+      : choices.categories;
+
+  const subcategoryValue = pick(choices.subcategories, data.subcategory) || data.subcategory || "";
+  const subcategoryOptions =
+    data.subcategory && !pick(choices.subcategories, data.subcategory)
+      ? [...choices.subcategories, data.subcategory]
+      : choices.subcategories;
+
+  const handleType = (e) => {
+    const value = e.target.value;
+    if (sameName(value, data.type)) return;
+    setBrandOther(false);
+    setModelOther(false);
+    setSubcategoryAuto(false);
+    onChange({ type: value, subcategory: "", brand: "", model: "", ...clearAutoFuel() });
+  };
+
+  const handleSubcategory = (e) => {
+    const value = e.target.value;
+    setSubcategoryAuto(false);
+    const next = catalogChoices(catalog, { type: data.type, subcategory: value, brand: data.brand });
+    const patch = { subcategory: value };
+    // Keep the brand/model only while they still fit the new subcategory.
+    if (!brandIsOther && data.brand && !pick(next.brands, data.brand)) {
+      patch.brand = "";
+      patch.model = "";
+    } else if (!modelIsOther && data.model && !pick(next.models.map((item) => item.name), data.model)) {
+      patch.model = "";
+    }
+    onChange(patch);
+  };
+
+  const handleBrand = (e) => {
+    const value = e.target.value;
+    setModelOther(false);
+    // a subcategory taken from the previous model no longer applies
+    const clearAuto = { ...(subcategoryAuto ? { subcategory: "" } : {}), ...clearAutoFuel() };
+    setSubcategoryAuto(false);
+    if (value === OTHER) {
+      setBrandOther(true);
+      onChange({ brand: "", model: "", ...clearAuto });
+      return;
+    }
+    setBrandOther(false);
+    onChange({ brand: value, model: "", ...clearAuto });
+  };
+
+  const handleModel = (e) => {
+    const value = e.target.value;
+    if (value === OTHER) {
+      setModelOther(true);
+      setSubcategoryAuto(false);
+      onChange({ model: "", ...(subcategoryAuto ? { subcategory: "" } : {}), ...clearAutoFuel() });
+      return;
+    }
+    setModelOther(false);
+    const found = findModel(catalog, { type: data.type, brand: data.brand, model: value });
+    // Filled from the model unless the user had picked the subcategory.
+    if (found?.subcategoryName && (subcategoryAuto || !data.subcategory)) setSubcategoryAuto(true);
+    let fuelPatch = {};
+    if (found?.isEv) {
+      if (data.fuelType !== "Electric") setFuelAuto(true);
+    } else {
+      fuelPatch = clearAutoFuel();
+    }
+    onChange({
+      model: value,
+      ...fuelPatch,
+      // the model decides its subcategory; an electric model is Electric
+      ...(found?.subcategoryName ? { subcategory: found.subcategoryName } : {}),
+      ...(found?.isEv ? { fuelType: "Electric" } : {}),
+    });
+  };
+
+  const loadingText = t("vehicle.loadingCatalog", { defaultValue: "Loading…" });
 
   /* =========================================================
      HANDLE FILE UPLOAD
@@ -204,22 +329,56 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
 
               <Field label={t("vehicle.vehicleType")} required>
                 <Select
-                  options={VEHICLE_TYPES}
-                  placeholder={t("vehicle.selectVehicleType")}
+                  options={typeOptions}
+                  placeholder={catalog ? t("vehicle.selectVehicleType") : loadingText}
                   translationKey="options.vehicleTypes"
-                  value={data.type || ""}
-                  onChange={set("type")}
+                  disabled={!catalog}
+                  value={typeValue}
+                  onChange={handleType}
                 />
               </Field>
 
-              <Field label={t("vehicle.model")} required>
+              <Field label={t("vehicle.brand")} required>
                 <Select
-                  options={MODELS}
-                  placeholder={t("vehicle.selectModel")}
-                  translationKey="options.models"
-                  value={data.model || ""}
-                  onChange={set("model")}
+                  options={[...choices.brands, OTHER]}
+                  placeholder={catalog ? t("vehicle.selectBrand") : loadingText}
+                  translationKey="options.brands"
+                  disabled={!catalog || !data.type}
+                  value={brandIsOther ? OTHER : pick(choices.brands, data.brand)}
+                  onChange={handleBrand}
                 />
+                {brandIsOther && (
+                  <Input
+                    className="mt-1.5"
+                    value={data.brand || ""}
+                    onChange={set("brand")}
+                    placeholder={t("vehicle.enterBrand", { defaultValue: "Type the brand name" })}
+                  />
+                )}
+              </Field>
+
+              <Field label={t("vehicle.model")} required>
+                {!brandIsOther && (
+                  <Select
+                    options={[
+                      ...choices.models.map((item) => ({ value: item.name, label: item.label })),
+                      OTHER,
+                    ]}
+                    placeholder={catalog ? t("vehicle.selectModel") : loadingText}
+                    translationKey="options.models"
+                    disabled={!catalog || !data.brand}
+                    value={modelIsOther ? OTHER : pick(modelNames, data.model)}
+                    onChange={handleModel}
+                  />
+                )}
+                {modelIsOther && (
+                  <Input
+                    className={brandIsOther ? "" : "mt-1.5"}
+                    value={data.model || ""}
+                    onChange={set("model")}
+                    placeholder={t("vehicle.enterModel", { defaultValue: "Type the model name" })}
+                  />
+                )}
               </Field>
 
               <Field label={t("vehicle.colour")} required>
@@ -238,7 +397,10 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
                   placeholder={t("vehicle.selectFuelType")}
                   translationKey="options.fuelTypes"
                   value={data.fuelType || ""}
-                  onChange={set("fuelType")}
+                  onChange={(e) => {
+                    setFuelAuto(false);
+                    onChange("fuelType", e.target.value);
+                  }}
                 />
               </Field>
 
@@ -248,23 +410,25 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
 
             <div className="space-y-3">
 
-              <Field label={t("vehicle.brand")} required>
+              <Field label={t("vehicle.subcategory", { defaultValue: "Subcategory" })}>
                 <Select
-                  options={BRANDS}
-                  placeholder={t("vehicle.selectBrand")}
-                  translationKey="options.brands"
-                  value={data.brand || ""}
-                  onChange={set("brand")}
+                  options={subcategoryOptions}
+                  placeholder={
+                    catalog
+                      ? t("vehicle.selectSubcategory", { defaultValue: "Select Subcategory" })
+                      : loadingText
+                  }
+                  disabled={!catalog || !data.type || subcategoryOptions.length === 0}
+                  value={subcategoryValue}
+                  onChange={handleSubcategory}
                 />
               </Field>
 
               <Field label={t("vehicle.variant")}>
-                <Select
-                  options={VARIANTS}
-                  placeholder={t("vehicle.selectVariant")}
-                  translationKey="options.variants"
+                <Input
                   value={data.variant || ""}
                   onChange={set("variant")}
+                  placeholder={t("vehicle.enterVariant", { defaultValue: "e.g. Disc, ZXi, LX" })}
                 />
               </Field>
 

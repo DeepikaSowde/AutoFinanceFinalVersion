@@ -237,10 +237,11 @@ const ReviewTab = ({
 
             <Row
               label={t('review.vehicleType')}
-              value={translateOption(
-                'vehicleTypes',
-                vehicle.type
-              )}
+              value={
+                [translateOption('vehicleTypes', vehicle.type), vehicle.subcategory]
+                  .filter((value) => value && value !== '—')
+                  .join(' · ') || '—'
+              }
             />
 
             <Row
