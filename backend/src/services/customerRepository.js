@@ -13,6 +13,7 @@ import { syncDocumentChargeIncome, deleteDocumentChargeIncomes } from "./incomeR
 import { describeInstallment, summariseOutstanding } from "./repaymentEngine.js";
 import { assertChassisAcceptable, normalizeChassis } from "./chassis.js";
 import { assertValidMobile } from "./mobile.js";
+import { assertValidApplicationDate } from "./applicationDate.js";
 
 const pad = (number, length = 5) => String(number).padStart(length, "0");
 
@@ -541,6 +542,7 @@ const fundIfRequested = (client, loanPk, loan = {}) =>
 
 export const createCustomer = async (payload = {}) => {
   assertValidMobile(payload.customer?.personal?.mobileNumber);
+  assertValidApplicationDate(payload.customer?.personal?.date);
 
   const customerId = await withTransaction(async (client) => {
     // The chassis number must be valid and not already on a live vehicle.
@@ -599,6 +601,11 @@ export const updateCustomer = async (customerId, payload = {}) => {
   const newMobile = payload.customer?.personal?.mobileNumber;
   if (newMobile !== undefined && String(newMobile).trim() !== String(existing.customer.personal?.mobileNumber ?? "").trim()) {
     assertValidMobile(newMobile);
+  }
+  // Same for the Application Date: only a changed one is checked.
+  const newDate = payload.customer?.personal?.date;
+  if (newDate !== undefined && String(newDate).trim() !== String(existing.customer.personal?.date ?? "").trim()) {
+    assertValidApplicationDate(newDate);
   }
 
   await withTransaction(async (client) => {

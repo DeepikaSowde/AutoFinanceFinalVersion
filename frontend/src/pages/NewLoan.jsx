@@ -26,6 +26,7 @@ import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
 import { formatDate } from '../utils/dateUtils'
 import { validateChassis } from '../utils/chassis'
 import { validateMobile } from '../utils/mobile'
+import { validateApplicationDate, localToday } from '../utils/applicationDate'
 import { apiGet } from '../services/api'
 
 const STEPS = [
@@ -37,7 +38,7 @@ const STEPS = [
 
 const initialForm = () => ({
   customer: {
-    applicationDate: new Date().toISOString().slice(0, 10),
+    applicationDate: localToday(),
     name: '', countryCode: '+91', mobile: '', profession: '', residenceType: 'Own House', referredBy: '', referredByPercentage: '',
     address: '', area: '', landmark: '', pincode: '',
     aadhaarNo: '', aadhaarFile: null, panNo: '', panFile: null,
@@ -240,6 +241,23 @@ const NewLoan = () => {
     return !error
   }
 
+  // Application Date: today or earlier (an older loan may be entered), never a
+  // future date. Checked before leaving the Customer step and again on submit;
+  // applies to new loans and re-loans alike.
+  const [applicationDateError, setApplicationDateError] = useState('')
+  const applicationDateAcceptable = () => {
+    const error = validateApplicationDate(form.customer.applicationDate)
+    setApplicationDateError(error)
+    if (error) setStep(0)
+    return !error
+  }
+  // Both run (not short-circuited) so every Customer-step error shows at once.
+  const customerStepAcceptable = () => {
+    const mobileOk = mobileAcceptable()
+    const dateOk = applicationDateAcceptable()
+    return mobileOk && dateOk
+  }
+
   // Chassis Number (VIN): checked when the user leaves the field and again
   // before leaving the Vehicle step (format here, then the server also looks
   // for a live vehicle that already has it).
@@ -285,7 +303,7 @@ const NewLoan = () => {
   // Guarantor & Referral is optional: Next on the Loan step goes straight to
   // Review from either sub-tab; the Guarantor & Referral tab stays one click away.
   const goNext = async () => {
-    if (step === 0 && !mobileAcceptable()) return
+    if (step === 0 && !customerStepAcceptable()) return
     if (step === 1) {
       if (!(await chassisAcceptable())) return
       setLoanSubTab('loan')
@@ -298,7 +316,7 @@ const NewLoan = () => {
   // The stepper may jump ahead; moving past the Vehicle step needs a valid
   // chassis number, going back never does.
   const goToStep = async (target) => {
-    if (target > 0 && !mobileAcceptable()) return
+    if (target > 0 && !customerStepAcceptable()) return
     if (target > 1 && !(await chassisAcceptable())) return
     setStep(target)
   }
@@ -456,6 +474,15 @@ const NewLoan = () => {
       }
 
       // A draft or the stepper can reach Review without passing earlier steps.
+      {
+        const dateProblem = validateApplicationDate(form.customer.applicationDate)
+        if (dateProblem) {
+          setApplicationDateError(dateProblem)
+          setStep(0)
+          alert(dateProblem)
+          return
+        }
+      }
       if (!isReLoan) {
         const mobileProblem = validateMobile(form.customer.mobile)
         if (mobileProblem) {
@@ -613,9 +640,11 @@ const NewLoan = () => {
               onChange={(field, value) => {
                 // Once an error is showing, it follows the number as it is fixed.
                 if (field === 'mobile' && mobileError) setMobileError(validateMobile(value))
+                if (field === 'applicationDate' && applicationDateError) setApplicationDateError(validateApplicationDate(value))
                 update('customer')(field, value)
               }}
               mobileError={mobileError}
+              applicationDateError={applicationDateError}
               onMobileBlur={() => !isReLoan && setMobileError(validateMobile(form.customer.mobile))}
             />
           )}

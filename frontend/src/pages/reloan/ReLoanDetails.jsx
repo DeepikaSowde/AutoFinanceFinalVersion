@@ -490,7 +490,7 @@ const ReLoanDetails = () => {
 
     const reLoanOnboardingForm = {
       customer: {
-        applicationDate: new Date().toISOString().slice(0, 10),
+        applicationDate: new Date().toLocaleDateString('en-CA'), // local date, not UTC
         customerId: customerProfile.customerId,
         name: customerProfile.name,
         countryCode: '+91',

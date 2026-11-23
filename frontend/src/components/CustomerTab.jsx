@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { localToday } from "../utils/applicationDate";
 
 import {
   Field,
@@ -53,7 +54,7 @@ const fileToBase64 = (file) => {
    CUSTOMER TAB
 ============================================================= */
 
-const CustomerTab = ({ data = {}, onChange, mobileError = "", onMobileBlur }) => {
+const CustomerTab = ({ data = {}, onChange, mobileError = "", onMobileBlur, applicationDateError = "" }) => {
   const { t } = useTranslation();
   const [previewDoc, setPreviewDoc] = useState(null);
 
@@ -180,12 +181,17 @@ const CustomerTab = ({ data = {}, onChange, mobileError = "", onMobileBlur }) =>
               {/* Row 2: Application Date & Pincode */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Application Date */}
-                <Field label={t("customer.applicationDate")}>
+                {/* Today or an earlier date (an older loan can be entered); the
+                    calendar disables future days, and NewLoan / the server
+                    check it again. */}
+                <Field label={t("customer.applicationDate")} error={applicationDateError}>
                   <Input
                     type="date"
                     value={data.applicationDate || ""}
-                    readOnly
-                    className="h-9 text-xs sm:text-sm bg-slate-50 text-slate-600 cursor-not-allowed"
+                    max={localToday()}
+                    onChange={set("applicationDate")}
+                    invalid={Boolean(applicationDateError)}
+                    className="h-9 text-xs sm:text-sm"
                   />
                 </Field>
 
