@@ -28,6 +28,7 @@ import { isDateInRange, formatDate, formatDateTime } from '../../utils/dateUtils
 import DateRangeFilter from '../../components/DateRangeFilter';
 import { UPDATE_EVENT_NAME } from '../../utils/guarantorReferralStorage';
 import { getEligibleIncomeTransactions, calculateTotalInflow } from '../../utils/incomeCalculations';
+import { nameMatches } from "../../utils/nameSearch";
 
 const IncomeView = ({ data }) => {
   const [search, setSearch] = useState('');
@@ -74,8 +75,8 @@ const IncomeView = ({ data }) => {
     if (search.trim()) {
       const q = search.toLowerCase();
       const matchesSearch =
-        inc.customerName?.toLowerCase().includes(q) ||
-        inc.investorName?.toLowerCase().includes(q) ||
+        nameMatches(inc.customerName, q) ||
+        nameMatches(inc.investorName, q) ||
         inc.remarks?.toLowerCase().includes(q) ||
         inc.id?.toLowerCase().includes(q) ||
         inc.loanId?.toLowerCase().includes(q) ||

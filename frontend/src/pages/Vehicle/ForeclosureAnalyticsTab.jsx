@@ -34,6 +34,7 @@ import {
 } from 'recharts';
 import { formatDate } from '../../utils/dateUtils';
 import { useVehicleImage } from '../../utils/vehicleImageHelper';
+import { nameMatches } from "../../utils/nameSearch";
 
 // Helper for Indian Rupee formatting
 const formatINR = (val) => {
@@ -121,7 +122,7 @@ const RecordsViewAllModal = ({
     return (
       (r.regNo || '').toLowerCase().includes(q) ||
       (r.makeModel || '').toLowerCase().includes(q) ||
-      (r.customerName || '').toLowerCase().includes(q) ||
+      nameMatches(r.customerName, q) ||
       (r.customerId || '').toLowerCase().includes(q) ||
       (r.ownershipType || '').toLowerCase().includes(q)
     );
@@ -362,7 +363,7 @@ const ModelPerformanceViewAllModal = ({
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
-      (r.name || '').toLowerCase().includes(q) ||
+      nameMatches(r.name, q) ||
       (r.makeModel || '').toLowerCase().includes(q) ||
       (r.ownershipType || '').toLowerCase().includes(q) ||
       (r.mfgYear || '').toLowerCase().includes(q)

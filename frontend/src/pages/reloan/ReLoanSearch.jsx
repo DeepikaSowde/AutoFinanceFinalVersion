@@ -22,6 +22,7 @@ import { extractRecordCustomerId, extractRecordLoanId } from '../customer/Custom
 import LoanDetailsView from '../customer/LoanDetailsView';
 import { DATA_CHANGED_EVENT } from '../../services/api';
 import { loadCustomerEntries } from '../../services/customerApi';
+import { nameMatches } from "../../utils/nameSearch";
 
 const formatCurrency = (value) => {
   const amount = Math.round(Number(value || 0));
@@ -278,7 +279,7 @@ const ReLoanSearch = () => {
     if (!q) return dateFilteredReLoans;
 
     return dateFilteredReLoans.filter((item) => {
-      const matchesName = item.customerName.toLowerCase().includes(q);
+      const matchesName = nameMatches(item.customerName, q);
       const matchesCId = item.customerId.toLowerCase().includes(q);
       const matchesMobile = item.mobile.includes(q);
       const matchesLoanId = item.reLoanId.toLowerCase().includes(q);
@@ -321,7 +322,7 @@ const ReLoanSearch = () => {
     if (!q) return list;
     return list.filter(
       (c) =>
-        c.name.toLowerCase().includes(q) ||
+        nameMatches(c.name, q) ||
         c.customerId.toLowerCase().includes(q) ||
         c.mobile.includes(q)
     );

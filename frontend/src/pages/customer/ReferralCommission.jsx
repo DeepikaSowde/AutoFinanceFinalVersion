@@ -26,6 +26,7 @@ import {
 import { DATA_CHANGED_EVENT, apiGet, apiPost } from "../../services/api";
 import { loadCustomerEntries } from "../../services/customerApi";
 import { markReferralCommissionPaid, updateReferralCommissionRate } from "../../utils/guarantorReferralStorage";
+import { nameMatches } from "../../utils/nameSearch";
 
 
 // Helper: Format Currency
@@ -220,9 +221,9 @@ const ReferralCommission = () => {
     return commissions.filter((c) => {
       const matchSearch =
         !q ||
-        c.referrerName?.toLowerCase().includes(q) ||
+        nameMatches(c.referrerName, q) ||
         c.referrerPhone?.includes(q) ||
-        c.customerName?.toLowerCase().includes(q) ||
+        nameMatches(c.customerName, q) ||
         c.loanId?.toLowerCase().includes(q);
 
       const matchStatus = statusFilter === "All" || c.status === statusFilter;

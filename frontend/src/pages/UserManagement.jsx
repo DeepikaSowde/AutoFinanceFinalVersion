@@ -41,6 +41,7 @@ import {
   PERMISSION_UPDATE_EVENT,
   SESSION_UPDATE_EVENT,
 } from '../utils/userManagementStorage';
+import { nameMatches } from "../utils/nameSearch";
 
 // Mapping navigation icons
 const NAV_ICONS = {
@@ -113,7 +114,7 @@ const UserManagement = () => {
       // 1. Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
-        const matchesName = (u.name || '').toLowerCase().includes(q);
+        const matchesName = nameMatches(u.name, q);
         const matchesPhone = String(u.phone || '').replace(/[\s-]/g, '').includes(q.replace(/[\s-]/g, ''));
         const matchesAddress = (u.address || '').toLowerCase().includes(q);
         if (!matchesName && !matchesPhone && !matchesAddress) return false;

@@ -47,6 +47,7 @@ import {
 } from "../../utils/penaltyRules";
 import { getCurrentUser } from "../../utils/userManagementStorage";
 import { allocateInstallmentPayment, usePaymentAllocationOrder } from "../../utils/paymentAllocationSettings";
+import { nameMatches } from "../../utils/nameSearch";
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -459,7 +460,7 @@ const Collection = () => {
         const loanId = (c.loanId || c.loan?.loanId || "").toLowerCase();
         const vehicle = (c.vehicle?.regNo || "").toLowerCase();
         if (
-          !name.includes(q) &&
+          !nameMatches(name, q) &&
           !customerId.includes(q) &&
           !loanId.includes(q) &&
           !vehicle.includes(q)
@@ -555,13 +556,13 @@ const Collection = () => {
         const colName = (p.collectedByName || "Legacy Record").toLowerCase();
         const colRole = (p.collectedByRole || "").toLowerCase();
         return (
-          name.includes(q) ||
+          nameMatches(name, q) ||
           loanId.includes(q) ||
           custId.includes(q) ||
           mode.includes(q) ||
           txId.includes(q) ||
           instRef.includes(q) ||
-          colName.includes(q) ||
+          nameMatches(colName, q) ||
           colRole.includes(q)
         );
       });

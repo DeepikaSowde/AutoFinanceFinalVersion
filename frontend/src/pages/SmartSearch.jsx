@@ -24,6 +24,7 @@ import { DATA_CHANGED_EVENT } from "../services/api";
 import { loadCustomerEntries } from "../services/customerApi";
 import { loadPayments } from "../services/collectionApi";
 import { formatDate, parseToDate, getLocalDateString } from "../utils/dateUtils";
+import { nameMatches } from "../utils/nameSearch";
 
 // Dedicated 3-wheeler auto-rickshaw icon in matching stroke style
 const ThreeWheelerIcon = ({ className = "h-3.5 w-3.5 shrink-0" }) => (
@@ -295,7 +296,7 @@ export default function SmartSearch() {
       // 1. Text Search across: Customer Name, Customer ID, Loan ID, Mobile
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
-        const matchesName = row.customerName.toLowerCase().includes(q);
+        const matchesName = nameMatches(row.customerName, q);
         const matchesCustId = row.customerId.toLowerCase().includes(q);
         const matchesLoanId = row.loanId.toLowerCase().includes(q);
         const matchesMobile = row.mobile.toLowerCase().includes(q);

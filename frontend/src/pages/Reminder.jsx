@@ -38,6 +38,7 @@ import { loadCustomerEntries } from '../services/customerApi';
 import { loadPayments } from '../services/collectionApi';
 import { parseToDate } from '../utils/dateUtils';
 import CreateReminderDrawer from '../components/reminders/CreateReminderDrawer';
+import { nameMatches } from "../utils/nameSearch";
 
 const TABS = [
   'All',
@@ -165,7 +166,7 @@ export default function Reminder() {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter(
         (r) =>
-          String(r.customerName || '').toLowerCase().includes(q) ||
+          nameMatches(r.customerName, q) ||
           String(r.customerId || '').toLowerCase().includes(q) ||
           String(r.loanId || '').toLowerCase().includes(q) ||
           String(r.title || '').toLowerCase().includes(q) ||

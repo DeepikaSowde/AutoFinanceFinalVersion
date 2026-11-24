@@ -20,6 +20,7 @@ import { loadPayments } from "../../services/collectionApi";
 import CustomerView from "./CustomerView";
 import { calculateLoanOutstanding } from "../../utils/loanCalculations";
 import { syncVehiclesWithClosedLoans } from "../../utils/vehicleStatusHelper";
+import { nameMatches } from "../../utils/nameSearch";
 
 const formatCurrency = (value) => {
   const amount = Math.round(Number(value || 0));
@@ -229,7 +230,7 @@ const Customer = () => {
 
     return processedCustomers.filter(item => {
       const matchesSearch = !searchValue ||
-        item.customer?.name?.toLowerCase().includes(searchValue) ||
+        nameMatches(item.customer?.name, searchValue) ||
         item.customerId?.toLowerCase().includes(searchValue) ||
         item.customer?.mobile?.toLowerCase().includes(searchValue) ||
         item.loans?.some(l => l.loanId?.toLowerCase().includes(searchValue));

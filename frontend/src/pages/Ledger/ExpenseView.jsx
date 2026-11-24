@@ -22,6 +22,7 @@ const ExpenseSummaryCard = ({ icon: Icon, title, value, subtext, valueColor = "t
 
 import { isDateInRange, formatDate, formatDateTime } from '../../utils/dateUtils';
 import DateRangeFilter from '../../components/DateRangeFilter';
+import { nameMatches } from "../../utils/nameSearch";
 
 const ExpenseView = ({ onAddExpense, data }) => {
   const [search, setSearch] = useState('');
@@ -76,7 +77,7 @@ const ExpenseView = ({ onAddExpense, data }) => {
         exp.remarks?.toLowerCase().includes(q) ||
         exp.id?.toLowerCase().includes(q) ||
         exp.category?.toLowerCase().includes(q) ||
-        exp.investorName?.toLowerCase().includes(q);
+        nameMatches(exp.investorName, q);
       if (!matches) {
         return false;
       }
@@ -108,10 +109,10 @@ const ExpenseView = ({ onAddExpense, data }) => {
         if (search.trim()) {
           const q = search.toLowerCase();
           const matches =
-            c.customer?.name?.toLowerCase().includes(q) ||
-            c.name?.toLowerCase().includes(q) ||
+            nameMatches(c.customer?.name, q) ||
+            nameMatches(c.name, q) ||
             c.loanId?.toLowerCase().includes(q) ||
-            c.referredByName?.toLowerCase().includes(q);
+            nameMatches(c.referredByName, q);
           if (!matches) return false;
         }
         return true;
@@ -133,8 +134,8 @@ const ExpenseView = ({ onAddExpense, data }) => {
         if (search.trim()) {
           const q = search.toLowerCase();
           const matches =
-            c.customer?.name?.toLowerCase().includes(q) ||
-            c.name?.toLowerCase().includes(q) ||
+            nameMatches(c.customer?.name, q) ||
+            nameMatches(c.name, q) ||
             c.loanId?.toLowerCase().includes(q);
           if (!matches) return false;
         }

@@ -54,6 +54,7 @@ const formatAadhaarDisplay = (val) => {
 };
 
 import { formatDate } from "../../utils/dateUtils";
+import { nameMatches } from "../../utils/nameSearch";
 
 const formatAddedDate = (dateString) => formatDate(dateString);
 
@@ -332,7 +333,7 @@ const GuarantorReferral = () => {
     return records.filter((r) => {
       return (
         r.id?.toLowerCase().includes(q) ||
-        r.fullName?.toLowerCase().includes(q) ||
+        nameMatches(r.fullName, q) ||
         r.phone?.includes(q) ||
         r.address?.toLowerCase().includes(q) ||
         r.area?.toLowerCase().includes(q) ||

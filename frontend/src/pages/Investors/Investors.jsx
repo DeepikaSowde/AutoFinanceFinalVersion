@@ -25,6 +25,7 @@ import {
 } from "../../services/investorApi";
 
 import { formatDate } from "../../utils/dateUtils";
+import { nameMatches } from "../../utils/nameSearch";
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -112,7 +113,7 @@ const Investors = () => {
   const filteredInvestors = useMemo(() => {
     const query = search.trim().toLowerCase();
     return investors.filter((inv) => {
-      const matchSearch = !query || inv.name.toLowerCase().includes(query) || inv.id.toLowerCase().includes(query);
+      const matchSearch = !query || nameMatches(inv.name, query) || inv.id.toLowerCase().includes(query);
       return matchSearch;
     });
   }, [investors, search]);

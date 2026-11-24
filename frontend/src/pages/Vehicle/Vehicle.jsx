@@ -12,6 +12,7 @@ import ActiveVehicleModal from '../../components/vehicle/ActiveVehicleModal';
 import VehicleExpenseHistoryModal from '../../components/vehicle/VehicleExpenseHistoryModal';
 import ForeclosureAnalyticsTab from './ForeclosureAnalyticsTab';
 import { getEffectiveVehicleStatus, syncVehiclesWithClosedLoans } from '../../utils/vehicleStatusHelper';
+import { nameMatches } from "../../utils/nameSearch";
 
 /**
  * Vehicle Management Page matching visual reference:
@@ -140,7 +141,7 @@ const Vehicle = () => {
 
         const matches =
           regNo.includes(q) ||
-          custName.includes(q) ||
+          nameMatches(custName, q) ||
           custMobile.includes(q) ||
           brand.includes(q) ||
           model.includes(q);
