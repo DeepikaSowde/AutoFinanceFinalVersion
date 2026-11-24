@@ -25,8 +25,8 @@ import { CheckCircle2, FileText, Trash2, X, RefreshCw } from 'lucide-react'
 import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
 import { formatDate } from '../utils/dateUtils'
 import { validateChassis } from '../utils/chassis'
-import { validateMobile } from '../utils/mobile'
-import { validateApplicationDate, localToday } from '../utils/applicationDate'
+import { localToday } from '../utils/applicationDate'
+import { hasErrors, validateCustomerDetails, validateCustomerField } from '../utils/customerDetails'
 import { apiGet } from '../services/api'
 
 const STEPS = [
@@ -228,34 +228,29 @@ const NewLoan = () => {
     }))
   }
 
-  // Customer mobile number: a 10-digit Indian number starting 6-9. Checked
-  // when the user leaves the field and before leaving the Customer step. A
-  // re-loan keeps the existing customer's number as it is.
-  const [mobileError, setMobileError] = useState('')
+  // Customer Details (utils/customerDetails.js): Customer Name, Mobile Number
+  // and Address are required, Application Date is today or earlier, Pincode /
+  // Area / Landmark are checked when filled in. Checked on leaving a field,
+  // before leaving the Customer step and again on submit; the server checks
+  // too. A re-loan keeps the existing customer's name, mobile and address.
+  // Save Draft never checks: a draft may be incomplete.
+  const [customerErrors, setCustomerErrors] = useState({})
 
-  const mobileAcceptable = () => {
-    if (isReLoan) return true
-    const error = validateMobile(form.customer.mobile)
-    setMobileError(error)
-    if (error) setStep(0)
-    return !error
-  }
-
-  // Application Date: today or earlier (an older loan may be entered), never a
-  // future date. Checked before leaving the Customer step and again on submit;
-  // applies to new loans and re-loans alike.
-  const [applicationDateError, setApplicationDateError] = useState('')
-  const applicationDateAcceptable = () => {
-    const error = validateApplicationDate(form.customer.applicationDate)
-    setApplicationDateError(error)
-    if (error) setStep(0)
-    return !error
-  }
-  // Both run (not short-circuited) so every Customer-step error shows at once.
   const customerStepAcceptable = () => {
-    const mobileOk = mobileAcceptable()
-    const dateOk = applicationDateAcceptable()
-    return mobileOk && dateOk
+    const errors = validateCustomerDetails(form.customer, { isReLoan })
+    setCustomerErrors(errors)
+    if (hasErrors(errors)) {
+      setStep(0)
+      return false
+    }
+    return true
+  }
+
+  // Leaving a field shows its error; once an error shows, it follows the
+  // value as it is fixed.
+  const checkCustomerField = (field, value = form.customer[field]) => {
+    if (isReLoan && field !== 'applicationDate') return
+    setCustomerErrors((current) => ({ ...current, [field]: validateCustomerField(field, value) }))
   }
 
   // Chassis Number (VIN): checked when the user leaves the field and again
@@ -390,6 +385,7 @@ const NewLoan = () => {
       const draft = await getDraft(summary.id)
       setForm(mergeWithBlank(draft.form))
       setDraftId(draft.id)
+      setCustomerErrors({})
       setStep(0)
       setVerified(false)
       setDraftsOpen(false)
@@ -475,20 +471,11 @@ const NewLoan = () => {
 
       // A draft or the stepper can reach Review without passing earlier steps.
       {
-        const dateProblem = validateApplicationDate(form.customer.applicationDate)
-        if (dateProblem) {
-          setApplicationDateError(dateProblem)
+        const errors = validateCustomerDetails(form.customer, { isReLoan })
+        if (hasErrors(errors)) {
+          setCustomerErrors(errors)
           setStep(0)
-          alert(dateProblem)
-          return
-        }
-      }
-      if (!isReLoan) {
-        const mobileProblem = validateMobile(form.customer.mobile)
-        if (mobileProblem) {
-          setMobileError(mobileProblem)
-          setStep(0)
-          alert(mobileProblem)
+          alert(Object.values(errors).find(Boolean))
           return
         }
       }
@@ -568,6 +555,7 @@ const NewLoan = () => {
     clearCustomerOnboarding()
     setDraftId(null)
     setForm(initialForm())
+    setCustomerErrors({})
     setStep(0)
     setVerified(false)
     navigate('/loans')
@@ -638,14 +626,14 @@ const NewLoan = () => {
             <CustomerTab
               data={form.customer}
               onChange={(field, value) => {
-                // Once an error is showing, it follows the number as it is fixed.
-                if (field === 'mobile' && mobileError) setMobileError(validateMobile(value))
-                if (field === 'applicationDate' && applicationDateError) setApplicationDateError(validateApplicationDate(value))
+                // Once an error is showing, it follows the value as it is fixed.
+                if (typeof field === 'string' && customerErrors[field]) {
+                  setCustomerErrors((current) => ({ ...current, [field]: validateCustomerField(field, value) }))
+                }
                 update('customer')(field, value)
               }}
-              mobileError={mobileError}
-              applicationDateError={applicationDateError}
-              onMobileBlur={() => !isReLoan && setMobileError(validateMobile(form.customer.mobile))}
+              errors={customerErrors}
+              onFieldBlur={checkCustomerField}
             />
           )}
           {step === 1 && (

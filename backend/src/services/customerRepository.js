@@ -14,6 +14,7 @@ import { describeInstallment, summariseOutstanding } from "./repaymentEngine.js"
 import { assertChassisAcceptable, normalizeChassis } from "./chassis.js";
 import { assertValidMobile } from "./mobile.js";
 import { assertValidApplicationDate } from "./applicationDate.js";
+import { checkChangedCustomerDetails, checkNewCustomerDetails } from "./customerDetails.js";
 
 const pad = (number, length = 5) => String(number).padStart(length, "0");
 
@@ -545,6 +546,11 @@ const fundIfRequested = (client, loanPk, loan = {}) =>
 export const createCustomer = async (payload = {}) => {
   assertValidMobile(payload.customer?.personal?.mobileNumber);
   assertValidApplicationDate(payload.customer?.personal?.date);
+  // Name and address required, pincode etc. valid; values come back trimmed.
+  payload = {
+    ...payload,
+    customer: { ...payload.customer, personal: checkNewCustomerDetails(payload.customer?.personal) },
+  };
 
   const customerId = await withTransaction(async (client) => {
     // The chassis number must be valid and not already on a live vehicle.
@@ -608,6 +614,16 @@ export const updateCustomer = async (customerId, payload = {}) => {
   const newDate = payload.customer?.personal?.date;
   if (newDate !== undefined && String(newDate).trim() !== String(existing.customer.personal?.date ?? "").trim()) {
     assertValidApplicationDate(newDate);
+  }
+  // Name / address / pincode / area / landmark: changed ones are checked and trimmed.
+  if (payload.customer?.personal) {
+    payload = {
+      ...payload,
+      customer: {
+        ...payload.customer,
+        personal: checkChangedCustomerDetails(payload.customer.personal, existing.customer.personal),
+      },
+    };
   }
 
   await withTransaction(async (client) => {

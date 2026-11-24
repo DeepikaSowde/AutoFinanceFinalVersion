@@ -15,6 +15,7 @@ export const applicationDateError = (value) => {
     return "Please enter a valid Application Date.";
   }
   if (s > indiaToday()) return "Application Date can't be in the future.";
+  if (s < "2000-01-01") return "Application Date must be in the year 2000 or later.";
   return "";
 };
 

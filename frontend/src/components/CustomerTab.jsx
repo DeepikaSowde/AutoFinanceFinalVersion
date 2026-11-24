@@ -1,6 +1,13 @@
 import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { localToday } from "../utils/applicationDate";
+import { localToday, EARLIEST_APPLICATION_DATE } from "../utils/applicationDate";
+import {
+  ADDRESS_MAX,
+  LOCALITY_MAX,
+  NAME_MAX,
+  cleanName,
+  cleanText,
+} from "../utils/customerDetails";
 
 import {
   Field,
@@ -54,12 +61,24 @@ const fileToBase64 = (file) => {
    CUSTOMER TAB
 ============================================================= */
 
-const CustomerTab = ({ data = {}, onChange, mobileError = "", onMobileBlur, applicationDateError = "" }) => {
+// Red border on a field with an error (important: beats the normal grey border).
+const errorCls = (error) => (error ? "border-red-400! focus:border-red-500! focus:ring-red-200!" : "");
+
+const CustomerTab = ({ data = {}, onChange, errors = {}, onFieldBlur = () => {} }) => {
   const { t } = useTranslation();
   const [previewDoc, setPreviewDoc] = useState(null);
 
   const set = (key) => (e) => {
     onChange(key, e.target.value);
+  };
+
+  // Leaving a field trims it (the name also loses doubled spaces), then
+  // shows its error, if any.
+  const tidyOnBlur = (key, clean) => (e) => {
+    const value = e.target.value ?? "";
+    const tidied = clean(value);
+    if (tidied !== value) onChange(key, tidied);
+    onFieldBlur(key, tidied);
   };
 
   /* =============================================================
@@ -156,24 +175,27 @@ const CustomerTab = ({ data = {}, onChange, mobileError = "", onMobileBlur, appl
               {/* Row 1: Customer Name & Mobile Number */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Customer Name */}
-                <Field label={t("customer.name")} required>
+                <Field label={t("customer.name")} required error={errors.name}>
                   <Input
                     value={data.name || ""}
                     onChange={set("name")}
+                    onBlur={tidyOnBlur("name", cleanName)}
+                    maxLength={NAME_MAX}
+                    aria-invalid={errors.name ? "true" : undefined}
                     placeholder={t("customer.enterName")}
-                    className="h-9 text-xs sm:text-sm"
+                    className={`h-9 text-xs sm:text-sm ${errorCls(errors.name)}`}
                   />
                 </Field>
 
                 {/* Mobile Number */}
-                <Field label={t("customer.mobileNumber")} required error={mobileError}>
+                <Field label={t("customer.mobileNumber")} required error={errors.mobile}>
                   <PhoneInput
                     code={data.countryCode || "+91"}
                     mobile={data.mobile || ""}
                     onCodeChange={(value) => onChange("countryCode", value)}
                     onMobileChange={(value) => onChange("mobile", value)}
-                    onMobileBlur={onMobileBlur}
-                    invalid={Boolean(mobileError)}
+                    onMobileBlur={(e) => onFieldBlur("mobile", e.target.value)}
+                    invalid={Boolean(errors.mobile)}
                   />
                 </Field>
               </div>
@@ -184,62 +206,75 @@ const CustomerTab = ({ data = {}, onChange, mobileError = "", onMobileBlur, appl
                 {/* Today or an earlier date (an older loan can be entered); the
                     calendar disables future days, and NewLoan / the server
                     check it again. */}
-                <Field label={t("customer.applicationDate")} error={applicationDateError}>
+                <Field label={t("customer.applicationDate")} error={errors.applicationDate}>
                   <Input
                     type="date"
                     value={data.applicationDate || ""}
+                    min={EARLIEST_APPLICATION_DATE}
                     max={localToday()}
                     onChange={set("applicationDate")}
-                    invalid={Boolean(applicationDateError)}
-                    className="h-9 text-xs sm:text-sm"
+                    onBlur={(e) => onFieldBlur("applicationDate", e.target.value)}
+                    aria-invalid={errors.applicationDate ? "true" : undefined}
+                    className={`h-9 text-xs sm:text-sm ${errorCls(errors.applicationDate)}`}
                   />
                 </Field>
 
-                {/* Pincode */}
-                <Field label={t("customer.pincode")}>
+                {/* Pincode: optional; digits only, at most 6 */}
+                <Field label={t("customer.pincode")} error={errors.pincode}>
                   <Input
                     inputMode="numeric"
                     maxLength={6}
                     value={data.pincode || ""}
                     onChange={(e) =>
-                      onChange("pincode", e.target.value.replace(/\D/g, ""))
+                      onChange("pincode", e.target.value.replace(/\D/g, "").slice(0, 6))
                     }
+                    onBlur={(e) => onFieldBlur("pincode", e.target.value)}
+                    aria-invalid={errors.pincode ? "true" : undefined}
                     placeholder={t("customer.enterPincode")}
-                    className="h-9 font-mono text-xs sm:text-sm"
+                    className={`h-9 font-mono text-xs sm:text-sm ${errorCls(errors.pincode)}`}
                   />
                 </Field>
               </div>
 
               {/* Row 3: Address (Comfortably Wide across full width) */}
-              <Field label={t("customer.address")} required>
+              <Field label={t("customer.address")} required error={errors.address}>
                 <Textarea
                   rows={2}
                   value={data.address || ""}
                   onChange={set("address")}
+                  onBlur={tidyOnBlur("address", cleanText)}
+                  maxLength={ADDRESS_MAX}
+                  aria-invalid={errors.address ? "true" : undefined}
                   placeholder={t("customer.enterFullAddress")}
-                  className="min-h-[48px] resize-none text-xs sm:text-sm"
+                  className={`min-h-[48px] resize-none text-xs sm:text-sm ${errorCls(errors.address)}`}
                 />
               </Field>
 
-              {/* Row 4: Area / Locality & Landmark */}
+              {/* Row 4: Area / Locality & Landmark (optional) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Area / Locality */}
-                <Field label={t("customer.areaLocality")}>
+                <Field label={t("customer.areaLocality")} error={errors.area}>
                   <Input
                     value={data.area || ""}
                     onChange={set("area")}
+                    onBlur={tidyOnBlur("area", cleanText)}
+                    maxLength={LOCALITY_MAX}
+                    aria-invalid={errors.area ? "true" : undefined}
                     placeholder={t("customer.enterAreaLocality")}
-                    className="h-9 text-xs sm:text-sm"
+                    className={`h-9 text-xs sm:text-sm ${errorCls(errors.area)}`}
                   />
                 </Field>
 
                 {/* Landmark */}
-                <Field label={t("customer.landmark")}>
+                <Field label={t("customer.landmark")} error={errors.landmark}>
                   <Input
                     value={data.landmark || ""}
                     onChange={set("landmark")}
+                    onBlur={tidyOnBlur("landmark", cleanText)}
+                    maxLength={LOCALITY_MAX}
+                    aria-invalid={errors.landmark ? "true" : undefined}
                     placeholder={t("customer.enterLandmark")}
-                    className="h-9 text-xs sm:text-sm"
+                    className={`h-9 text-xs sm:text-sm ${errorCls(errors.landmark)}`}
                   />
                 </Field>
               </div>
