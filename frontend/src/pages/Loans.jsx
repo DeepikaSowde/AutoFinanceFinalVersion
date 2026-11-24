@@ -22,6 +22,7 @@ import { calculateLoanOutstanding } from "../utils/loanCalculations";
 import { syncVehiclesWithClosedLoans } from "../utils/vehicleStatusHelper";
 
 import { formatDate, parseToDate } from "../utils/dateUtils";
+import { nameMatches } from "../utils/nameSearch";
 
 const formatINR = (value) => {
   const amount = Math.round(Number(value || 0));
@@ -249,10 +250,12 @@ export default function Loans() {
   const filteredLoans = useMemo(() => {
     return loans.filter((l) => {
       const q = search.trim().toLowerCase();
+      // Loan ID and mobile: any part; customer name: by the start of its
+      // words (so "uma" does not match "Kumar").
       const matchesSearch =
         !q ||
         l.loanId.toLowerCase().includes(q) ||
-        l.customerName.toLowerCase().includes(q) ||
+        nameMatches(l.customerName, q) ||
         l.customerMobile.toLowerCase().includes(q);
 
       const matchesStatus =
