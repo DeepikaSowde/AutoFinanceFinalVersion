@@ -15,6 +15,7 @@ import { assertChassisAcceptable, normalizeChassis } from "./chassis.js";
 import { assertValidMobile } from "./mobile.js";
 import { assertValidApplicationDate } from "./applicationDate.js";
 import { checkChangedCustomerDetails, checkNewCustomerDetails } from "./customerDetails.js";
+import { checkChangedCustomerKyc, checkNewCustomerKyc } from "./kyc.js";
 
 const pad = (number, length = 5) => String(number).padStart(length, "0");
 
@@ -551,6 +552,8 @@ export const createCustomer = async (payload = {}) => {
     ...payload,
     customer: { ...payload.customer, personal: checkNewCustomerDetails(payload.customer?.personal) },
   };
+  // Aadhaar / Driving Licence numbers (when filled in) and KYC files.
+  payload = { ...payload, customer: checkNewCustomerKyc(payload.customer) };
 
   const customerId = await withTransaction(async (client) => {
     // The chassis number must be valid and not already on a live vehicle.
@@ -624,6 +627,10 @@ export const updateCustomer = async (customerId, payload = {}) => {
         personal: checkChangedCustomerDetails(payload.customer.personal, existing.customer.personal),
       },
     };
+  }
+  // KYC numbers that change, and newly added KYC files.
+  if (payload.customer) {
+    payload = { ...payload, customer: checkChangedCustomerKyc(payload.customer, existing.customer) };
   }
 
   await withTransaction(async (client) => {

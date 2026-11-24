@@ -8,6 +8,15 @@ import {
   cleanName,
   cleanText,
 } from "../utils/customerDetails";
+import {
+  KYC_FILE_ACCEPT,
+  KYC_FILE_HINT,
+  checkKycFile,
+  formatFileSize,
+  maskAadhaar,
+  needsReattach,
+  normalizeDrivingLicence,
+} from "../utils/kyc";
 
 import {
   Field,
@@ -28,45 +37,25 @@ import {
 } from "lucide-react";
 
 /* =============================================================
-   FILE → BASE64
-============================================================= */
-
-const fileToBase64 = (file) => {
-  return new Promise((resolve, reject) => {
-    if (!file) {
-      resolve(null);
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      resolve({
-        name: file.name,
-        type: file.type,
-        size: (file.size / 1024).toFixed(1) + " KB",
-        data: reader.result,
-      });
-    };
-
-    reader.onerror = () => {
-      reject(new Error("Failed to read file"));
-    };
-
-    reader.readAsDataURL(file);
-  });
-};
-
-/* =============================================================
    CUSTOMER TAB
 ============================================================= */
 
 // Red border on a field with an error (important: beats the normal grey border).
 const errorCls = (error) => (error ? "border-red-400! focus:border-red-500! focus:ring-red-200!" : "");
 
-const CustomerTab = ({ data = {}, onChange, errors = {}, onFieldBlur = () => {} }) => {
+const CustomerTab = ({
+  data = {},
+  onChange,
+  errors = {},
+  onFieldBlur = () => {},
+  kycErrors = {},
+  onKycBlur = () => {},
+}) => {
   const { t } = useTranslation();
   const [previewDoc, setPreviewDoc] = useState(null);
+  // Per upload slot ("aadhaarFile", "dlFile", "doc:<id>"): { progress } while
+  // a picked file is being checked, or { error } when it was refused.
+  const [fileStatus, setFileStatus] = useState({});
 
   const set = (key) => (e) => {
     onChange(key, e.target.value);
@@ -83,21 +72,53 @@ const CustomerTab = ({ data = {}, onChange, errors = {}, onFieldBlur = () => {} 
 
   /* =============================================================
      HANDLE KYC FILE
+     Each picked file is checked (type, size, real content, not
+     corrupted, not already attached elsewhere) before it is kept.
   ============================================================= */
 
-  const handleFileChange = async (key, file) => {
+  const setSlot = (slot, status) =>
+    setFileStatus((current) => ({ ...current, [slot]: status }));
+
+  // Fingerprints of the files in the other slots (for duplicates).
+  const otherFiles = (slot) => {
+    const files = [
+      ["aadhaarFile", "Aadhaar", data.aadhaarFile],
+      ["dlFile", "Driving Licence", data.dlFile],
+      ...(Array.isArray(data.additionalDocs) ? data.additionalDocs : []).map((doc, index) => [
+        `doc:${doc.id}`,
+        doc.title?.trim() || `Additional Document #${index + 1}`,
+        doc.file,
+      ]),
+    ];
+    return files.filter(([key, , file]) => key !== slot && file?.sha256);
+  };
+
+  // Resolves the checked file (or null when refused); `apply` stores it.
+  const pickKycFile = async (slot, file, apply) => {
     if (!file) {
-      onChange(key, null);
+      setSlot(slot, null);
+      apply(null);
       return;
     }
-
-    try {
-      const fileData = await fileToBase64(file);
-      onChange(key, fileData);
-    } catch (error) {
-      console.error("File upload error:", error);
+    setSlot(slot, { progress: 0 });
+    const result = await checkKycFile(file, {
+      onProgress: (progress) => setSlot(slot, { progress }),
+    });
+    if (result.error) {
+      setSlot(slot, { error: result.error });
+      return;
     }
+    const duplicate = otherFiles(slot).find(([, , other]) => other.sha256 === result.file.sha256);
+    if (duplicate) {
+      setSlot(slot, { error: `This file is already attached as ${duplicate[1]}.` });
+      return;
+    }
+    setSlot(slot, null);
+    apply(result.file);
   };
+
+  const handleFileChange = (key, file) =>
+    pickKycFile(key, file, (checked) => onChange(key, checked));
 
   /* =============================================================
      ADDITIONAL DOCUMENTS (Dynamic)
@@ -123,27 +144,17 @@ const CustomerTab = ({ data = {}, onChange, errors = {}, onFieldBlur = () => {} 
     onChange("additionalDocs", updated);
   };
 
-  const handleUpdateDocFile = async (id, file) => {
-    if (!file) {
+  const handleUpdateDocFile = (id, file) =>
+    pickKycFile(`doc:${id}`, file, (checked) => {
       const updated = additionalDocs.map((doc) =>
-        doc.id === id ? { ...doc, file: null } : doc
+        doc.id === id ? { ...doc, file: checked } : doc
       );
       onChange("additionalDocs", updated);
-      return;
-    }
-    try {
-      const fileData = await fileToBase64(file);
-      const updated = additionalDocs.map((doc) =>
-        doc.id === id ? { ...doc, file: fileData } : doc
-      );
-      onChange("additionalDocs", updated);
-    } catch (err) {
-      console.error("Failed to process document file:", err);
-    }
-  };
+    });
 
   const handleRemoveAdditionalDoc = (id) => {
     const updated = additionalDocs.filter((doc) => doc.id !== id);
+    setSlot(`doc:${id}`, null);
     onChange("additionalDocs", updated);
   };
 
@@ -315,10 +326,17 @@ const CustomerTab = ({ data = {}, onChange, errors = {}, onFieldBlur = () => {} 
                 label={t("kyc.aadhaarNumber")}
                 placeholder={t("kyc.enterAadhaar")}
                 value={data.aadhaarNo || ""}
+                // digits only (typed or pasted spaces are dropped); at most 12
+                onValue={(value) => {
+                  const digits = value.replace(/\D/g, "").slice(0, 12);
+                  onChange("aadhaarNo", digits);
+                }}
+                onBlur={(value) => onKycBlur("aadhaarNo", value)}
+                masked={maskAadhaar}
+                inputMode="numeric"
+                error={kycErrors.aadhaarNo}
                 file={data.aadhaarFile}
-                onValue={(value) =>
-                  onChange("aadhaarNo", value.replace(/\D/g, "").slice(0, 12))
-                }
+                status={fileStatus.aadhaarFile}
                 onFile={(file) => handleFileChange("aadhaarFile", file)}
                 onPreview={(file) =>
                   setPreviewDoc({
@@ -333,8 +351,18 @@ const CustomerTab = ({ data = {}, onChange, errors = {}, onFieldBlur = () => {} 
                 label={t("kyc.drivingLicence")}
                 placeholder={t("kyc.enterDl")}
                 value={data.dlNo || ""}
+                // letters, digits, spaces and hyphens only, upper case
+                onValue={(value) =>
+                  onChange("dlNo", value.toUpperCase().replace(/[^A-Z0-9 -]/g, "").slice(0, 24))
+                }
+                onBlur={(value) => {
+                  const clean = normalizeDrivingLicence(value);
+                  if (clean !== value) onChange("dlNo", clean);
+                  onKycBlur("dlNo", clean);
+                }}
+                error={kycErrors.dlNo}
                 file={data.dlFile}
-                onValue={(value) => onChange("dlNo", value)}
+                status={fileStatus.dlFile}
                 onFile={(file) => handleFileChange("dlFile", file)}
                 onPreview={(file) =>
                   setPreviewDoc({
@@ -345,7 +373,9 @@ const CustomerTab = ({ data = {}, onChange, errors = {}, onFieldBlur = () => {} 
               />
 
               {/* Dynamic Additional Documents */}
-              {additionalDocs.map((doc, idx) => (
+              {additionalDocs.map((doc, idx) => {
+                const docErrors = kycErrors.docs?.[doc.id] || {};
+                return (
                 <div
                   key={doc.id || idx}
                   className="rounded-lg border border-slate-200/90 bg-[#F8FAFC] p-2.5 space-y-1.5"
@@ -368,61 +398,38 @@ const CustomerTab = ({ data = {}, onChange, errors = {}, onFieldBlur = () => {} 
                     <Input
                       value={doc.title || ""}
                       onChange={(e) =>
-                        handleUpdateDocTitle(doc.id, e.target.value)
+                        handleUpdateDocTitle(doc.id, e.target.value.slice(0, 60))
                       }
+                      maxLength={60}
+                      aria-label={`Additional Document #${idx + 1} type`}
+                      aria-invalid={docErrors.title ? "true" : undefined}
                       placeholder="e.g. PAN Card, Voter ID"
-                      className="min-w-0 flex-1 text-xs sm:text-sm h-9 bg-white"
+                      className={`min-w-0 flex-1 text-xs sm:text-sm h-9 bg-white ${errorCls(docErrors.title)}`}
                     />
 
-                    <label className="flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 sm:px-3 text-xs font-semibold text-slate-700 hover:border-[#006052] hover:text-[#006052] cursor-pointer transition-colors shadow-2xs h-9">
-                      <Upload className="h-3.5 w-3.5 text-slate-500" />
-                      <span>{doc.file ? "Change" : "Upload"}</span>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) handleUpdateDocFile(doc.id, f);
-                        }}
-                        className="hidden"
-                      />
-                    </label>
+                    <UploadButton
+                      hasFile={Boolean(doc.file)}
+                      busy={Boolean(fileStatus[`doc:${doc.id}`]?.progress !== undefined)}
+                      label={`Additional Document #${idx + 1}`}
+                      onPick={(f) => handleUpdateDocFile(doc.id, f)}
+                    />
                   </div>
 
-                  {doc.file && (
-                    <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-900">
-                      <span className="truncate max-w-[150px] sm:max-w-[180px] text-[11px] font-medium flex items-center gap-1">
-                        <FileText className="h-3 w-3 text-[#006052] shrink-0" />
-                        <span className="truncate">{doc.file.name || "Document"}</span>
-                      </span>
-                      <div className="flex items-center gap-1.5 shrink-0 ml-1">
-                        {previewDoc && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setPreviewDoc({
-                                title: `${doc.title || "Document"} - ${data.name || "Customer"}`,
-                                file: doc.file,
-                              })
-                            }
-                            className="text-[11px] font-semibold text-[#006052] hover:underline cursor-pointer"
-                          >
-                            View
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateDocFile(doc.id, null)}
-                          className="text-slate-400 hover:text-red-600 cursor-pointer ml-1"
-                          title="Remove file"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  <FileArea
+                    file={doc.file}
+                    status={fileStatus[`doc:${doc.id}`]}
+                    error={docErrors.title || docErrors.file}
+                    onPreview={() =>
+                      setPreviewDoc({
+                        title: `${doc.title || "Document"} - ${data.name || "Customer"}`,
+                        file: doc.file,
+                      })
+                    }
+                    onRemove={() => handleUpdateDocFile(doc.id, null)}
+                  />
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -474,7 +481,7 @@ const CustomerTab = ({ data = {}, onChange, errors = {}, onFieldBlur = () => {} 
                     {previewDoc.file?.name}
                   </p>
                   <p className="text-xs text-slate-400 mt-1">
-                    {previewDoc.file?.size}
+                    {formatFileSize(previewDoc.file?.size) || previewDoc.file?.size}
                   </p>
                 </div>
               )}
@@ -510,22 +517,123 @@ const CustomerTab = ({ data = {}, onChange, errors = {}, onFieldBlur = () => {} 
    COMPACT KYC ROW (With Upload, View & Remove)
 ============================================================= */
 
+// The existing Upload / Change button. The file box only offers the allowed
+// types; the picked file is checked again anyway (names can lie).
+const UploadButton = ({ hasFile, busy, label, onPick }) => (
+  <label
+    className={`flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 sm:px-3 text-xs font-semibold text-slate-700 hover:border-[#006052] hover:text-[#006052] transition-colors shadow-2xs h-9 ${
+      busy ? "opacity-60 cursor-wait" : "cursor-pointer"
+    }`}
+  >
+    <Upload className="h-3.5 w-3.5 text-slate-500" />
+    <span>{busy ? "Checking…" : hasFile ? "Change" : "Upload"}</span>
+    <input
+      type="file"
+      accept={KYC_FILE_ACCEPT}
+      disabled={busy}
+      aria-label={`${label} file`}
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        e.target.value = ""; // picking the same file again still triggers
+        if (f) onPick(f);
+      }}
+      className="hidden"
+    />
+  </label>
+);
+
+// Under a KYC row: formats + size limit, the check's progress, an error, the
+// attached file (View / Remove), or a note that it must be attached again.
+const FileArea = ({ file, status, error, onPreview, onRemove }) => (
+  <>
+    {status?.progress !== undefined && (
+      <div role="status" aria-label="Checking file" className="space-y-0.5">
+        <div className="h-1 overflow-hidden rounded bg-slate-200">
+          <div className="h-full bg-[#006052] transition-all" style={{ width: `${Math.max(status.progress, 5)}%` }} />
+        </div>
+        <p className="text-[10px] text-slate-500">Checking file… {status.progress}%</p>
+      </div>
+    )}
+
+    {status?.error && (
+      <p role="alert" className="text-[11px] font-medium text-red-600">
+        Upload failed: {status.error}
+      </p>
+    )}
+    {!status?.error && error && (
+      <p role="alert" className="text-[11px] font-medium text-red-600">{error}</p>
+    )}
+
+    {file && needsReattach(file) && (
+      <div className="flex items-center justify-between rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+        <span className="truncate" title="Documents are not stored with drafts yet, so the file has to be attached again.">
+          {file.name || "Document"} — attach the file again
+        </span>
+        <button type="button" onClick={onRemove} className="ml-1 shrink-0 text-amber-700 hover:text-red-600 cursor-pointer" title="Remove file">
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    )}
+
+    {file && !needsReattach(file) && (
+      <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-900">
+        <span className="truncate max-w-[150px] sm:max-w-[180px] text-[11px] font-medium flex items-center gap-1">
+          <FileText className="h-3 w-3 text-[#006052] shrink-0" />
+          <span className="truncate">{file.name || "Document"}</span>
+          {formatFileSize(file.size) && <span className="shrink-0 text-emerald-700/70">· {formatFileSize(file.size)}</span>}
+        </span>
+        <div className="flex items-center gap-1.5 shrink-0 ml-1">
+          {onPreview && (
+            <button
+              type="button"
+              onClick={onPreview}
+              className="text-[11px] font-semibold text-[#006052] hover:underline cursor-pointer"
+            >
+              View
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-slate-400 hover:text-red-600 cursor-pointer ml-1"
+            title="Remove file"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+    )}
+
+    <p className="text-[10px] text-slate-400">{KYC_FILE_HINT}</p>
+  </>
+);
+
 export const KycRow = ({
   label,
   placeholder,
   value,
   file,
+  status,
+  error,
   onValue,
+  onBlur,
   onFile,
   onPreview,
+  masked,
+  inputMode,
 }) => {
+  const [focused, setFocused] = useState(false);
+  // Masked numbers (Aadhaar) show only the last 4 digits unless being edited.
+  const shown = masked && !focused && value ? masked(value) : value || "";
+  const attached = file && !needsReattach(file);
+
   return (
     <div className="rounded-lg border border-slate-200/90 bg-[#F8FAFC] p-2.5 space-y-1.5">
       <div className="flex items-center justify-between">
         <label className="text-[11px] font-semibold text-slate-700">
           {label}
         </label>
-        {file && (
+        {attached && (
           <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-200">
             Uploaded
           </span>
@@ -534,55 +642,36 @@ export const KycRow = ({
 
       <div className="flex gap-2">
         <Input
-          value={value || ""}
+          value={shown}
+          inputMode={inputMode}
+          autoComplete="off"
+          aria-label={label}
+          aria-invalid={error ? "true" : undefined}
+          onFocus={() => setFocused(true)}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(masked ? value || "" : e.target.value);
+          }}
           onChange={(e) => onValue(e.target.value)}
           placeholder={placeholder}
-          className="min-w-0 flex-1 font-mono text-xs sm:text-sm h-9 bg-white"
+          className={`min-w-0 flex-1 font-mono text-xs sm:text-sm h-9 bg-white ${errorCls(error)}`}
         />
 
-        <label className="flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 sm:px-3 text-xs font-semibold text-slate-700 hover:border-[#006052] hover:text-[#006052] cursor-pointer transition-colors shadow-2xs h-9">
-          <Upload className="h-3.5 w-3.5 text-slate-500" />
-          <span>{file ? "Change" : "Upload"}</span>
-          <input
-            type="file"
-            accept="image/*,.pdf"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onFile(f);
-            }}
-            className="hidden"
-          />
-        </label>
+        <UploadButton
+          hasFile={Boolean(file)}
+          busy={status?.progress !== undefined}
+          label={label}
+          onPick={onFile}
+        />
       </div>
 
-      {/* Uploaded File Status */}
-      {file && (
-        <div className="flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-900">
-          <span className="truncate max-w-[150px] sm:max-w-[180px] text-[11px] font-medium flex items-center gap-1">
-            <FileText className="h-3 w-3 text-[#006052] shrink-0" />
-            <span className="truncate">{file.name || "Document"}</span>
-          </span>
-          <div className="flex items-center gap-1.5 shrink-0 ml-1">
-            {onPreview && (
-              <button
-                type="button"
-                onClick={() => onPreview(file)}
-                className="text-[11px] font-semibold text-[#006052] hover:underline cursor-pointer"
-              >
-                View
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onFile(null)}
-              className="text-slate-400 hover:text-red-600 cursor-pointer ml-1"
-              title="Remove file"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        </div>
-      )}
+      <FileArea
+        file={file}
+        status={status}
+        error={error}
+        onPreview={onPreview && attached ? () => onPreview(file) : undefined}
+        onRemove={() => onFile(null)}
+      />
     </div>
   );
 };

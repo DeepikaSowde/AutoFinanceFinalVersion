@@ -11,6 +11,7 @@ import {
   updateCustomer,
 } from "../services/customerRepository.js";
 import { sanitizeCustomerPayload } from "../services/sanitize.js";
+import { assertKycUploadContent } from "../services/kyc.js";
 import { assertReLoanAllowed } from "../services/reloanPolicy.js";
 import { hasPermission } from "../services/permissions.js";
 import { requirePermission } from "../middleware/requireAuth.js";
@@ -51,6 +52,8 @@ customersRouter.post(
     // added to the same customer). Older clients still send reLoanOfCustomerId
     // here, naming the existing customer so the Re-Loan policy applies.
     await assertReLoanAllowed(req.body?.reLoanOfCustomerId, req.user);
+    // KYC files sent with their content are checked before it is stripped.
+    assertKycUploadContent(req.body);
     res.status(201).json(await createCustomer(sanitizeCustomerPayload(req.body)));
   })
 );

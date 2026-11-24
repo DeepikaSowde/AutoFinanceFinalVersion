@@ -1,4 +1,5 @@
 import { apiGet, apiPost } from './api'
+import { normalizeAadhaar, normalizeDrivingLicence } from '../utils/kyc'
 
 // The API keeps customers relationally (customer, vehicle + RC, guarantor,
 // loans with installments). The New Loan form and the Customer pages work
@@ -50,9 +51,9 @@ const KYC_FILES = [
 /* ---------- form -> API ---------- */
 
 const toKyc = (section) => ({
-  aadhaarNumber: section.aadhaarNo || '',
+  aadhaarNumber: normalizeAadhaar(section.aadhaarNo),
   panNumber: section.panNo || '',
-  drivingLicenceNumber: section.dlNo || '',
+  drivingLicenceNumber: normalizeDrivingLicence(section.dlNo),
   voterIdNumber: section.voterNo || '',
 })
 

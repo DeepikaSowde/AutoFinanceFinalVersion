@@ -11,6 +11,7 @@ import {
 } from './Formcontrols'
 import { getVehicleDisplayImage } from '../utils/vehicleImageHelper'
 import { hasGuarantorIn, hasReferralIn } from '../services/customerApi'
+import { maskAadhaar, needsReattach } from '../utils/kyc'
 
 
 const dash = (value) =>
@@ -61,9 +62,11 @@ const Row = ({ label, value }) => (
 const KycStatus = ({ customer }) => {
   const { t } = useTranslation()
 
+  // A file restored from a draft without its content does not count.
+  const attached = (file) => Boolean(file) && !needsReattach(file)
   const allUploaded =
-    !!customer.aadhaarFile &&
-    !!customer.dlFile
+    attached(customer.aadhaarFile) &&
+    attached(customer.dlFile)
 
   return (
     <div className="flex items-center gap-1.5">
@@ -142,8 +145,8 @@ const ReviewTab = ({
     if (!person) return '—'
     const raw = person.aadhaarNumber || person.aadhaarNo
     if (!raw) return '—'
-    const clean = String(raw).replace(/\D/g, '')
-    return clean.replace(/(\d{4})(?=\d)/g, '$1 ').trim() || '—'
+    // Only the last 4 digits are shown.
+    return maskAadhaar(raw) || '—'
   }
 
   /* =======================================================

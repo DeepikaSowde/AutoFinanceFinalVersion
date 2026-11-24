@@ -27,6 +27,7 @@ import { formatDate } from '../utils/dateUtils'
 import { validateChassis } from '../utils/chassis'
 import { localToday } from '../utils/applicationDate'
 import { hasErrors, validateCustomerDetails, validateCustomerField } from '../utils/customerDetails'
+import { kycHasErrors, validateAadhaar, validateDrivingLicence, validateKyc } from '../utils/kyc'
 import { apiGet } from '../services/api'
 
 const STEPS = [
@@ -236,14 +237,28 @@ const NewLoan = () => {
   // Save Draft never checks: a draft may be incomplete.
   const [customerErrors, setCustomerErrors] = useState({})
 
+  // KYC & Identity Documents (utils/kyc.js): Aadhaar / Driving Licence are
+  // optional but must be valid when filled in; an additional document needs
+  // both a type and a file. A re-loan keeps the existing customer's KYC.
+  const [kycErrors, setKycErrors] = useState({})
+  const kycFor = (customer) => (isReLoan ? {} : validateKyc(customer))
+
   const customerStepAcceptable = () => {
     const errors = validateCustomerDetails(form.customer, { isReLoan })
+    const kyc = kycFor(form.customer)
     setCustomerErrors(errors)
-    if (hasErrors(errors)) {
+    setKycErrors(kyc)
+    if (hasErrors(errors) || kycHasErrors(kyc)) {
       setStep(0)
       return false
     }
     return true
+  }
+
+  const checkKycField = (field, value) => {
+    if (isReLoan) return
+    const message = field === 'aadhaarNo' ? validateAadhaar(value) : validateDrivingLicence(value)
+    setKycErrors((current) => ({ ...current, [field]: message }))
   }
 
   // Leaving a field shows its error; once an error shows, it follows the
@@ -386,6 +401,7 @@ const NewLoan = () => {
       setForm(mergeWithBlank(draft.form))
       setDraftId(draft.id)
       setCustomerErrors({})
+      setKycErrors({})
       setStep(0)
       setVerified(false)
       setDraftsOpen(false)
@@ -478,6 +494,13 @@ const NewLoan = () => {
           alert(Object.values(errors).find(Boolean))
           return
         }
+        const kyc = kycFor(form.customer)
+        if (kycHasErrors(kyc)) {
+          setKycErrors(kyc)
+          setStep(0)
+          alert('Please fix the KYC & Identity Documents section.')
+          return
+        }
       }
       const chassisProblem = validateChassis(form.vehicle.chassisNo, form.vehicle.year).error
       if (chassisProblem) {
@@ -556,6 +579,7 @@ const NewLoan = () => {
     setDraftId(null)
     setForm(initialForm())
     setCustomerErrors({})
+    setKycErrors({})
     setStep(0)
     setVerified(false)
     navigate('/loans')
@@ -630,10 +654,16 @@ const NewLoan = () => {
                 if (typeof field === 'string' && customerErrors[field]) {
                   setCustomerErrors((current) => ({ ...current, [field]: validateCustomerField(field, value) }))
                 }
+                if ((field === 'aadhaarNo' || field === 'dlNo') && kycErrors[field]) checkKycField(field, value)
+                if (field === 'additionalDocs' && kycErrors.docs && !isReLoan) {
+                  setKycErrors((current) => ({ ...current, docs: validateKyc({ additionalDocs: value }).docs }))
+                }
                 update('customer')(field, value)
               }}
               errors={customerErrors}
               onFieldBlur={checkCustomerField}
+              kycErrors={kycErrors}
+              onKycBlur={checkKycField}
             />
           )}
           {step === 1 && (

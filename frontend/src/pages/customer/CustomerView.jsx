@@ -18,6 +18,7 @@ import { getEffectiveVehicleStatus } from '../../utils/vehicleStatusHelper';
 export { getPaymentInstallmentLabel };
 
 import { formatDate, formatDateTime } from '../../utils/dateUtils';
+import { maskAadhaar } from '../../utils/kyc';
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -908,7 +909,10 @@ export default function CustomerView({ customerId, initialLoanId, onBack, backLa
                           )}
                           <div>
                             <p className="font-semibold text-slate-900">{labels[kycType]}</p>
-                            <p className="text-sm text-slate-500 mt-0.5">{selectedLoanData.customer[noKey] || 'Not provided'}</p>
+                            <p className="text-sm text-slate-500 mt-0.5">
+                              {/* Aadhaar shows only its last 4 digits */}
+                              {(kycType === 'aadhaar' ? maskAadhaar(selectedLoanData.customer[noKey]) : selectedLoanData.customer[noKey]) || 'Not provided'}
+                            </p>
                           </div>
                         </div>
                         <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${hasFile ? 'bg-emerald-50 text-[#087F5B]' : 'bg-slate-100 text-slate-600'}`}>
