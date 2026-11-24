@@ -19,6 +19,7 @@ import {
 } from "../services/vehicleRepository.js";
 import { assertChassisAcceptable } from "../services/chassis.js";
 import { duplicateRegNoMessage, findLiveVehicleWithRegNo, regNoError } from "../services/vehicleInfo.js";
+import { findVehiclesByRegNo } from "../services/existingRecords.js";
 import { requirePermission } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
@@ -39,14 +40,35 @@ vehiclesRouter.get(
 // the number valid, and not already on another customer's live vehicle?
 // ?regNo=...&customerId=... (a re-loan's own customer is not a duplicate).
 // The same rules run again when the loan is saved.
+// Also says whether the vehicle is already known:
+//   existing.kind = "own"      the re-loan customer's own vehicle (its saved
+//                              details are returned; the loan is added to it)
+//                   "previous" financed before for someone else, now sold or
+//                              its loans ended (allowed; a new record is made)
 vehiclesRouter.get(
   "/registration-check",
   asyncHandler(async (req, res) => {
     const regNo = String(req.query.regNo || "");
+    const customerId = req.query.customerId ? String(req.query.customerId) : null;
     const formatError = regNoError(regNo);
-    if (formatError) return res.json({ ok: false, error: formatError });
-    const found = await findLiveVehicleWithRegNo(regNo, { exceptCustomerId: req.query.customerId ? String(req.query.customerId) : null });
-    res.json(found ? { ok: false, error: duplicateRegNoMessage(found) } : { ok: true, error: "" });
+    if (formatError) return res.json({ ok: false, error: formatError, existing: null });
+
+    const found = await findLiveVehicleWithRegNo(regNo, { exceptCustomerId: customerId });
+    if (found) return res.json({ ok: false, error: duplicateRegNoMessage(found), existing: null });
+
+    const vehicles = await findVehiclesByRegNo(regNo);
+    const own = customerId ? vehicles.find((v) => v.customerId === customerId) : null;
+    if (own) {
+      return res.json({ ok: true, error: "", existing: { kind: "own", vehicleId: own.vehicleId, status: own.status, details: own.details } });
+    }
+    const previous = vehicles[0];
+    res.json({
+      ok: true,
+      error: "",
+      existing: previous
+        ? { kind: "previous", vehicleId: previous.vehicleId, customerId: previous.customerId, customerName: previous.customerName, status: previous.status }
+        : null,
+    });
   })
 );
 

@@ -16,7 +16,8 @@ import { assertValidMobile } from "./mobile.js";
 import { assertValidApplicationDate } from "./applicationDate.js";
 import { checkChangedCustomerDetails, checkNewCustomerDetails } from "./customerDetails.js";
 import { checkChangedCustomerKyc, checkNewCustomerKyc } from "./kyc.js";
-import { assertRegNoAvailable, checkVehicleFields, compactRegNo, formatRegNo } from "./vehicleInfo.js";
+import { assertRegNoAvailable, assertVehiclePhoto, checkVehicleFields, compactRegNo, formatRegNo } from "./vehicleInfo.js";
+import { existingCustomerMessage, findCustomersByIdentity } from "./existingRecords.js";
 
 // Vehicle fields checked on an edit when they change (API names).
 const VEHICLE_INFO_KEYS = ["vehicleType", "brand", "model", "variant", "colour", "fuelType", "manufacturingYear", "ownershipType", "vehicleValue"];
@@ -560,7 +561,21 @@ export const createCustomer = async (payload = {}) => {
   payload = { ...payload, customer: checkNewCustomerKyc(payload.customer) };
   // Vehicle Information: every required field; vehicle number saved as "TN 09 AB 1234".
   await checkVehicleFields(payload.vehicle, payload.rc);
+  assertVehiclePhoto(payload.vehicle?.photo);
   payload = { ...payload, rc: { ...payload.rc, registrationNumber: formatRegNo(payload.rc?.registrationNumber) } };
+
+  // A customer with this mobile / Aadhaar already exists: the loan must not
+  // silently create a second record for them. The form either starts a
+  // Re-Loan, or the user confirms this is a different person.
+  if (!payload.confirmNewCustomer && !payload.reLoanOfCustomerId) {
+    const [found] = await findCustomersByIdentity({
+      mobile: payload.customer?.personal?.mobileNumber,
+      aadhaar: payload.customer?.kyc?.aadhaarNumber,
+    });
+    if (found) {
+      throw Object.assign(new Error(existingCustomerMessage(found)), { statusCode: 409, code: "EXISTING_CUSTOMER", existing: found });
+    }
+  }
 
   const customerId = await withTransaction(async (client) => {
     // The chassis number must be valid and not already on a live vehicle.
@@ -680,6 +695,9 @@ export const updateCustomer = async (customerId, payload = {}) => {
       if (regNoChanged) changed.push("registrationNumber");
       if (changed.length) {
         await checkVehicleFields(payload.vehicle || {}, payload.rc || {}, { only: changed, db: client });
+      }
+      if (payload.vehicle?.photo?.fileData && payload.vehicle.photo.fileData !== currentVehicle?.photo?.fileData) {
+        assertVehiclePhoto(payload.vehicle.photo);
       }
       if (regNoChanged) {
         payload = { ...payload, rc: { ...payload.rc, registrationNumber: formatRegNo(newRegNo) } };
@@ -857,6 +875,7 @@ export const addLoanForCustomer = async (customerId, loan = {}, options = {}) =>
 
   if (newVehicle) {
     await checkVehicleFields(options.vehicle || {}, options.rc || {});
+    assertVehiclePhoto(options.vehicle?.photo);
   }
 
   await withTransaction(async (client) => {

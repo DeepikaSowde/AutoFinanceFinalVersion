@@ -116,15 +116,7 @@ export const sniffKind = (bytes) => SIGNATURES.find((s) => startsWith(bytes, s.b
 const kindForExtension = (ext) => (ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : ext)
 
 // Checks only the name / type / size (also used for files restored from a draft).
-export const validateKycFileMeta = ({ name, type, size }) => {
-  const ext = extensionOf(name)
-  const allowed = KYC_FILE_POLICY.types[ext]
-  if (!allowed) return `This file type is not allowed. Use ${KYC_FILE_HINT.split(' · ')[0]}.`
-  if (type && !allowed.includes(String(type).toLowerCase())) return 'The file type does not match its extension.'
-  if (!Number(size)) return 'The file is empty (0 bytes).'
-  if (Number(size) > KYC_FILE_POLICY.maxBytes) return 'The file is larger than 2 MB.'
-  return ''
-}
+export const validateKycFileMeta = (file) => fileMetaError(file, KYC_FILE_POLICY, 'PDF, JPG, JPEG or PNG')
 
 const readAsArrayBuffer = (file, onProgress) =>
   new Promise((resolve, reject) => {
@@ -159,12 +151,41 @@ const toDataUrl = (bytes, mime) => {
   return `data:${mime};base64,${btoa(binary)}`
 }
 
-// Full check of a picked file: name, size, real content (first bytes),
+// Vehicle photo (optional): images only, larger limit (it is compressed
+// before saving).
+export const VEHICLE_PHOTO_POLICY = {
+  maxBytes: 5 * 1024 * 1024,
+  types: {
+    jpg: ['image/jpeg'],
+    jpeg: ['image/jpeg'],
+    png: ['image/png'],
+  },
+}
+export const VEHICLE_PHOTO_HINT = 'JPG, JPEG or PNG · max 5 MB'
+export const VEHICLE_PHOTO_ACCEPT = '.jpg,.jpeg,.png,image/jpeg,image/png'
+
+const fileMetaError = ({ name, type, size }, policy, allowedText) => {
+  const ext = extensionOf(name)
+  const allowed = policy.types[ext]
+  if (!allowed) return `This file type is not allowed. Use ${allowedText}.`
+  if (type && !allowed.includes(String(type).toLowerCase())) return 'The file type does not match its extension.'
+  if (!Number(size)) return 'The file is empty (0 bytes).'
+  if (Number(size) > policy.maxBytes) return `The file is larger than ${Math.round(policy.maxBytes / (1024 * 1024))} MB.`
+  return ''
+}
+
+export const checkVehiclePhoto = (file, options) =>
+  checkUploadFile(file, options, VEHICLE_PHOTO_POLICY, 'JPG, JPEG or PNG')
+
+// Full check of a picked KYC file: name, size, real content (first bytes),
 // executables, and that an image/PDF is not cut off or corrupted.
 // Resolves { error } or { file: { name, type, size, data, sha256 } }.
-export const checkKycFile = async (file, { onProgress } = {}) => {
+export const checkKycFile = (file, options) =>
+  checkUploadFile(file, options, KYC_FILE_POLICY, 'PDF, JPG, JPEG or PNG')
+
+const checkUploadFile = async (file, { onProgress } = {}, policy, allowedText) => {
   if (!file) return { error: 'No file was selected.' }
-  const metaError = validateKycFileMeta(file)
+  const metaError = fileMetaError(file, policy, allowedText)
   if (metaError) return { error: metaError }
 
   let buffer
@@ -182,7 +203,7 @@ export const checkKycFile = async (file, { onProgress } = {}) => {
     return { error: "The file's content does not match its type. It may be renamed or corrupted." }
   }
 
-  const mime = KYC_FILE_POLICY.types[extensionOf(file.name)][0]
+  const mime = policy.types[extensionOf(file.name)][0]
   if (kind === 'pdf') {
     const tail = new TextDecoder('latin1').decode(bytes.subarray(Math.max(0, bytes.length - 2048)))
     if (!tail.includes('%%EOF')) return { error: 'The PDF looks incomplete or corrupted.' }

@@ -12,6 +12,7 @@ import {
 } from "../services/customerRepository.js";
 import { sanitizeCustomerPayload } from "../services/sanitize.js";
 import { assertKycUploadContent } from "../services/kyc.js";
+import { findCustomersByIdentity } from "../services/existingRecords.js";
 import { assertReLoanAllowed } from "../services/reloanPolicy.js";
 import { hasPermission } from "../services/permissions.js";
 import { requirePermission } from "../middleware/requireAuth.js";
@@ -27,6 +28,22 @@ customersRouter.get(
   "/",
   asyncHandler(async (req, res) => {
     res.json(await getCustomers());
+  })
+);
+
+// New Loan asks this when a mobile / Aadhaar number is entered: does a
+// customer with it already exist? ?mobile=&aadhaar=&exceptCustomerId=
+customersRouter.get(
+  "/lookup",
+  requirePermission("customers.add", "loans.add"),
+  asyncHandler(async (req, res) => {
+    res.json({
+      matches: await findCustomersByIdentity({
+        mobile: req.query.mobile,
+        aadhaar: req.query.aadhaar,
+        exceptCustomerId: req.query.exceptCustomerId ? String(req.query.exceptCustomerId) : null,
+      }),
+    });
   })
 );
 

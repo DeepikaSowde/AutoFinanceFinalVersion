@@ -33,6 +33,7 @@ import {
   formatRegNo,
   manufacturingYears,
 } from "../utils/vehicleInfo";
+import { VEHICLE_PHOTO_ACCEPT, VEHICLE_PHOTO_HINT, checkVehiclePhoto } from "../utils/kyc";
 import {
   OTHER,
   useVehicleCatalog,
@@ -91,6 +92,7 @@ const VehicleTab = ({
   onInfoBlur = () => {},
   onCheckInfo = async () => true,
   revealInfo = 0,
+  regNoNotice = "",
 }) => {
   const { t } = useTranslation();
 
@@ -268,6 +270,24 @@ const VehicleTab = ({
     }
   };
 
+  // Vehicle photo (optional): checked by its real content (JPG/PNG, 5 MB)
+  // before it replaces the auto-selected model image.
+  const [photoState, setPhotoState] = useState({ busy: false, error: "", message: "" });
+  const handlePhoto = async (file) => {
+    setPhotoState({ busy: true, error: "", message: "" });
+    const result = await checkVehiclePhoto(file);
+    if (result.error) {
+      setPhotoState({ busy: false, error: result.error, message: "" });
+      return;
+    }
+    onChange("photo", result.file);
+    setPhotoState({ busy: false, error: "", message: "Photo uploaded." });
+  };
+  const removePhoto = () => {
+    onChange("photo", null);
+    setPhotoState({ busy: false, error: "", message: "Photo removed; the model image is shown." });
+  };
+
   const sections = [
     {
       id: "vehicle",
@@ -383,6 +403,12 @@ const VehicleTab = ({
                   placeholder={t("vehicle.enterVehicleNumber")}
                   className={errorCls(infoErrors.regNo)}
                 />
+                {/* An already known vehicle (see NewLoan regNoNotice) */}
+                {!infoErrors.regNo && regNoNotice && (
+                  <p role="status" className="mt-1 rounded border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] text-sky-900">
+                    {regNoNotice}
+                  </p>
+                )}
               </Field>
 
               <Field label={t("vehicle.vehicleType")} required error={infoErrors.type}>
@@ -563,13 +589,16 @@ const VehicleTab = ({
                 file={data.photo}
                 defaultPreviewUrl={getVehicleModelImage(data.type, data.model)}
                 alt={`${data.brand || ''} ${data.model || ''}`.trim() || 'Vehicle'}
-                onFile={(file) =>
-                  handleFileChange("photo", file)
-                }
+                accept={VEHICLE_PHOTO_ACCEPT}
+                onFile={handlePhoto}
+                onRemove={removePhoto}
+                busy={photoState.busy}
+                error={photoState.error}
+                message={photoState.message}
               />
 
               <p className="mt-2 text-[10px] text-slate-400">
-                {t("common.optional")}
+                {t("common.optional")} · {VEHICLE_PHOTO_HINT}
               </p>
 
             </div>

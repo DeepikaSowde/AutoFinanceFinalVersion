@@ -142,8 +142,34 @@ const NewLoan = () => {
   const [step, setStep] = useState(0)
   const [loanSubTab, setLoanSubTab] = useState('loan')
 
-  const [form, setForm] = useState(() => {
+  // The unfinished form kept in this browser. A Re-Loan's form (with the
+  // existing customer's id) is only reused when this page was opened for that
+  // same Re-Loan; opened any other way it is dropped, so a new application can
+  // never be filed under the old customer. A plain unfinished application is
+  // restored, with a note and a way to start fresh.
+  const [boot] = useState(() => {
     const saved = getCustomerOnboarding()
+    const route = window.history.state?.usr || {}
+    const savedIsReLoan = Boolean(saved?.customer?.isReLoanCustomer || saved?.loan?.isReLoan)
+    const sameReLoan = Boolean(route.isReLoan && route.customerId && saved?.customer?.customerId === route.customerId)
+    if (saved && savedIsReLoan && !sameReLoan) {
+      clearCustomerOnboarding()
+      setOnboardingDraftId(null)
+      return { saved: null, restoredName: '' }
+    }
+    if (saved && route.isReLoan && !sameReLoan) {
+      // opened for a Re-Loan, but the kept form is something else
+      clearCustomerOnboarding()
+      setOnboardingDraftId(null)
+      return { saved: null, restoredName: '' }
+    }
+    const hasWork = saved && !savedIsReLoan && Boolean(saved.customer?.name || saved.customer?.mobile || saved.vehicle?.regNo)
+    return { saved, restoredName: hasWork ? saved.customer?.name || saved.customer?.mobile || saved.vehicle?.regNo : '' }
+  })
+  const [restoredName, setRestoredName] = useState(boot.restoredName)
+
+  const [form, setForm] = useState(() => {
+    const saved = boot.saved
     const init = initialForm()
     if (!saved) return init
     return {
@@ -257,17 +283,71 @@ const NewLoan = () => {
     return true
   }
 
+  // Existing customer: a customer with the same mobile or Aadhaar number is
+  // looked up (new applications only). Staff must choose: Start a Re-Loan for
+  // them, or continue as a different, new customer. Next waits for that
+  // choice; the server refuses a silent duplicate too.
+  const [existingCustomer, setExistingCustomer] = useState(null)
+  const [existingCustomerAlert, setExistingCustomerAlert] = useState(false)
+  const lookupExistingCustomer = async (customer = form.customer) => {
+    if (isReLoan) return null
+    const mobile = String(customer.mobile || '').replace(/\D/g, '')
+    const aadhaar = String(customer.aadhaarNo || '').replace(/\D/g, '')
+    if (mobile.length !== 10 && aadhaar.length !== 12) {
+      setExistingCustomer(null)
+      return null
+    }
+    try {
+      const { matches = [] } = await apiGet(
+        `/customers/lookup?mobile=${encodeURIComponent(mobile)}&aadhaar=${encodeURIComponent(aadhaar)}`
+      )
+      const found = matches[0] || null
+      setExistingCustomer(found)
+      if (!found) setExistingCustomerAlert(false)
+      return found
+    } catch {
+      return null // the server checks again on submit
+    }
+  }
+  const confirmedNew = (found) => Boolean(found && form.customer.confirmedNewCustomer === found.customerId)
+
+  const confirmNewCustomer = () => {
+    if (!existingCustomer) return
+    update('customer')('confirmedNewCustomer', existingCustomer.customerId)
+    setExistingCustomerAlert(false)
+  }
+  const undoConfirmNewCustomer = () => update('customer')('confirmedNewCustomer', '')
+  const startReLoanForExisting = () => {
+    if (!existingCustomer) return
+    navigate(`/re-loan/${encodeURIComponent(existingCustomer.customerId)}`)
+  }
+
+  // Customer step fields valid AND an existing-customer match decided.
+  const customerStepReady = async () => {
+    if (!customerStepAcceptable()) return false
+    const found = await lookupExistingCustomer()
+    if (found && !confirmedNew(found)) {
+      setExistingCustomerAlert(true)
+      setStep(0)
+      return false
+    }
+    return true
+  }
+
   const checkKycField = (field, value) => {
     if (isReLoan) return
     const message = field === 'aadhaarNo' ? validateAadhaar(value) : validateDrivingLicence(value)
     setKycErrors((current) => ({ ...current, [field]: message }))
+    if (field === 'aadhaarNo' && !message) lookupExistingCustomer({ ...form.customer, aadhaarNo: value })
   }
 
   // Leaving a field shows its error; once an error shows, it follows the
   // value as it is fixed.
   const checkCustomerField = (field, value = form.customer[field]) => {
     if (isReLoan && field !== 'applicationDate') return
-    setCustomerErrors((current) => ({ ...current, [field]: validateCustomerField(field, value) }))
+    const message = validateCustomerField(field, value)
+    setCustomerErrors((current) => ({ ...current, [field]: message }))
+    if (field === 'mobile' && !message) lookupExistingCustomer({ ...form.customer, mobile: value })
   }
 
   // Chassis Number (VIN): checked when the user leaves the field and again
@@ -317,12 +397,34 @@ const NewLoan = () => {
   const vehicleCatalog = useVehicleCatalog()
   const vehicleTypes = vehicleCatalog && !vehicleCatalog.isFallback ? vehicleCatalog.categories.map((c) => c.name) : null
 
+  // Asks the server about the vehicle number: an error when another
+  // customer's live vehicle has it; otherwise a note when the vehicle is
+  // already known. The Re-Loan customer's own saved vehicle fills only the
+  // empty fields (never overwrites what was typed, and the server keeps the
+  // saved vehicle as it is).
+  const [regNoNotice, setRegNoNotice] = useState('')
   const regNoDuplicateError = async (regNo) => {
     try {
       const customerId = isReLoan ? form.customer?.customerId || location.state?.customerId || '' : ''
       const result = await apiGet(
         `/vehicles/registration-check?regNo=${encodeURIComponent(regNo)}${customerId ? `&customerId=${encodeURIComponent(customerId)}` : ''}`
       )
+      const existing = result?.existing
+      if (result?.error || !existing) {
+        setRegNoNotice('')
+      } else if (existing.kind === 'own') {
+        const empty = Object.fromEntries(
+          Object.entries(existing.details || {}).filter(([key, value]) => value && !String(form.vehicle[key] ?? '').trim())
+        )
+        if (Object.keys(empty).length) update('vehicle')(empty)
+        setRegNoNotice(
+          `This is the customer's saved vehicle${existing.vehicleId ? ` (${existing.vehicleId})` : ''}. The new loan is added to it and its saved details are kept${Object.keys(empty).length ? '; empty fields were filled from it' : ''}.`
+        )
+      } else {
+        setRegNoNotice(
+          `Known vehicle: financed before for ${existing.customerName || 'another customer'} (${existing.customerId}), ${existing.status === 'SOLD' ? 'since sold' : 'loan closed'}. It will be added as this customer's vehicle.`
+        )
+      }
       return result?.error || ''
     } catch {
       return '' // offline / unavailable: the server checks again on submit
@@ -356,7 +458,7 @@ const NewLoan = () => {
   // Guarantor & Referral is optional: Next on the Loan step goes straight to
   // Review from either sub-tab; the Guarantor & Referral tab stays one click away.
   const goNext = async () => {
-    if (step === 0 && !customerStepAcceptable()) return
+    if (step === 0 && !(await customerStepReady())) return
     if (step === 1) {
       if (!(await vehicleInfoAcceptable())) return
       if (!(await chassisAcceptable())) return
@@ -370,7 +472,7 @@ const NewLoan = () => {
   // The stepper may jump ahead; moving past the Vehicle step needs valid
   // vehicle information and chassis number, going back never does.
   const goToStep = async (target) => {
-    if (target > 0 && !customerStepAcceptable()) return
+    if (target > 0 && !(await customerStepReady())) return
     if (target > 1 && !(await vehicleInfoAcceptable())) return
     if (target > 1 && !(await chassisAcceptable())) return
     setStep(target)
@@ -448,6 +550,10 @@ const NewLoan = () => {
       setCustomerErrors({})
       setKycErrors({})
       setVehicleErrors({})
+      setExistingCustomer(null)
+      setExistingCustomerAlert(false)
+      setRegNoNotice('')
+      setRestoredName('')
       setStep(0)
       setVerified(false)
       setDraftsOpen(false)
@@ -547,6 +653,13 @@ const NewLoan = () => {
           alert('Please fix the KYC & Identity Documents section.')
           return
         }
+        const found = await lookupExistingCustomer()
+        if (found && !confirmedNew(found)) {
+          setExistingCustomerAlert(true)
+          setStep(0)
+          alert(`${found.name || found.customerId} (${found.customerId}) is an existing customer. Start a Re-Loan for them, or confirm this is a new customer.`)
+          return
+        }
       }
       if (!(await vehicleInfoAcceptable())) {
         alert('Please fix the Vehicle Information section.')
@@ -616,6 +729,12 @@ const NewLoan = () => {
       setShowSuccess(true)
     } catch (e) {
       console.error("Submission failed", e)
+      if (e.code === 'EXISTING_CUSTOMER' && e.existing) {
+        // The server found an existing customer: let staff choose on the Customer step.
+        setExistingCustomer(e.existing)
+        setExistingCustomerAlert(true)
+        setStep(0)
+      }
       alert(e.message || "Error submitting loan application.")
     } finally {
       setSubmitting(false)
@@ -631,9 +750,30 @@ const NewLoan = () => {
     setCustomerErrors({})
     setKycErrors({})
     setVehicleErrors({})
+    setExistingCustomer(null)
+    setExistingCustomerAlert(false)
+    setRegNoNotice('')
+    setRestoredName('')
     setStep(0)
     setVerified(false)
     navigate('/loans')
+  }
+
+  // Drops the restored unfinished application and starts a blank one (the
+  // saved draft, if any, is kept in Drafts).
+  const startNewApplication = () => {
+    clearCustomerOnboarding()
+    setDraftId(null)
+    setForm(initialForm())
+    setCustomerErrors({})
+    setKycErrors({})
+    setVehicleErrors({})
+    setExistingCustomer(null)
+    setExistingCustomerAlert(false)
+    setRegNoNotice('')
+    setRestoredName('')
+    setVerified(false)
+    setStep(0)
   }
 
   const handleViewSchedule = () => setShowScheduleModal(true)
@@ -695,6 +835,23 @@ const NewLoan = () => {
           </div>
         )}
 
+        {/* An unfinished application restored from this browser */}
+        {!isReLoan && restoredName && (
+          <div role="status" className="shrink-0 px-4 py-2 bg-sky-50 border-b border-sky-200/80 text-sky-950 text-xs flex items-center justify-between gap-3">
+            <span className="truncate">
+              Continuing the unfinished application for <strong>{restoredName}</strong>.
+            </span>
+            <span className="flex shrink-0 items-center gap-3">
+              <button type="button" onClick={startNewApplication} className="font-semibold text-[#006052] hover:underline">
+                Start a new application
+              </button>
+              <button type="button" onClick={() => setRestoredName('')} aria-label="Dismiss" className="text-sky-700 hover:text-sky-900">
+                ✕
+              </button>
+            </span>
+          </div>
+        )}
+
         {/* Consistent content area with fixed available height based on viewport */}
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 sm:px-5 sm:py-3.5 bg-white">
           {step === 0 && (
@@ -709,12 +866,21 @@ const NewLoan = () => {
                 if (field === 'additionalDocs' && kycErrors.docs && !isReLoan) {
                   setKycErrors((current) => ({ ...current, docs: validateKyc({ additionalDocs: value }).docs }))
                 }
+                // A different mobile / Aadhaar may be a different person: look again on leaving the field.
+                if (field === 'mobile' || field === 'aadhaarNo') setExistingCustomerAlert(false)
                 update('customer')(field, value)
               }}
               errors={customerErrors}
               onFieldBlur={checkCustomerField}
               kycErrors={kycErrors}
               onKycBlur={checkKycField}
+              existingCustomer={isReLoan ? null : existingCustomer}
+              existingConfirmed={confirmedNew(existingCustomer)}
+              existingAlert={existingCustomerAlert}
+              onStartReLoan={startReLoanForExisting}
+              onConfirmNewCustomer={confirmNewCustomer}
+              onUndoConfirm={undoConfirmNewCustomer}
+              lockedIdentity={isReLoan}
             />
           )}
           {step === 1 && (
@@ -722,6 +888,7 @@ const NewLoan = () => {
               data={form.vehicle}
               onChange={(field, value) => {
                 if (field === 'chassisNo') setChassisError('')
+                if (field === 'regNo') setRegNoNotice('')
                 // Errors showing follow the values as they are fixed (one
                 // field, or several changed together like brand + model).
                 const changed = typeof field === 'object' && field !== null ? field : { [field]: value }
@@ -745,6 +912,7 @@ const NewLoan = () => {
                 return !vehicleInfoHasErrors(errors)
               }}
               revealInfo={revealVehicleInfo}
+              regNoNotice={regNoNotice}
               onFetchVehicle={handleFetchVehicle}
               chassisError={chassisError}
               onChassisBlur={checkChassisFormat}

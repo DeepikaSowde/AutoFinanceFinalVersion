@@ -124,7 +124,7 @@ export const AdornedInput = ({ prefix, suffix, disabled, className = '', ...prop
   </div>
 )
 
-export const PhoneInput = ({ code, mobile, onCodeChange, onMobileChange, onMobileBlur, invalid = false, className = '' }) => {
+export const PhoneInput = ({ code, mobile, onCodeChange, onMobileChange, onMobileBlur, invalid = false, disabled = false, className = '' }) => {
   const { t } = useTranslation()
 
   return (
@@ -146,9 +146,10 @@ export const PhoneInput = ({ code, mobile, onCodeChange, onMobileChange, onMobil
       value={mobile}
       onChange={(e) => onMobileChange(e.target.value.replace(/\D/g, ''))}
       onBlur={onMobileBlur}
+      disabled={disabled}
       aria-invalid={invalid ? 'true' : undefined}
       placeholder={t('common.enterMobileNumber')}
-      className={`h-9 min-w-0 flex-1 rounded-md border ${invalid ? 'border-red-400' : 'border-slate-300'} bg-white px-2.5 text-xs sm:text-sm font-mono tracking-wider text-slate-800 placeholder:text-slate-400 placeholder:tracking-normal focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30`}
+      className={`h-9 min-w-0 flex-1 rounded-md border ${invalid ? 'border-red-400' : 'border-slate-300'} bg-white px-2.5 text-xs sm:text-sm font-mono tracking-wider text-slate-800 placeholder:text-slate-400 placeholder:tracking-normal focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500`}
     />
   </div>
   )
@@ -224,7 +225,22 @@ export const UploadButton = ({ label, file, onFile, accept = 'image/*,.pdf', dis
 }
 
 /** Dashed photo upload box (vehicle / guarantor photo) */
-export const PhotoUpload = ({ title, hint, file, onFile, defaultPreviewUrl, alt = '' }) => {
+// onRemove (optional): shows Change / Remove under a custom photo; removing
+// brings back the auto-selected model image. busy / error / message show the
+// state of a picked file being checked.
+export const PhotoUpload = ({
+  title,
+  hint,
+  file,
+  onFile,
+  onRemove,
+  defaultPreviewUrl,
+  alt = '',
+  accept = 'image/png,image/jpeg',
+  busy = false,
+  error = '',
+  message = '',
+}) => {
   const ref = useRef(null)
   const [imgError, setImgError] = useState(false)
 
@@ -265,17 +281,21 @@ export const PhotoUpload = ({ title, hint, file, onFile, defaultPreviewUrl, alt 
       <input
         ref={ref}
         type="file"
-        accept="image/png,image/jpeg"
+        accept={accept}
+        aria-label={`${title || 'Photo'} file`}
         hidden
-        onChange={(e) =>
-          onFile(e.target.files?.[0] || null)
-        }
+        onChange={(e) => {
+          const picked = e.target.files?.[0] || null
+          e.target.value = '' // picking the same file again still triggers
+          if (picked) onFile(picked)
+        }}
       />
 
       <button
         type="button"
+        disabled={busy}
         onClick={() => ref.current?.click()}
-        className="flex min-h-[140px] w-full flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-emerald-400 bg-white p-4 text-center hover:bg-emerald-50 transition-colors cursor-pointer group"
+        className="flex min-h-[140px] w-full flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-emerald-400 bg-white p-4 text-center hover:bg-emerald-50 transition-colors cursor-pointer group disabled:cursor-wait disabled:opacity-70"
       >
         {displaySrc ? (
           <div className="flex flex-col items-center gap-2">
@@ -286,7 +306,7 @@ export const PhotoUpload = ({ title, hint, file, onFile, defaultPreviewUrl, alt 
               className="max-h-32 rounded object-contain shadow-2xs group-hover:scale-105 transition-transform"
             />
             <span className="text-[11px] text-slate-500 font-medium">
-              {previewUrl ? 'Uploaded photo (click to change)' : 'Auto-selected model image (click to upload custom photo)'}
+              {busy ? 'Checking photo…' : previewUrl ? 'Uploaded photo (click to change)' : 'Auto-selected model image (click to upload custom photo)'}
             </span>
           </div>
         ) : (
@@ -294,7 +314,7 @@ export const PhotoUpload = ({ title, hint, file, onFile, defaultPreviewUrl, alt 
             <CameraIcon className="h-7 w-7 text-slate-700" />
 
             <span className="text-sm font-medium text-slate-800">
-              {title}
+              {busy ? 'Checking photo…' : title}
             </span>
 
             <span className="text-xs text-slate-500">
@@ -303,6 +323,22 @@ export const PhotoUpload = ({ title, hint, file, onFile, defaultPreviewUrl, alt 
           </>
         )}
       </button>
+
+      {previewUrl && onRemove && (
+        <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
+          <span className="truncate text-slate-500" title={file?.name || ''}>{file?.name || 'Custom photo'}</span>
+          <span className="flex shrink-0 gap-2">
+            <button type="button" onClick={() => ref.current?.click()} className="font-semibold text-[#006052] hover:underline cursor-pointer">
+              Change
+            </button>
+            <button type="button" onClick={onRemove} className="font-semibold text-red-600 hover:underline cursor-pointer">
+              Remove
+            </button>
+          </span>
+        </div>
+      )}
+      {error && <p role="alert" className="mt-1 text-[11px] font-medium text-red-600">Upload failed: {error}</p>}
+      {!error && message && <p role="status" className="mt-1 text-[11px] font-medium text-emerald-700">{message}</p>}
     </div>
   )
 }

@@ -50,6 +50,15 @@ const CustomerTab = ({
   onFieldBlur = () => {},
   kycErrors = {},
   onKycBlur = () => {},
+  // An existing customer with the same mobile / Aadhaar (see NewLoan).
+  existingCustomer = null,
+  existingConfirmed = false,
+  existingAlert = false,
+  onStartReLoan = () => {},
+  onConfirmNewCustomer = () => {},
+  onUndoConfirm = () => {},
+  // Re-Loan: the existing customer's details are used as saved, not edited here.
+  lockedIdentity = false,
 }) => {
   const { t } = useTranslation();
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -189,6 +198,7 @@ const CustomerTab = ({
                 <Field label={t("customer.name")} required error={errors.name}>
                   <Input
                     value={data.name || ""}
+                    disabled={lockedIdentity}
                     onChange={set("name")}
                     onBlur={tidyOnBlur("name", cleanName)}
                     maxLength={NAME_MAX}
@@ -207,9 +217,57 @@ const CustomerTab = ({
                     onMobileChange={(value) => onChange("mobile", value)}
                     onMobileBlur={(e) => onFieldBlur("mobile", e.target.value)}
                     invalid={Boolean(errors.mobile)}
+                    disabled={lockedIdentity}
                   />
                 </Field>
               </div>
+
+              {lockedIdentity && (
+                <p className="text-[11px] text-slate-500">
+                  Re-Loan for an existing customer: their name, mobile and address are used as saved. Change them from the customer&apos;s page.
+                </p>
+              )}
+
+              {/* An existing customer has this mobile / Aadhaar */}
+              {existingCustomer && !existingConfirmed && (
+                <div
+                  role="alert"
+                  className={`rounded-lg border px-3 py-2 text-[11px] ${
+                    existingAlert ? "border-red-300 bg-red-50 text-red-900" : "border-amber-200 bg-amber-50 text-amber-900"
+                  }`}
+                >
+                  <p>
+                    <strong>Existing customer found:</strong> {existingCustomer.name || "Unnamed"} ({existingCustomer.customerId}) has
+                    the same {existingCustomer.matchedBy === "aadhaar" ? "Aadhaar number" : "mobile number"}
+                    {existingCustomer.activeLoans ? ` and ${existingCustomer.activeLoans} active loan${existingCustomer.activeLoans === 1 ? "" : "s"}` : ""}.
+                    {existingAlert ? " Choose one to continue." : ""}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={onStartReLoan}
+                      className="rounded border border-emerald-300 bg-white px-2 py-0.5 font-bold text-[#006052] hover:bg-emerald-50"
+                    >
+                      Start Re-Loan for {existingCustomer.name || existingCustomer.customerId}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onConfirmNewCustomer}
+                      className="rounded border border-slate-300 bg-white px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Continue as a new customer
+                    </button>
+                  </div>
+                </div>
+              )}
+              {existingCustomer && existingConfirmed && (
+                <p className="text-[11px] text-slate-500">
+                  Continuing as a new customer (not {existingCustomer.name || existingCustomer.customerId}, {existingCustomer.customerId}).{" "}
+                  <button type="button" onClick={onUndoConfirm} className="font-semibold text-[#006052] hover:underline">
+                    Undo
+                  </button>
+                </p>
+              )}
 
               {/* Row 2: Application Date & Pincode */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -236,6 +294,7 @@ const CustomerTab = ({
                     inputMode="numeric"
                     maxLength={6}
                     value={data.pincode || ""}
+                    disabled={lockedIdentity}
                     onChange={(e) =>
                       onChange("pincode", e.target.value.replace(/\D/g, "").slice(0, 6))
                     }
@@ -252,6 +311,7 @@ const CustomerTab = ({
                 <Textarea
                   rows={2}
                   value={data.address || ""}
+                  disabled={lockedIdentity}
                   onChange={set("address")}
                   onBlur={tidyOnBlur("address", cleanText)}
                   maxLength={ADDRESS_MAX}
@@ -267,6 +327,7 @@ const CustomerTab = ({
                 <Field label={t("customer.areaLocality")} error={errors.area}>
                   <Input
                     value={data.area || ""}
+                    disabled={lockedIdentity}
                     onChange={set("area")}
                     onBlur={tidyOnBlur("area", cleanText)}
                     maxLength={LOCALITY_MAX}
@@ -280,6 +341,7 @@ const CustomerTab = ({
                 <Field label={t("customer.landmark")} error={errors.landmark}>
                   <Input
                     value={data.landmark || ""}
+                    disabled={lockedIdentity}
                     onChange={set("landmark")}
                     onBlur={tidyOnBlur("landmark", cleanText)}
                     maxLength={LOCALITY_MAX}

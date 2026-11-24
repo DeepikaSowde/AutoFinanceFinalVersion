@@ -95,6 +95,9 @@ export const createApp = () => {
 
     res.status(status).json({
       error: status >= 500 ? "Internal server error." : error.message,
+      // e.g. EXISTING_CUSTOMER with the customer found, so the form can offer a Re-Loan
+      ...(status < 500 && error.code && typeof error.code === "string" && !/^\d/.test(error.code) ? { code: error.code } : {}),
+      ...(status < 500 && error.existing ? { existing: error.existing } : {}),
     });
   });
 

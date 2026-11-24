@@ -570,37 +570,34 @@ export const loadCustomerEntries = async () => {
 
 export const getFundingSummary = () => apiGet('/investors/summary')
 
-const normalRegNo = (value) => String(value || '').replace(/\s+/g, '').toUpperCase()
-
-const vehiclesOf = (record) =>
-  record.vehicles?.length ? record.vehicles : record.vehicle?.id ? [{ ...record.vehicle, rc: record.rc }] : []
-
 /*
- * Creates the customer with their first loan, or adds the loan to an existing
- * customer: the one a Re-Loan was started from, or one whose mobile number
- * and a vehicle's registration number both match. The server puts the loan on
- * that customer's vehicle with this registration number, or adds the vehicle
- * to them if it is a new one, and applies the Re-Loan policy.
+ * Creates the customer with their first loan, or, for a Re-Loan, adds the
+ * loan to the customer the Re-Loan was started from (never to anyone else:
+ * an existing customer is only ever chosen explicitly, through Re-Loan). The
+ * server puts the loan on that customer's vehicle with this registration
+ * number, or adds the vehicle if it is a new one, and applies the Re-Loan
+ * policy. `confirmNewCustomer` = the user confirmed this is a different
+ * person from an existing customer with the same mobile / Aadhaar.
  * Returns the entry for the new loan.
  */
 export const submitLoanApplication = async (form) => {
-  const records = await apiGet('/customers')
-  const mobile = (form.customer.mobile || '').trim()
-  const regNo = normalRegNo(form.vehicle.regNo)
   const isReLoan = Boolean(form.customer?.isReLoanCustomer || form.loan?.isReLoan)
 
-  const reLoanOf = isReLoan && form.customer?.customerId
-    ? records.find((record) => record.customer.id === form.customer.customerId)
-    : null
-  const existing =
-    reLoanOf ||
-    records.find(
-      (record) =>
-        mobile &&
-        regNo &&
-        record.customer.personal?.mobileNumber === mobile &&
-        vehiclesOf(record).some((vehicle) => normalRegNo(vehicle.rc?.registrationNumber) === regNo)
-    )
+  let existing = null
+  if (isReLoan && form.customer?.customerId) {
+    existing = await apiGet(`/customers/${encodeURIComponent(form.customer.customerId)}`).catch((error) => {
+      if (error.status === 404) return null // gone: created anew below, still as a re-loan
+      throw error
+    })
+    // The Re-Loan's customer is used as saved; the form must still be for them.
+    const savedMobile = String(existing?.customer?.personal?.mobileNumber || '').replace(/\D/g, '')
+    const formMobile = String(form.customer.mobile || '').replace(/\D/g, '')
+    if (savedMobile && formMobile && savedMobile !== formMobile) {
+      throw new Error(
+        `This Re-Loan is for ${existing.customer.personal?.name || existing.customer.id} (${existing.customer.id}), but the form has a different mobile number. Start a New Loan for a different customer.`
+      )
+    }
+  }
 
   const loan = toLoan(form)
   let record
@@ -620,6 +617,7 @@ export const submitLoanApplication = async (form) => {
       loan,
       // Still a re-loan if its customer was not found: the server applies the policy.
       ...(isReLoan && form.customer?.customerId ? { reLoanOfCustomerId: form.customer.customerId } : {}),
+      ...(form.customer?.confirmedNewCustomer ? { confirmNewCustomer: true } : {}),
     })
   }
 

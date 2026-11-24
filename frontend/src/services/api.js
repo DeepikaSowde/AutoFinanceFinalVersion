@@ -116,7 +116,11 @@ const request = async (path, options = {}) => {
       }
       window.dispatchEvent(new Event('auto-finance:signed-out'))
     }
-    throw new ApiError(data?.error || `Request failed with status ${response.status}`, response.status)
+    const apiError = new ApiError(data?.error || `Request failed with status ${response.status}`, response.status)
+    // e.g. code EXISTING_CUSTOMER + existing: the customer the server found
+    if (data?.code) apiError.code = data.code
+    if (data?.existing) apiError.existing = data.existing
+    throw apiError
   }
 
   return data

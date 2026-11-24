@@ -140,6 +140,31 @@ export const findLiveVehicleWithRegNo = async (regNo, { exceptCustomerId = null,
   return result.rows[0] || null;
 };
 
+/* ---------- vehicle photo (optional) ---------- */
+
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+
+// The photo's content must really be a JPEG or PNG, 1 byte .. 5 MB. The
+// browser may re-compress a PNG to JPEG before saving, so the content decides.
+export const vehiclePhotoError = (photo) => {
+  const data = photo?.fileData;
+  if (!data) return "";
+  const base64 = String(data).replace(/^data:[^,]*,/, "");
+  if (!/^[A-Za-z0-9+/=\s]*$/.test(base64)) return "Vehicle photo: the file could not be read.";
+  const bytes = Buffer.from(base64, "base64");
+  if (!bytes.length) return "Vehicle photo: the file is empty.";
+  if (bytes.length > PHOTO_MAX_BYTES) return "Vehicle photo: the file is larger than 5 MB.";
+  const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const png = bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (!jpeg && !png) return "Vehicle photo: only JPG, JPEG or PNG images are allowed.";
+  return "";
+};
+
+export const assertVehiclePhoto = (photo) => {
+  const message = vehiclePhotoError(photo);
+  if (message) fail(message);
+};
+
 export const duplicateRegNoMessage = (found) =>
   `Vehicle number is already registered to another customer${found?.customer_id ? ` (${found.customer_id})` : ""} with an active loan.`;
 
