@@ -28,6 +28,8 @@ import { validateChassis } from '../utils/chassis'
 import { localToday } from '../utils/applicationDate'
 import { hasErrors, validateCustomerDetails, validateCustomerField } from '../utils/customerDetails'
 import { kycHasErrors, validateAadhaar, validateDrivingLicence, validateKyc } from '../utils/kyc'
+import { validateVehicleInfo, vehicleInfoHasErrors } from '../utils/vehicleInfo'
+import { useVehicleCatalog } from '../services/vehicleCatalogApi'
 import { apiGet } from '../services/api'
 
 const STEPS = [
@@ -306,6 +308,47 @@ const NewLoan = () => {
     return true
   }
 
+  // Vehicle Information (utils/vehicleInfo.js): every required field, and the
+  // vehicle number not already on another customer's live vehicle (asked of
+  // the server). Checked on Next: Registration, Next: Loan, a stepper jump and
+  // submit; the server checks again when the loan is saved.
+  const [vehicleErrors, setVehicleErrors] = useState({})
+  const [revealVehicleInfo, setRevealVehicleInfo] = useState(0)
+  const vehicleCatalog = useVehicleCatalog()
+  const vehicleTypes = vehicleCatalog && !vehicleCatalog.isFallback ? vehicleCatalog.categories.map((c) => c.name) : null
+
+  const regNoDuplicateError = async (regNo) => {
+    try {
+      const customerId = isReLoan ? form.customer?.customerId || location.state?.customerId || '' : ''
+      const result = await apiGet(
+        `/vehicles/registration-check?regNo=${encodeURIComponent(regNo)}${customerId ? `&customerId=${encodeURIComponent(customerId)}` : ''}`
+      )
+      return result?.error || ''
+    } catch {
+      return '' // offline / unavailable: the server checks again on submit
+    }
+  }
+
+  const vehicleInfoAcceptable = async () => {
+    const errors = validateVehicleInfo(form.vehicle, { vehicleTypes })
+    if (!errors.regNo) errors.regNo = await regNoDuplicateError(form.vehicle.regNo)
+    setVehicleErrors(errors)
+    if (vehicleInfoHasErrors(errors)) {
+      setStep(1)
+      setRevealVehicleInfo((n) => n + 1)
+      return false
+    }
+    return true
+  }
+
+  // One field, when the user leaves it (the vehicle number also for duplicates).
+  const checkVehicleField = async (field, value) => {
+    const vehicle = { ...form.vehicle, [field]: value }
+    let message = validateVehicleInfo(vehicle, { vehicleTypes })[field] || ''
+    if (field === 'regNo' && !message) message = await regNoDuplicateError(value)
+    setVehicleErrors((current) => ({ ...current, [field]: message }))
+  }
+
   const current = STEPS[step]
   const isFirst = step === 0
   const isLast = step === STEPS.length - 1
@@ -315,6 +358,7 @@ const NewLoan = () => {
   const goNext = async () => {
     if (step === 0 && !customerStepAcceptable()) return
     if (step === 1) {
+      if (!(await vehicleInfoAcceptable())) return
       if (!(await chassisAcceptable())) return
       setLoanSubTab('loan')
       setStep(2)
@@ -323,10 +367,11 @@ const NewLoan = () => {
     setStep((s) => Math.min(s + 1, STEPS.length - 1))
   }
 
-  // The stepper may jump ahead; moving past the Vehicle step needs a valid
-  // chassis number, going back never does.
+  // The stepper may jump ahead; moving past the Vehicle step needs valid
+  // vehicle information and chassis number, going back never does.
   const goToStep = async (target) => {
     if (target > 0 && !customerStepAcceptable()) return
+    if (target > 1 && !(await vehicleInfoAcceptable())) return
     if (target > 1 && !(await chassisAcceptable())) return
     setStep(target)
   }
@@ -402,6 +447,7 @@ const NewLoan = () => {
       setDraftId(draft.id)
       setCustomerErrors({})
       setKycErrors({})
+      setVehicleErrors({})
       setStep(0)
       setVerified(false)
       setDraftsOpen(false)
@@ -502,6 +548,10 @@ const NewLoan = () => {
           return
         }
       }
+      if (!(await vehicleInfoAcceptable())) {
+        alert('Please fix the Vehicle Information section.')
+        return
+      }
       const chassisProblem = validateChassis(form.vehicle.chassisNo, form.vehicle.year).error
       if (chassisProblem) {
         setChassisError(chassisProblem)
@@ -580,6 +630,7 @@ const NewLoan = () => {
     setForm(initialForm())
     setCustomerErrors({})
     setKycErrors({})
+    setVehicleErrors({})
     setStep(0)
     setVerified(false)
     navigate('/loans')
@@ -671,8 +722,29 @@ const NewLoan = () => {
               data={form.vehicle}
               onChange={(field, value) => {
                 if (field === 'chassisNo') setChassisError('')
+                // Errors showing follow the values as they are fixed (one
+                // field, or several changed together like brand + model).
+                const changed = typeof field === 'object' && field !== null ? field : { [field]: value }
+                const showing = Object.keys(changed).filter((key) => vehicleErrors[key])
+                if (showing.length) {
+                  const next = validateVehicleInfo({ ...form.vehicle, ...changed }, { vehicleTypes })
+                  // (the vehicle number's duplicate check runs again on leaving it)
+                  setVehicleErrors((current) => ({
+                    ...current,
+                    ...Object.fromEntries(showing.map((key) => [key, next[key]])),
+                  }))
+                }
                 update('vehicle')(field, value)
               }}
+              infoErrors={vehicleErrors}
+              onInfoBlur={checkVehicleField}
+              onCheckInfo={async () => {
+                const errors = validateVehicleInfo(form.vehicle, { vehicleTypes })
+                if (!errors.regNo) errors.regNo = await regNoDuplicateError(form.vehicle.regNo)
+                setVehicleErrors(errors)
+                return !vehicleInfoHasErrors(errors)
+              }}
+              revealInfo={revealVehicleInfo}
               onFetchVehicle={handleFetchVehicle}
               chassisError={chassisError}
               onChassisBlur={checkChassisFormat}

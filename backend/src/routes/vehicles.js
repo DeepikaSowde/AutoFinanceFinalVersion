@@ -18,6 +18,7 @@ import {
   updateSeizureDetails,
 } from "../services/vehicleRepository.js";
 import { assertChassisAcceptable } from "../services/chassis.js";
+import { duplicateRegNoMessage, findLiveVehicleWithRegNo, regNoError } from "../services/vehicleInfo.js";
 import { requirePermission } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
@@ -31,6 +32,21 @@ vehiclesRouter.get(
     res.json(
       status ? await getVehiclesByStatus(String(status).toUpperCase()) : await getVehicles()
     );
+  })
+);
+
+// New Loan asks this when the vehicle number is entered / Next is clicked: is
+// the number valid, and not already on another customer's live vehicle?
+// ?regNo=...&customerId=... (a re-loan's own customer is not a duplicate).
+// The same rules run again when the loan is saved.
+vehiclesRouter.get(
+  "/registration-check",
+  asyncHandler(async (req, res) => {
+    const regNo = String(req.query.regNo || "");
+    const formatError = regNoError(regNo);
+    if (formatError) return res.json({ ok: false, error: formatError });
+    const found = await findLiveVehicleWithRegNo(regNo, { exceptCustomerId: req.query.customerId ? String(req.query.customerId) : null });
+    res.json(found ? { ok: false, error: duplicateRegNoMessage(found) } : { ok: true, error: "" });
   })
 );
 

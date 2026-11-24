@@ -20,7 +20,6 @@ import {
 import {
   COLOURS,
   FUEL_TYPES,
-  MANUFACTURING_YEARS,
   VEHICLE_OWNERSHIP_TYPES,
   RTO_LOCATIONS,
   FINANCIERS,
@@ -28,6 +27,12 @@ import {
   INSURANCE_COMPANIES,
 } from "../../Options";
 import { getVehicleModelImage } from "../utils/vehicleImageHelper";
+import {
+  cleanAmountInput,
+  formatAmount,
+  formatRegNo,
+  manufacturingYears,
+} from "../utils/vehicleInfo";
 import {
   OTHER,
   useVehicleCatalog,
@@ -72,10 +77,26 @@ const fileToBase64 = (file) => {
   });
 };
 
-const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChassisBlur, revealRegistration = 0 }) => {
+// Red border on a field with an error (important: beats the normal grey border).
+const errorCls = (error) => (error ? "border-red-400! focus:border-red-500! focus:ring-red-200!" : "");
+
+const VehicleTab = ({
+  data,
+  onChange,
+  onFetchVehicle,
+  chassisError = "",
+  onChassisBlur,
+  revealRegistration = 0,
+  infoErrors = {},
+  onInfoBlur = () => {},
+  onCheckInfo = async () => true,
+  revealInfo = 0,
+}) => {
   const { t } = useTranslation();
 
   const [activeSection, setActiveSection] = useState("vehicle");
+  const [checkingInfo, setCheckingInfo] = useState(false);
+  const [amountFocused, setAmountFocused] = useState(false);
 
   // When Next fails on the chassis number, open the section that shows it.
   const [seenReveal, setSeenReveal] = useState(revealRegistration);
@@ -83,10 +104,33 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
     setSeenReveal(revealRegistration);
     setActiveSection("registration");
   }
+  // When Next fails on Vehicle Information, open that section.
+  const [seenInfoReveal, setSeenInfoReveal] = useState(revealInfo);
+  if (revealInfo !== seenInfoReveal) {
+    setSeenInfoReveal(revealInfo);
+    setActiveSection("vehicle");
+  }
+
+  // Next: Registration only once every Vehicle Information field is valid.
+  const goToRegistration = async () => {
+    if (checkingInfo) return;
+    setCheckingInfo(true);
+    try {
+      if (await onCheckInfo()) setActiveSection("registration");
+    } finally {
+      setCheckingInfo(false);
+    }
+  };
 
   const set = (key) => (e) => onChange(key, e.target.value);
 
   const hypothecated = data.hypothecation === "Yes";
+
+  // This year back to 1980, newest first (an older saved year stays listed).
+  const yearOptions = (() => {
+    const years = manufacturingYears();
+    return data.year && !years.includes(String(data.year)) ? [...years, String(data.year)] : years;
+  })();
 
   /* =========================================================
      VEHICLE CATALOG: Type -> Subcategory -> Brand -> Model
@@ -143,7 +187,7 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
     setBrandOther(false);
     setModelOther(false);
     setSubcategoryAuto(false);
-    onChange({ type: value, subcategory: "", brand: "", model: "", ...clearAutoFuel() });
+    onChange({ type: value, subcategory: "", brand: "", model: "", variant: "", ...clearAutoFuel() });
   };
 
   const handleSubcategory = (e) => {
@@ -169,11 +213,11 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
     setSubcategoryAuto(false);
     if (value === OTHER) {
       setBrandOther(true);
-      onChange({ brand: "", model: "", ...clearAuto });
+      onChange({ brand: "", model: "", variant: "", ...clearAuto });
       return;
     }
     setBrandOther(false);
-    onChange({ brand: value, model: "", ...clearAuto });
+    onChange({ brand: value, model: "", variant: "", ...clearAuto });
   };
 
   const handleModel = (e) => {
@@ -181,7 +225,7 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
     if (value === OTHER) {
       setModelOther(true);
       setSubcategoryAuto(false);
-      onChange({ model: "", ...(subcategoryAuto ? { subcategory: "" } : {}), ...clearAutoFuel() });
+      onChange({ model: "", variant: "", ...(subcategoryAuto ? { subcategory: "" } : {}), ...clearAutoFuel() });
       return;
     }
     setModelOther(false);
@@ -196,6 +240,8 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
     }
     onChange({
       model: value,
+      // a different model's variant no longer applies
+      ...(sameName(value, data.model) ? {} : { variant: "" }),
       ...fuelPatch,
       // the model decides its subcategory; an electric model is Electric
       ...(found?.subcategoryName ? { subcategory: found.subcategoryName } : {}),
@@ -316,18 +362,30 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
               <Field
                 label={t("vehicle.vehicleNumber")}
                 required
-                hint={t("vehicle.vehicleNumberHint")}
+                error={infoErrors.regNo}
+                hint={infoErrors.regNo ? "" : t("vehicle.vehicleNumberHint")}
               >
                 <Input
                   value={data.regNo || ""}
+                  maxLength={16}
+                  autoComplete="off"
+                  aria-invalid={infoErrors.regNo ? "true" : undefined}
+                  // letters, digits, spaces and hyphens only, upper case
                   onChange={(e) =>
-                    onChange("regNo", e.target.value.toUpperCase())
+                    onChange("regNo", e.target.value.toUpperCase().replace(/[^A-Z0-9 -]/g, ""))
                   }
+                  // "tn09ab1234" -> "TN 09 AB 1234", then checked (and for duplicates)
+                  onBlur={(e) => {
+                    const formatted = formatRegNo(e.target.value);
+                    if (formatted !== e.target.value) onChange("regNo", formatted);
+                    onInfoBlur("regNo", formatted);
+                  }}
                   placeholder={t("vehicle.enterVehicleNumber")}
+                  className={errorCls(infoErrors.regNo)}
                 />
               </Field>
 
-              <Field label={t("vehicle.vehicleType")} required>
+              <Field label={t("vehicle.vehicleType")} required error={infoErrors.type}>
                 <Select
                   options={typeOptions}
                   placeholder={catalog ? t("vehicle.selectVehicleType") : loadingText}
@@ -335,10 +393,12 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
                   disabled={!catalog}
                   value={typeValue}
                   onChange={handleType}
+                  aria-invalid={infoErrors.type ? "true" : undefined}
+                  className={errorCls(infoErrors.type)}
                 />
               </Field>
 
-              <Field label={t("vehicle.brand")} required>
+              <Field label={t("vehicle.brand")} required error={infoErrors.brand}>
                 <Select
                   options={[...choices.brands, OTHER]}
                   placeholder={catalog ? t("vehicle.selectBrand") : loadingText}
@@ -346,18 +406,22 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
                   disabled={!catalog || !data.type}
                   value={brandIsOther ? OTHER : pick(choices.brands, data.brand)}
                   onChange={handleBrand}
+                  aria-invalid={infoErrors.brand ? "true" : undefined}
+                  className={brandIsOther ? "" : errorCls(infoErrors.brand)}
                 />
                 {brandIsOther && (
                   <Input
-                    className="mt-1.5"
+                    className={`mt-1.5 ${errorCls(infoErrors.brand)}`}
                     value={data.brand || ""}
+                    maxLength={60}
                     onChange={set("brand")}
+                    onBlur={(e) => onInfoBlur("brand", e.target.value)}
                     placeholder={t("vehicle.enterBrand", { defaultValue: "Type the brand name" })}
                   />
                 )}
               </Field>
 
-              <Field label={t("vehicle.model")} required>
+              <Field label={t("vehicle.model")} required error={infoErrors.model}>
                 {!brandIsOther && (
                   <Select
                     options={[
@@ -369,29 +433,35 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
                     disabled={!catalog || !data.brand}
                     value={modelIsOther ? OTHER : pick(modelNames, data.model)}
                     onChange={handleModel}
+                    aria-invalid={infoErrors.model ? "true" : undefined}
+                    className={modelIsOther ? "" : errorCls(infoErrors.model)}
                   />
                 )}
                 {modelIsOther && (
                   <Input
-                    className={brandIsOther ? "" : "mt-1.5"}
+                    className={`${brandIsOther ? "" : "mt-1.5"} ${errorCls(infoErrors.model)}`}
                     value={data.model || ""}
+                    maxLength={60}
                     onChange={set("model")}
+                    onBlur={(e) => onInfoBlur("model", e.target.value)}
                     placeholder={t("vehicle.enterModel", { defaultValue: "Type the model name" })}
                   />
                 )}
               </Field>
 
-              <Field label={t("vehicle.colour")} required>
+              <Field label={t("vehicle.colour")} required error={infoErrors.colour}>
                 <Select
                   options={COLOURS}
                   placeholder={t("vehicle.selectColour")}
                   translationKey="options.colours"
                   value={data.colour || ""}
                   onChange={set("colour")}
+                  aria-invalid={infoErrors.colour ? "true" : undefined}
+                  className={errorCls(infoErrors.colour)}
                 />
               </Field>
 
-              <Field label={t("vehicle.fuelType")} required>
+              <Field label={t("vehicle.fuelType")} required error={infoErrors.fuelType}>
                 <Select
                   options={FUEL_TYPES}
                   placeholder={t("vehicle.selectFuelType")}
@@ -401,6 +471,8 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
                     setFuelAuto(false);
                     onChange("fuelType", e.target.value);
                   }}
+                  aria-invalid={infoErrors.fuelType ? "true" : undefined}
+                  className={errorCls(infoErrors.fuelType)}
                 />
               </Field>
 
@@ -424,44 +496,54 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
                 />
               </Field>
 
-              <Field label={t("vehicle.variant")}>
+              <Field label={t("vehicle.variant")} error={infoErrors.variant}>
                 <Input
                   value={data.variant || ""}
+                  maxLength={60}
                   onChange={set("variant")}
                   placeholder={t("vehicle.enterVariant", { defaultValue: "e.g. Disc, ZXi, LX" })}
+                  className={errorCls(infoErrors.variant)}
                 />
               </Field>
 
-              <Field label={t("vehicle.manufacturingYear")} required>
+              <Field label={t("vehicle.manufacturingYear")} required error={infoErrors.year}>
                 <Select
-                  options={MANUFACTURING_YEARS}
+                  options={yearOptions}
                   placeholder={t("vehicle.selectYear")}
                   value={data.year || ""}
                   onChange={set("year")}
+                  aria-invalid={infoErrors.year ? "true" : undefined}
+                  className={errorCls(infoErrors.year)}
                 />
               </Field>
 
-              <Field label="Vehicle Ownership Type" required>
+              <Field label="Vehicle Ownership Type" required error={infoErrors.ownershipType}>
                 <Select
                   options={VEHICLE_OWNERSHIP_TYPES}
                   placeholder="Select Ownership Type"
                   value={data.ownershipType || ""}
                   onChange={set("ownershipType")}
+                  aria-invalid={infoErrors.ownershipType ? "true" : undefined}
+                  className={errorCls(infoErrors.ownershipType)}
                 />
               </Field>
 
-              <Field label={t("vehicle.vehicleAmount")} required>
+              <Field label={t("vehicle.vehicleAmount")} required error={infoErrors.amount}>
+                {/* Digits with up to 2 decimals; shown as 1,25,000 when not being edited */}
                 <AdornedInput
                   prefix="₹"
-                  inputMode="numeric"
-                  value={data.amount || ""}
-                  onChange={(e) =>
-                    onChange(
-                      "amount",
-                      e.target.value.replace(/\D/g, "")
-                    )
-                  }
+                  inputMode="decimal"
+                  aria-label={t("vehicle.vehicleAmount")}
+                  aria-invalid={infoErrors.amount ? "true" : undefined}
+                  value={amountFocused ? data.amount || "" : formatAmount(data.amount)}
+                  onFocus={() => setAmountFocused(true)}
+                  onBlur={() => {
+                    setAmountFocused(false);
+                    onInfoBlur("amount", data.amount || "");
+                  }}
+                  onChange={(e) => onChange("amount", cleanAmountInput(e.target.value))}
                   placeholder={t("vehicle.enterVehicleAmount")}
+                  className={errorCls(infoErrors.amount)}
                 />
               </Field>
 
@@ -498,8 +580,9 @@ const VehicleTab = ({ data, onChange, onFetchVehicle, chassisError = "", onChass
 
             <button
               type="button"
-              onClick={() => setActiveSection("registration")}
-              className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
+              onClick={goToRegistration}
+              disabled={checkingInfo}
+              className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
             >
               {t("vehicle.nextRegistration")}
               <span>→</span>

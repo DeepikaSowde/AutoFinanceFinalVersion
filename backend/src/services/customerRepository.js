@@ -16,6 +16,10 @@ import { assertValidMobile } from "./mobile.js";
 import { assertValidApplicationDate } from "./applicationDate.js";
 import { checkChangedCustomerDetails, checkNewCustomerDetails } from "./customerDetails.js";
 import { checkChangedCustomerKyc, checkNewCustomerKyc } from "./kyc.js";
+import { assertRegNoAvailable, checkVehicleFields, compactRegNo, formatRegNo } from "./vehicleInfo.js";
+
+// Vehicle fields checked on an edit when they change (API names).
+const VEHICLE_INFO_KEYS = ["vehicleType", "brand", "model", "variant", "colour", "fuelType", "manufacturingYear", "ownershipType", "vehicleValue"];
 
 const pad = (number, length = 5) => String(number).padStart(length, "0");
 
@@ -554,6 +558,9 @@ export const createCustomer = async (payload = {}) => {
   };
   // Aadhaar / Driving Licence numbers (when filled in) and KYC files.
   payload = { ...payload, customer: checkNewCustomerKyc(payload.customer) };
+  // Vehicle Information: every required field; vehicle number saved as "TN 09 AB 1234".
+  await checkVehicleFields(payload.vehicle, payload.rc);
+  payload = { ...payload, rc: { ...payload.rc, registrationNumber: formatRegNo(payload.rc?.registrationNumber) } };
 
   const customerId = await withTransaction(async (client) => {
     // The chassis number must be valid and not already on a live vehicle.
@@ -563,6 +570,8 @@ export const createCustomer = async (payload = {}) => {
       payload.vehicle?.manufacturingYear,
       { db: client }
     );
+    // Not already on another customer's live vehicle.
+    await assertRegNoAvailable(payload.rc.registrationNumber, { db: client });
 
     const result = await client.query(
       `INSERT INTO customers (id, customer_number, status, personal, kyc, documents, photo, tenant_id)
@@ -659,6 +668,24 @@ export const updateCustomer = async (customerId, payload = {}) => {
       : await getVehicleRowForCustomer(customerRow.pk);
     const currentVehicle = target || existing.vehicle;
     const currentRc = target?.rc || existing.rc;
+
+    // Vehicle Information: only fields that change are checked, so vehicles
+    // saved before these rules can still be edited.
+    if (vehicleRow && (payload.vehicle || payload.rc)) {
+      const changed = VEHICLE_INFO_KEYS.filter(
+        (key) => payload.vehicle?.[key] !== undefined && String(payload.vehicle[key]) !== String(currentVehicle?.[key] ?? "")
+      );
+      const newRegNo = payload.rc?.registrationNumber;
+      const regNoChanged = newRegNo !== undefined && compactRegNo(newRegNo) !== compactRegNo(currentRc?.registrationNumber);
+      if (regNoChanged) changed.push("registrationNumber");
+      if (changed.length) {
+        await checkVehicleFields(payload.vehicle || {}, payload.rc || {}, { only: changed, db: client });
+      }
+      if (regNoChanged) {
+        payload = { ...payload, rc: { ...payload.rc, registrationNumber: formatRegNo(newRegNo) } };
+        await assertRegNoAvailable(payload.rc.registrationNumber, { exceptVehiclePk: vehicleRow.pk, db: client });
+      }
+    }
 
     if (vehicleRow && payload.vehicle) {
       const { vehicleId: _ignored, ...vehicleFields } = payload.vehicle;
@@ -828,6 +855,10 @@ export const addLoanForCustomer = async (customerId, loan = {}, options = {}) =>
     }
   }
 
+  if (newVehicle) {
+    await checkVehicleFields(options.vehicle || {}, options.rc || {});
+  }
+
   await withTransaction(async (client) => {
     if (newVehicle) {
       const chassisNumber = await assertChassisAcceptable(
@@ -835,8 +866,11 @@ export const addLoanForCustomer = async (customerId, loan = {}, options = {}) =>
         options.vehicle?.manufacturingYear,
         { db: client }
       );
+      const registrationNumber = formatRegNo(options.rc?.registrationNumber);
+      // Another customer's live vehicle may not carry this number.
+      await assertRegNoAvailable(registrationNumber, { exceptCustomerId: customerId, db: client });
       vehiclePk = await insertVehicle(client, customerRow.pk, options.vehicle || {});
-      await insertRc(client, vehiclePk, { ...(options.rc || {}), chassisNumber });
+      await insertRc(client, vehiclePk, { ...(options.rc || {}), registrationNumber, chassisNumber });
     }
 
     const loanPk = await insertLoan(client, customerRow.pk, vehiclePk, loan, {

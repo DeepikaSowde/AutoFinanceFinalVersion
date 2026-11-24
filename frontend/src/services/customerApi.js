@@ -1,5 +1,6 @@
 import { apiGet, apiPost } from './api'
 import { normalizeAadhaar, normalizeDrivingLicence } from '../utils/kyc'
+import { formatRegNo } from '../utils/vehicleInfo'
 
 // The API keeps customers relationally (customer, vehicle + RC, guarantor,
 // loans with installments). The New Loan form and the Customer pages work
@@ -101,7 +102,7 @@ const toVehicle = (vehicle) => ({
 })
 
 const toRc = (vehicle) => ({
-  registrationNumber: (vehicle.regNo || '').toUpperCase(),
+  registrationNumber: formatRegNo(vehicle.regNo),
   location: vehicle.rto || '',
   dateOfRegistration: vehicle.regDate || '',
   chassisNumber: vehicle.chassisNo || '',

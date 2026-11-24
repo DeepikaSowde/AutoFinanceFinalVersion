@@ -72,7 +72,7 @@ const seedSampleData = async (collector) => {
           pincode: "624001",
         },
       },
-      vehicle: { vehicleType: type, brand, model, manufacturingYear: year, fuelType: "Petrol", vehicleValue, ownershipType: "New" },
+      vehicle: { vehicleType: type, brand, model, colour: "Black", manufacturingYear: year, fuelType: "Petrol", vehicleValue, ownershipType: "New" },
       // A made-up but valid-format chassis number (no I, O or Q).
       rc: { registrationNumber: `TN09DM${String(1000 + n)}`, chassisNumber: `MBLHA10EZ9DEMX${String(n).padStart(3, "0")}` },
       loan: {
