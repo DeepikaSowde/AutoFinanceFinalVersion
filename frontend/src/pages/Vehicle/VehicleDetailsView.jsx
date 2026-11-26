@@ -76,6 +76,9 @@ const EMPTY_FORECLOSURE_CALC = {
 
 import { formatDate, formatDateTime, isDateOnlyString } from '../../utils/dateUtils';
 import ForeclosureDetailsView from './ForeclosureDetailsView';
+import { foreclosureDateOf } from '../../utils/foreclosureDate';
+import { validateSaleDate } from '../../utils/saleDate';
+import { localToday } from '../../utils/applicationDate';
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(Number(val))) return '₹0';
@@ -118,7 +121,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory, backL
   const [releaseSuccessToast, setReleaseSuccessToast] = useState(false);
 
   // Sale Form State
-  const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0]);
+  const [saleDate, setSaleDate] = useState(localToday);
   const [salePrice, setSalePrice] = useState('');
   const [vehicleExpenses, setVehicleExpenses] = useState('');
   const [buyerName, setBuyerName] = useState('');
@@ -128,7 +131,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory, backL
 
   // The server's foreclosure cost and profit / loss for the sale figures in
   // the Mark as Sold form (on the Foreclosure & Penalty settings).
-  const [foreclosureCalc, setForeclosureCalc] = useState(EMPTY_FORECLOSURE_CALC);
+  const [serverForeclosureCalc, setForeclosureCalc] = useState(EMPTY_FORECLOSURE_CALC);
   const foreclosureSettings = useForeclosureSettings();
   const [saleSaving, setSaleSaving] = useState(false);
 
@@ -274,16 +277,29 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory, backL
   // The server's id for this vehicle (the vehicle pages use the loan id as theirs).
   const serverVehicleId = record?.vehicle?.vehicleId || '';
 
+  // The sale forecloses the loan: today or earlier, and not before the
+  // seizure or the loan (utils/saleDate.js; the server checks too).
+  const saleDateLimits = {
+    today: localToday(),
+    seizureDate: (record?.vehicle?.seizureDetails || record?.seizureDetails || {}).seizureDate || '',
+    loanDate: record?.customer?.applicationDate || '',
+  };
+  const saleDateProblem = validateSaleDate(saleDate, saleDateLimits);
+  const saleDateMin = [saleDateLimits.seizureDate, saleDateLimits.loanDate].map((d) => String(d).slice(0, 10)).sort().at(-1);
+  // No figures are shown for a date that can't be used.
+  const foreclosureCalc = saleDateProblem ? EMPTY_FORECLOSURE_CALC : serverForeclosureCalc;
+
   // Foreclosure Sale metrics from the server, on the active Foreclosure &
   // Penalty settings, while the Mark as Sold form is open; re-asked (after a
   // short pause in typing) whenever the sale figures change.
   useEffect(() => {
     if (activeModal !== 'sold' || !serverVehicleId) return undefined;
+    if (saleDateProblem) return undefined;
     let active = true;
     const timer = setTimeout(() => {
       previewForeclosure(serverVehicleId, {
         salePrice,
-        saleDate: saleDate || new Date().toISOString().split('T')[0],
+        saleDate,
         vehicleExpenses: vehicleExpenses !== '' && !isNaN(Number(vehicleExpenses)) ? Number(vehicleExpenses) : null,
       })
         .then((calc) => active && setForeclosureCalc(calc))
@@ -293,7 +309,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory, backL
       active = false;
       clearTimeout(timer);
     };
-  }, [activeModal, serverVehicleId, salePrice, saleDate, vehicleExpenses, allPayments]);
+  }, [activeModal, serverVehicleId, salePrice, saleDate, saleDateProblem, vehicleExpenses, allPayments]);
 
   // Handle open Edit Seizure
   const handleOpenEditSeizure = () => {
@@ -319,7 +335,8 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory, backL
   // Handle open Sold modal
   const handleOpenSold = () => {
     const existingSale = record.vehicle?.saleDetails || record.saleDetails || {};
-    setSaleDate(existingSale.saleDate || new Date().toISOString().split('T')[0]);
+    setSaleDate(existingSale.saleDate || localToday());
+    setFormErrors({});
     setSalePrice(existingSale.salePrice ? String(existingSale.salePrice) : '');
     setForeclosureCalc(EMPTY_FORECLOSURE_CALC);
 
@@ -412,7 +429,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory, backL
   const handleConfirmSold = async (e) => {
     e.preventDefault();
     const errors = {};
-    if (!saleDate) errors.saleDate = 'Sale date is required';
+    if (saleDateProblem) errors.saleDate = saleDateProblem;
     if (!salePrice || isNaN(Number(salePrice)) || Number(salePrice) <= 0) {
       errors.salePrice = 'Valid sale amount is required';
     }
@@ -681,7 +698,7 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory, backL
             <div>
               <span className="text-slate-400 block text-[11px] font-medium">Foreclosure Date</span>
               <span className="font-semibold text-slate-800 truncate block">
-                {formatDate(record.foreclosure?.saleDate || record.vehicle?.saleDetails?.saleDate || record.saleDetails?.saleDate || record.foreclosure?.completedAt || record.foreclosureDate || record.closedDate) || '—'}
+                {formatDate(foreclosureDateOf(record)) || '—'}
               </span>
             </div>
           </div>
@@ -2319,11 +2336,18 @@ const VehicleDetailsView = ({ vehicleRecord, onBack, onViewExpenseHistory, backL
                   <input
                     type="date"
                     value={saleDate}
-                    onChange={(e) => setSaleDate(e.target.value)}
+                    min={saleDateMin || undefined}
+                    max={saleDateLimits.today}
+                    aria-invalid={Boolean(saleDate && saleDateProblem)}
+                    onChange={(e) => {
+                      setSaleDate(e.target.value);
+                      setFormErrors((current) => ({ ...current, saleDate: undefined }));
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#006052]/20 focus:border-[#006052]"
                   />
-                  {formErrors.saleDate && (
-                    <p className="text-xs text-red-500 mt-1">{formErrors.saleDate}</p>
+                  {/* a complete wrong date says so at once; an empty one on confirm */}
+                  {(formErrors.saleDate || (saleDate >= '2000' && saleDateProblem)) && (
+                    <p role="alert" className="text-xs text-red-500 mt-1">{formErrors.saleDate || saleDateProblem}</p>
                   )}
                 </div>
 

@@ -14,6 +14,8 @@ import {
   initialSettlement,
   recordedVehicleExpenses,
 } from "./foreclosureRepository.js";
+import { businessToday } from "./penaltyRepository.js";
+import { saleDateError } from "./saleDate.js";
 
 export const VEHICLE_STATUS = {
   ACTIVE: "ACTIVE",
@@ -285,11 +287,25 @@ export const cancelVehicleSale = async (vehicleId, reason = "", performedBy) => 
 
 const SELLABLE = [VEHICLE_STATUS.PENDING_SALE, VEHICLE_STATUS.SEIZED];
 
+// Throws a 400 when the Sale Date is in the future or before the seizure or
+// the loan. A blank date means today.
+const assertSaleDate = async (vehicleRow, value) => {
+  const today = businessToday();
+  const customer = await query("SELECT personal->>'date' AS loan_date FROM customers WHERE pk = $1", [vehicleRow.customer_pk]);
+  const error = saleDateError(value || today, {
+    today,
+    seizureDate: vehicleRow.seizure?.seizureDate,
+    loanDate: customer.rows[0]?.loan_date,
+  });
+  if (error) throw new TransitionError(error, 400);
+};
+
 // The foreclosure cost and profit / loss of selling the vehicle on the
 // figures given (salePrice, saleDate, vehicleExpenses), without saving
 // anything — the Mark as Sold form shows it as the figures are typed.
 export const previewForeclosure = async (vehicleId, details = {}) => {
   const vehicleRow = await requireVehicle(vehicleId);
+  await assertSaleDate(vehicleRow, details.saleDate);
   const loanRow = await getLoanRowForVehicle(vehicleRow.pk);
   const loan = loanRow ? await buildLoan(loanRow) : null;
 
@@ -328,7 +344,8 @@ export const completeVehicleSale = async (vehicleId, details = {}, performedBy) 
   if (!(salePrice > 0)) {
     throw new TransitionError("A sale amount greater than zero is required.", 400);
   }
-  const saleDate = String(details.soldAt || now).slice(0, 10);
+  await assertSaleDate(vehicleRow, details.soldAt);
+  const saleDate = String(details.soldAt || businessToday()).slice(0, 10);
   const recorded = await recordedVehicleExpenses({ query }, vehicleRow.id);
   const saleExpenses =
     details.saleExpenses === undefined || details.saleExpenses === null || details.saleExpenses === ""

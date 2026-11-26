@@ -558,7 +558,10 @@ const toEntry = (record, loan, commissions = []) => {
     status: loan.status || 'Active',
     // Only the loan the vehicle sale foreclosed carries the foreclosure.
     isForeclosed: loan.status === 'Foreclosed',
-    foreclosure: loan.status === 'Foreclosed' ? foreclosureFrom(vehicle.sale) : null,
+    foreclosure:
+      loan.status === 'Foreclosed' && foreclosureFrom(vehicle.sale)
+        ? { ...foreclosureFrom(vehicle.sale), foreclosedAt: loan.foreclosedAt || '' }
+        : null,
     createdAt: loan.createdAt,
   }
 }

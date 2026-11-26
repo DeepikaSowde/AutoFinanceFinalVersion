@@ -59,6 +59,7 @@ const formatCurrency = (value) => {
 };
 
 import { formatDate, formatDateTimeParts, parseToDate } from "../../utils/dateUtils";
+import { foreclosureDateOf } from "../../utils/foreclosureDate";
 
 const formatDateTime = (dateString, record = null) => formatDateTimeParts(dateString, record);
 
@@ -638,7 +639,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
   // Foreclosure metrics
   const finalizedForeclosureCalc = foreclosureData.finalizedCalculation || {};
   const foreclosureSaleDetails = loanRecord?.vehicle?.saleDetails || loanRecord?.saleDetails || {};
-  const foreclosureDate = foreclosureData.saleDate || foreclosureData.completedAt || loanRecord?.foreclosedDate || foreclosureSaleDetails.saleDate || loanRecord?.updatedAt;
+  const foreclosureDate = foreclosureDateOf(loanRecord) || loanRecord?.updatedAt;
   const foreclosureSalePrice = Number(foreclosureData.salePrice || foreclosureSaleDetails.salePrice || foreclosureSaleDetails.saleAmount || 0);
   const outstandingPrincipalAtForeclosure = finalizedForeclosureCalc.outstandingPrincipal !== undefined
     ? Number(finalizedForeclosureCalc.outstandingPrincipal)
@@ -1187,16 +1188,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                 const isProfit = profitLoss > 0;
                 const isLoss = profitLoss < 0;
 
-                const rawForeclosureDate =
-                  fData.saleDate ||
-                  saleDetails.saleDate ||
-                  fData.completedAt ||
-                  loanRecord?.foreclosedDate ||
-                  loanRecord?.foreclosureDate ||
-                  loanRecord?.closedDate ||
-                  foreclosureDate ||
-                  loanRecord?.updatedAt;
-                const formattedForeclosureDate = (rawForeclosureDate ? formatDate(rawForeclosureDate) : "") || "—";
+                const formattedForeclosureDate = (foreclosureDate ? formatDate(foreclosureDate) : "") || "—";
 
                 return (
                   <div className="loan-summary-col h-full flex flex-col justify-between">
@@ -1964,12 +1956,7 @@ export default function LoanDetailsView({ loanId: propLoanId, customerId: propCu
                             <div className="bg-white/90 p-2.5 rounded-lg border border-purple-100">
                               <span className="text-[10px] uppercase font-semibold text-slate-500 block">Foreclosure Date</span>
                               <span className="font-bold text-slate-900 mt-0.5 block">
-                                {(() => {
-                                  const fData = loanRecord?.foreclosure || {};
-                                  const saleDetails = loanRecord?.vehicle?.saleDetails || loanRecord?.saleDetails || {};
-                                  const fDate = fData.saleDate || fData.completedAt || loanRecord?.foreclosedDate || saleDetails.saleDate || loanRecord?.updatedAt;
-                                  return fDate ? formatDate(fDate) : "—";
-                                })()}
+                                {foreclosureDate ? formatDate(foreclosureDate) : "—"}
                               </span>
                             </div>
                             <div className="bg-white/90 p-2.5 rounded-lg border border-purple-100">

@@ -24,6 +24,7 @@ import {
   Calculator,
 } from 'lucide-react';
 import { formatDate } from '../../utils/dateUtils';
+import { foreclosureDateOf } from '../../utils/foreclosureDate';
 import { settleVehicleSale } from '../../services/vehicleApi';
 
 const formatCurrency = (val) => {
@@ -95,12 +96,7 @@ const ForeclosureDetailsView = ({
   const loanId = record?.loanId || loan.loanId || 'LN00001';
   const loanAmount =
     record?.loanAmount || loan.loanAmount || record?.loan?.loanAmount || loanOutstandingInfo?.principal || 0;
-  const rawForeclosureDate =
-    fData.saleDate ||
-    saleDetails.saleDate ||
-    fData.completedAt ||
-    record?.foreclosureDate ||
-    record?.closedDate;
+  const rawForeclosureDate = foreclosureDateOf(record);
   const foreclosureDate = formatDate(rawForeclosureDate) || '—';
   const regNo = vehicle.regNo || record?.regNo || 'TN 09 AB 1234';
 
