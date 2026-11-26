@@ -26,6 +26,7 @@ import { recordPersonRelationship } from '../utils/guarantorReferralStorage'
 import { formatDate } from '../utils/dateUtils'
 import { validateChassis } from '../utils/chassis'
 import { localToday } from '../utils/applicationDate'
+import { INVALID_FIRST_DUE_DATE, validateFirstDueDate } from '../utils/firstDueDate'
 import { hasErrors, validateCustomerDetails, validateCustomerField } from '../utils/customerDetails'
 import { kycHasErrors, validateAadhaar, validateDrivingLicence, validateKyc } from '../utils/kyc'
 import { validateVehicleInfo, vehicleInfoHasErrors } from '../utils/vehicleInfo'
@@ -451,6 +452,31 @@ const NewLoan = () => {
     setVehicleErrors((current) => ({ ...current, [field]: message }))
   }
 
+  // First Due Date (utils/firstDueDate.js): required and on or after the Loan
+  // Date (the Application Date). Checked on leaving the field, before View
+  // Schedule, before leaving the Loan step and on submit; the server checks
+  // too. A complete date that is too early shows its error straight away, also
+  // when the Loan Date was changed afterwards (a year still being typed, such
+  // as 0020, is left alone).
+  const [firstDueChecked, setFirstDueChecked] = useState(false)
+  const [firstDueIncomplete, setFirstDueIncomplete] = useState(false)
+  const loanDate = form.customer.applicationDate || localToday()
+  const firstDue = form.loan.firstDueDate || ''
+  const firstDueProblem = validateFirstDueDate(firstDue, loanDate)
+  const firstDueError =
+    !firstDue && firstDueIncomplete
+      ? INVALID_FIRST_DUE_DATE
+      : firstDueChecked || (firstDue >= '2000' && firstDue < loanDate)
+      ? firstDueProblem
+      : ''
+  const firstDueAcceptable = () => {
+    if (!firstDueProblem) return true
+    setFirstDueChecked(true)
+    setLoanSubTab('loan')
+    setStep(2)
+    return false
+  }
+
   const current = STEPS[step]
   const isFirst = step === 0
   const isLast = step === STEPS.length - 1
@@ -466,6 +492,7 @@ const NewLoan = () => {
       setStep(2)
       return
     }
+    if (step === 2 && !firstDueAcceptable()) return
     setStep((s) => Math.min(s + 1, STEPS.length - 1))
   }
 
@@ -475,6 +502,7 @@ const NewLoan = () => {
     if (target > 0 && !(await customerStepReady())) return
     if (target > 1 && !(await vehicleInfoAcceptable())) return
     if (target > 1 && !(await chassisAcceptable())) return
+    if (target > 2 && !firstDueAcceptable()) return
     setStep(target)
   }
 
@@ -550,6 +578,8 @@ const NewLoan = () => {
       setCustomerErrors({})
       setKycErrors({})
       setVehicleErrors({})
+      setFirstDueChecked(false)
+      setFirstDueIncomplete(false)
       setExistingCustomer(null)
       setExistingCustomerAlert(false)
       setRegNoNotice('')
@@ -674,6 +704,11 @@ const NewLoan = () => {
         return
       }
 
+      if (!firstDueAcceptable()) {
+        alert(firstDueProblem)
+        return
+      }
+
       const vehicleAmount = form.loan.vehicleAmount !== null && form.loan.vehicleAmount !== '' && form.loan.vehicleAmount !== undefined
         ? Number(form.loan.vehicleAmount)
         : Number(form.vehicle.amount || 0)
@@ -750,6 +785,8 @@ const NewLoan = () => {
     setCustomerErrors({})
     setKycErrors({})
     setVehicleErrors({})
+    setFirstDueChecked(false)
+    setFirstDueIncomplete(false)
     setExistingCustomer(null)
     setExistingCustomerAlert(false)
     setRegNoNotice('')
@@ -768,6 +805,8 @@ const NewLoan = () => {
     setCustomerErrors({})
     setKycErrors({})
     setVehicleErrors({})
+    setFirstDueChecked(false)
+    setFirstDueIncomplete(false)
     setExistingCustomer(null)
     setExistingCustomerAlert(false)
     setRegNoNotice('')
@@ -776,7 +815,10 @@ const NewLoan = () => {
     setStep(0)
   }
 
-  const handleViewSchedule = () => setShowScheduleModal(true)
+  // The schedule's dates run from the First Due Date, so it must be valid.
+  const handleViewSchedule = () => {
+    if (firstDueAcceptable()) setShowScheduleModal(true)
+  }
   const handleFetchVehicle = () => console.log('Fetch vehicle details', form.vehicle.regNo)
 
   const navigate = useNavigate()
@@ -925,6 +967,12 @@ const NewLoan = () => {
               vehicleAmountFromVehicle={form.vehicle.amount}
               onChange={update('loan')}
               onViewSchedule={handleViewSchedule}
+              loanDate={loanDate}
+              firstDueDateError={firstDueError}
+              onFirstDueDateBlur={(incomplete) => {
+                setFirstDueIncomplete(incomplete)
+                if (form.loan.firstDueDate || incomplete) setFirstDueChecked(true)
+              }}
               guarantorData={form.guarantor}
               referralData={form.referral}
               onGuarantorChange={update('guarantor')}

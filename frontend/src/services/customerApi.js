@@ -214,6 +214,8 @@ const toLoan = (form) => {
       tenureUnit: loan.tenureUnit || 'Months',
     },
     firstDueDate: loan.firstDueDate || '',
+    // The server refuses a First Due Date earlier than this.
+    loanDate: form.customer?.applicationDate || '',
     charges: {
       documentCharge: Number(loan.documentCharge) || 0,
       customizeRules: Boolean(loan.customizeRules),

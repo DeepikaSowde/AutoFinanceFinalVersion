@@ -299,6 +299,9 @@ const LoanTab = ({
   onViewSchedule,
   activeSection: controlledActiveSection,
   onSectionChange,
+  loanDate,
+  firstDueDateError,
+  onFirstDueDateBlur,
 }) => {
   const { t } = useTranslation()
   const [internalActiveSection, setInternalActiveSection] = useState('loan')
@@ -669,14 +672,17 @@ const LoanTab = ({
                 </Field>
 
                 {/* 9. FIRST DUE DATE */}
-                <Field label={t('loan.firstDueDate')} required className="sm:col-span-2">
+                <Field label={t('loan.firstDueDate')} required error={firstDueDateError} className="sm:col-span-2">
                   <div className="relative">
                     <CalendarIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                     <Input
                       type="date"
-                      className="pl-8 h-8 text-xs"
+                      className={`pl-8 h-8 text-xs ${firstDueDateError ? '!border-red-500' : ''}`}
+                      min={loanDate}
+                      aria-invalid={Boolean(firstDueDateError)}
                       value={data.firstDueDate}
                       onChange={(e) => onChange('firstDueDate', e.target.value)}
+                      onBlur={(e) => onFirstDueDateBlur?.(e.target.validity.badInput)}
                     />
                   </div>
                 </Field>

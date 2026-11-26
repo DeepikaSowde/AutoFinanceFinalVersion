@@ -5,7 +5,7 @@
 // (the business runs on Asia/Kolkata, like the penalty day counts), not the
 // server's, which may be UTC. Keep in step with frontend/src/utils/applicationDate.js.
 
-const indiaToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+export const indiaToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
 
 export const applicationDateError = (value) => {
   const s = String(value ?? "").trim();

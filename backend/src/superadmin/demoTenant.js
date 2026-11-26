@@ -65,6 +65,8 @@ const seedSampleData = async (collector) => {
         status: "Active",
         personal: {
           name: sample.name,
+          // Taken a month before the first due date, never before the investment.
+          date: addDays(today, Math.max(Math.min(sample.firstDueOffset, 0) - 30, -118)),
           countryCode: "+91",
           mobileNumber: `90000001${String(n).padStart(2, "0")}`,
           address: `${10 + n}, Gandhi Street, Dindigul`,

@@ -14,6 +14,7 @@ import { describeInstallment, summariseOutstanding } from "./repaymentEngine.js"
 import { assertChassisAcceptable, normalizeChassis } from "./chassis.js";
 import { assertValidMobile } from "./mobile.js";
 import { assertValidApplicationDate } from "./applicationDate.js";
+import { assertValidFirstDueDate } from "./firstDueDate.js";
 import { checkChangedCustomerDetails, checkNewCustomerDetails } from "./customerDetails.js";
 import { checkChangedCustomerKyc, checkNewCustomerKyc } from "./kyc.js";
 import { assertRegNoAvailable, assertVehiclePhoto, checkVehicleFields, compactRegNo, formatRegNo } from "./vehicleInfo.js";
@@ -552,6 +553,7 @@ const fundIfRequested = (client, loanPk, loan = {}) =>
 export const createCustomer = async (payload = {}) => {
   assertValidMobile(payload.customer?.personal?.mobileNumber);
   assertValidApplicationDate(payload.customer?.personal?.date);
+  assertValidFirstDueDate(payload.loan?.firstDueDate, payload.customer?.personal?.date || payload.loan?.loanDate);
   // Name and address required, pincode etc. valid; values come back trimmed.
   payload = {
     ...payload,
@@ -831,6 +833,8 @@ export const addLoanForCustomer = async (customerId, loan = {}, options = {}) =>
   if (!customerRow) {
     return null;
   }
+
+  assertValidFirstDueDate(loan.firstDueDate, loan.loanDate);
 
   const [vehicleRows, previousLoan] = await Promise.all([
     getVehicleRowsForCustomer(customerRow.pk),
