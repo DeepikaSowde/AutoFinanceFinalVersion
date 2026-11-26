@@ -135,6 +135,10 @@ const personEntered = (person) =>
 // ("No Guarantor or Referral" saves neither, whatever was typed earlier).
 export const hasGuarantorIn = (form) => ['both', 'guarantor'].includes(relationshipOptionOf(form)) && personEntered(form.guarantor)
 export const hasReferralIn = (form) => ['both', 'referral'].includes(relationshipOptionOf(form)) && personEntered(form.referral)
+// "Referred By" is always the Referral form's Full Name as it is now, never a
+// copy kept on the customer (from an older draft or an earlier loan).
+export const referrerNameIn = (form) =>
+  hasReferralIn(form) ? String(form.referral?.fullName || form.referral?.name || '').trim() : ''
 
 const toGuarantor = (guarantor, hasGuarantor = guarantor.required === 'Yes') => ({
   hasGuarantor,
@@ -181,12 +185,12 @@ export const principalOf = (form) => {
 const toReferral = (form) => {
   const referral = form.referral || {}
   if (!hasReferralIn(form)) {
-    return { referredBy: form.loan.referredBy || '', commission: form.loan.referredByCommission || '' }
+    return { referredBy: '', commission: '' }
   }
   const percentage = Number(referral.commissionPercentage) || 0
   const amount = Number(commissionAmountFor(principalOf(form), referral.commissionPercentage)) || 0
   return {
-    referredBy: (referral.fullName || referral.name || '').trim(),
+    referredBy: referrerNameIn(form),
     phone: (referral.phone || referral.mobile || '').trim(),
     referralId: referral.referralId || referral.id || '',
     percentage,
@@ -611,7 +615,7 @@ export const submitLoanApplication = async (form) => {
     })
   } else {
     record = await apiPost('/customers', {
-      customer: toCustomer(form.customer),
+      customer: toCustomer({ ...form.customer, referredBy: referrerNameIn(form), referredByPercentage: '' }),
       vehicle: toVehicle(form.vehicle),
       rc: toRc(form.vehicle),
       guarantor: toGuarantor(form.guarantor, hasGuarantorIn(form)),

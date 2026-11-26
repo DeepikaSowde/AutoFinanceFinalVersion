@@ -10,7 +10,7 @@ import {
   formatDate,
 } from './Formcontrols'
 import { getVehicleDisplayImage } from '../utils/vehicleImageHelper'
-import { hasGuarantorIn, hasReferralIn } from '../services/customerApi'
+import { hasGuarantorIn, hasReferralIn, referrerNameIn } from '../services/customerApi'
 import { maskAadhaar, needsReattach } from '../utils/kyc'
 
 
@@ -196,15 +196,7 @@ const ReviewTab = ({
 
             <Row
               label={t('review.referredBy')}
-              value={
-                customer.referredBy
-                  ? `${customer.referredBy}${
-                      customer.referredByPercentage
-                        ? ` (${customer.referredByPercentage}%)`
-                        : ''
-                    }`
-                  : '—'
-              }
+              value={dash(referrerNameIn({ loan, referral }))}
             />
 
             <Row
