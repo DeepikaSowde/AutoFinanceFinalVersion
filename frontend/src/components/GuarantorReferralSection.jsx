@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   Users,
   UserCheck,
@@ -29,26 +29,34 @@ import {
   findRecordsByMobile,
   getGuarantorReferralRecords,
   loadGuarantorReferralRecord,
+  refreshGuarantorReferralRecords,
   UPDATE_EVENT_NAME,
 } from "../utils/guarantorReferralStorage";
+import { validateMobile } from "../utils/mobile";
+import { checkKycFile, formatFileSize, KYC_FILE_ACCEPT } from "../utils/kyc";
+import { hasPersonData } from "../utils/personDetails";
 
-// Helper: Convert File to Base64 with metadata
-const fileToBase64 = (file) => {
-  return new Promise((resolve, reject) => {
-    if (!file) return resolve(null);
-    const reader = new FileReader();
-    reader.onload = () => {
-      resolve({
-        name: file.name,
-        size: (file.size / 1024).toFixed(1) + " KB",
-        type: file.type,
-        data: reader.result,
-      });
-    };
-    reader.onerror = (err) => reject(err);
-    reader.readAsDataURL(file);
-  });
+// A picked document after its checks (PDF / JPG / PNG, max 2 MB, real
+// content), in the shape the register stores.
+const readDocument = async (file) => {
+  const { error, file: checked } = await checkKycFile(file);
+  if (error) return { error };
+  return {
+    file: { name: checked.name, size: formatFileSize(checked.size), type: checked.type, data: checked.data },
+  };
 };
+
+const FETCH_FAILED = "Could not fetch details. Please check your connection and try again.";
+
+const FieldError = ({ message }) =>
+  message ? (
+    <p role="alert" className="mt-0.5 text-[11px] font-medium text-red-600">
+      {message}
+    </p>
+  ) : null;
+
+// Red border for a field with a message.
+const invalid = (message) => (message ? " !border-red-500" : "");
 
 /**
  * Reusable Contact Person Form Component for Guarantor and Referral
@@ -66,7 +74,14 @@ const ContactPersonForm = ({
   onBack,
   onSwitchStep,
   loanAmount = 0,
+  errors = {},
+  onFieldBlur,
+  onValidate,
+  onCleared,
 }) => {
+  // A picked file that was refused: { aadhaarFile | docId: message }.
+  const [uploadErrors, setUploadErrors] = useState({});
+  const [isFetching, setIsFetching] = useState(false);
   // Modal & feedback states
   const [isFetchModalOpen, setIsFetchModalOpen] = useState(false);
   const [fetchSearch, setFetchSearch] = useState("");
@@ -147,9 +162,12 @@ const ContactPersonForm = ({
     try {
       record = await loadGuarantorReferralRecord(summary.id);
     } catch (error) {
-      alert(error.message || "Could not load this person's details.");
+      setIsFetchModalOpen(false);
+      setAmbiguousMatches(null);
+      setFetchFeedback({ type: "error", message: error.message || FETCH_FAILED });
       return;
     }
+    setUploadErrors({});
 
     onChange({
       name: record.fullName || "",
@@ -184,56 +202,71 @@ const ContactPersonForm = ({
     });
   };
 
-  // Primary Fetch Click Handler
-  const handleFetchClick = () => {
-    const rawMobile = phone.trim();
-    const cleanMobile = normalizePhone(rawMobile);
+  // The number in the box right now, to drop a reply for an older one.
+  const phoneRef = useRef(phone);
+  useEffect(() => {
+    phoneRef.current = phone;
+  }, [phone]);
 
-    if (cleanMobile && cleanMobile.length === 10) {
-      const matches = findRecordsByMobile(cleanMobile);
+  // Primary Fetch Click Handler: only for a valid mobile number.
+  const handleFetchClick = async () => {
+    const typed = phone.trim();
+    setFetchFeedback(null);
+    if (validateMobile(typed)) {
+      onFieldBlur("mobile"); // shows what is wrong under the field
+      return;
+    }
+
+    setIsFetching(true);
+    try {
+      // A fresh copy of the register, so a failed request is reported rather
+      // than read as "no record".
+      await refreshGuarantorReferralRecords();
+      if (phoneRef.current.trim() !== typed) return;
+      const matches = findRecordsByMobile(typed);
 
       if (matches.length === 1) {
         // Exactly 1 match found
-        handleSelectRecord(matches[0]);
+        await handleSelectRecord(matches[0]);
       } else if (matches.length > 1) {
         // Multiple matches found -> open disambiguation modal
         setAmbiguousMatches(matches);
-        setFetchSearch(cleanMobile);
+        setFetchSearch(typed);
         setIsFetchModalOpen(true);
         setFetchFeedback({
           type: "warning",
-          message: `Multiple records found with mobile +91 ${cleanMobile}. Please select the intended person.`,
+          message: `Multiple records found with mobile +91 ${typed}. Please select the intended person.`,
         });
       } else {
         // No match found -> allow manual entry
         setFetchFeedback({
           type: "notFound",
-          message: `No matching record found for mobile +91 ${cleanMobile}. You can enter details manually below.`,
+          message: `No matching record found for mobile +91 ${typed}. You can enter details manually below.`,
         });
       }
-    } else {
-      // Empty or incomplete phone -> open search modal
-      setAmbiguousMatches(null);
-      setFetchSearch(cleanMobile || "");
-      setIsFetchModalOpen(true);
-      setFetchFeedback(null);
+    } catch (error) {
+      console.error("Fetch failed:", error);
+      setFetchFeedback({ type: "error", message: FETCH_FAILED });
+    } finally {
+      setIsFetching(false);
     }
   };
 
   // Aadhaar File Change
   const handleAadhaarFileChange = async (e) => {
     const file = e.target.files?.[0];
+    e.target.value = ""; // the same file can be picked again
     if (!file) return;
-    try {
-      const fileData = await fileToBase64(file);
-      onChange("aadhaarFile", fileData);
-    } catch (err) {
-      console.error("Failed to process Aadhaar file:", err);
-    }
+    const result = await readDocument(file);
+    setUploadErrors((current) => ({ ...current, aadhaarFile: result.error || "" }));
+    if (result.file) onChange("aadhaarFile", result.file);
+    onFieldBlur("aadhaarFile");
   };
 
   // Dynamic Additional Documents Handlers
+  // + adds a further document, once the form's own details are in order.
   const handleAddAdditionalDoc = () => {
+    if (!onValidate()) return;
     const newDoc = {
       id: "doc_" + Date.now().toString(),
       title: "",
@@ -257,15 +290,13 @@ const ContactPersonForm = ({
       onChange("additionalDocs", updated);
       return;
     }
-    try {
-      const fileData = await fileToBase64(file);
-      const updated = additionalDocs.map((doc) =>
-        doc.id === id ? { ...doc, file: fileData } : doc
-      );
-      onChange("additionalDocs", updated);
-    } catch (err) {
-      console.error("Failed to process document file:", err);
-    }
+    const result = await readDocument(file);
+    setUploadErrors((current) => ({ ...current, [id]: result.error || "" }));
+    if (!result.file) return;
+    const updated = additionalDocs.map((doc) =>
+      doc.id === id ? { ...doc, file: result.file } : doc
+    );
+    onChange("additionalDocs", updated);
   };
 
   const handleRemoveAdditionalDoc = (id) => {
@@ -306,8 +337,16 @@ const ContactPersonForm = ({
         <button
           type="button"
           onClick={() => {
+            if (
+              hasPersonData(data) &&
+              !window.confirm(`Clear the ${badgeLabel} form? The details entered in it will be removed.`)
+            ) {
+              return;
+            }
             setFetchFeedback(null);
+            setUploadErrors({});
             onClear();
+            onCleared();
           }}
           className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[10px] sm:text-[11px] font-semibold text-slate-600 hover:text-red-700 hover:border-red-200 hover:bg-red-50/60 transition-colors cursor-pointer shadow-2xs"
           title="Clear form"
@@ -350,11 +389,27 @@ const ContactPersonForm = ({
         </div>
       )}
 
+      {fetchFeedback?.type === "error" && (
+        <div role="alert" className="bg-red-50 border-b border-red-200 px-3 py-1 flex items-center justify-between text-xs text-red-800">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <AlertCircle className="h-3.5 w-3.5 text-red-600 shrink-0" />
+            <span className="text-[11px] sm:text-xs">{fetchFeedback.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFetchFeedback(null)}
+            className="text-red-700 hover:text-red-900 text-[11px] underline cursor-pointer shrink-0 ml-2"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Form Fields Body - Balanced 2-Column Responsive Grid */}
       <div className="p-2.5 sm:p-3 space-y-2.5 flex-1 bg-white">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {/* 1. Full Name */}
-          <Field label="Full Name">
+          <Field label="Full Name" error={errors.fullName}>
             <Input
               value={fullName}
               onChange={(e) => {
@@ -362,12 +417,14 @@ const ContactPersonForm = ({
                 onChange("fullName", e.target.value);
               }}
               placeholder="Enter full legal name"
-              className="h-9 text-xs sm:text-sm"
+              onBlur={() => onFieldBlur("fullName")}
+              aria-invalid={Boolean(errors.fullName)}
+              className={`h-9 text-xs sm:text-sm${invalid(errors.fullName)}`}
             />
           </Field>
 
           {/* 2. Mobile Number with Fetch Button aligned in one row */}
-          <Field label="Mobile Number">
+          <Field label="Mobile Number" error={errors.mobile}>
             <div className="flex items-center gap-1.5">
               {/* Country Code: only as wide as needed (w-14) */}
               <div className="relative w-14 shrink-0">
@@ -389,19 +446,35 @@ const ContactPersonForm = ({
                 value={phone}
                 onChange={(e) => {
                   const val = e.target.value.replace(/\D/g, "");
-                  onChange("mobile", val);
-                  onChange("phone", val);
+                  // A different number may be a different person: forget the
+                  // register record picked for the old one.
+                  onChange({
+                    mobile: val,
+                    phone: val,
+                    ...(fetchedId && val !== phone
+                      ? isGuarantor
+                        ? { guarantorId: "", id: "" }
+                        : { referralId: "", id: "" }
+                      : {}),
+                  });
                   if (fetchFeedback) setFetchFeedback(null);
                 }}
                 placeholder="10-digit mobile"
-                className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs sm:text-sm font-mono tracking-wider text-slate-800 placeholder:text-slate-400 placeholder:tracking-normal focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30"
+                onBlur={(e) => {
+                  // Fetch checks the number itself.
+                  if (!e.relatedTarget?.dataset?.fetch) onFieldBlur("mobile");
+                }}
+                aria-invalid={Boolean(errors.mobile)}
+                className={`h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs sm:text-sm font-mono tracking-wider text-slate-800 placeholder:text-slate-400 placeholder:tracking-normal focus:border-[#006052] focus:outline-none focus:ring-1 focus:ring-[#006052]/30${invalid(errors.mobile)}`}
               />
 
               {/* Fetch Button immediately beside the number field in the same row */}
               <button
                 type="button"
                 onClick={handleFetchClick}
-                className="inline-flex h-9 items-center justify-center gap-1 rounded-md bg-[#006052] px-3 text-xs font-semibold text-white shadow-2xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors cursor-pointer shrink-0"
+                disabled={isFetching}
+                data-fetch="true"
+                className="disabled:opacity-60 inline-flex h-9 items-center justify-center gap-1 rounded-md bg-[#006052] px-3 text-xs font-semibold text-white shadow-2xs hover:bg-[#004d42] active:bg-[#003d34] transition-colors cursor-pointer shrink-0"
                 title="Fetch details by this mobile number"
               >
                 <Search className="h-3 w-3" />
@@ -411,7 +484,7 @@ const ContactPersonForm = ({
           </Field>
 
           {/* 7. Aadhaar Number */}
-          <Field label="Aadhaar Number">
+          <Field label="Aadhaar Number" error={errors.aadhaar}>
             <Input
               inputMode="numeric"
               maxLength={12}
@@ -422,12 +495,14 @@ const ContactPersonForm = ({
                 onChange("aadhaarNumber", val);
               }}
               placeholder="12-digit Aadhaar number"
-              className="h-9 font-mono text-xs sm:text-sm tracking-wider"
+              onBlur={() => onFieldBlur("aadhaar")}
+              aria-invalid={Boolean(errors.aadhaar)}
+              className={`h-9 font-mono text-xs sm:text-sm tracking-wider${invalid(errors.aadhaar)}`}
             />
           </Field>
 
           {/* 6. Pincode */}
-          <Field label="Pincode">
+          <Field label="Pincode" error={errors.pincode}>
             <Input
               inputMode="numeric"
               maxLength={6}
@@ -436,37 +511,45 @@ const ContactPersonForm = ({
                 onChange("pincode", e.target.value.replace(/\D/g, ""))
               }
               placeholder="6-digit pincode"
-              className="h-9 font-mono text-xs sm:text-sm"
+              onBlur={() => onFieldBlur("pincode")}
+              aria-invalid={Boolean(errors.pincode)}
+              className={`h-9 font-mono text-xs sm:text-sm${invalid(errors.pincode)}`}
             />
           </Field>
 
           {/* 3. Address */}
-          <Field label="Address">
+          <Field label="Address" error={errors.address}>
             <Input
               value={data.address || ""}
               onChange={(e) => onChange("address", e.target.value)}
               placeholder="Door / Flat No., Street Name"
-              className="h-9 text-xs sm:text-sm"
+              onBlur={() => onFieldBlur("address")}
+              aria-invalid={Boolean(errors.address)}
+              className={`h-9 text-xs sm:text-sm${invalid(errors.address)}`}
             />
           </Field>
 
           {/* 4. Area / Locality */}
-          <Field label="Area / Locality">
+          <Field label="Area / Locality" error={errors.area}>
             <Input
               value={data.area || ""}
               onChange={(e) => onChange("area", e.target.value)}
               placeholder="e.g. T. Nagar"
-              className="h-9 text-xs sm:text-sm"
+              onBlur={() => onFieldBlur("area")}
+              aria-invalid={Boolean(errors.area)}
+              className={`h-9 text-xs sm:text-sm${invalid(errors.area)}`}
             />
           </Field>
 
           {/* 5. Landmark */}
-          <Field label="Landmark">
+          <Field label="Landmark" error={errors.landmark}>
             <Input
               value={data.landmark || ""}
               onChange={(e) => onChange("landmark", e.target.value)}
               placeholder="e.g. Near Bus Stand"
-              className="h-9 text-xs sm:text-sm"
+              onBlur={() => onFieldBlur("landmark")}
+              aria-invalid={Boolean(errors.landmark)}
+              className={`h-9 text-xs sm:text-sm${invalid(errors.landmark)}`}
             />
           </Field>
 
@@ -625,12 +708,12 @@ const ContactPersonForm = ({
             </label>
 
             <div className="flex items-center gap-1.5">
-              <label className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-[#006052] hover:text-[#006052] cursor-pointer transition-colors shadow-2xs h-9">
+              <label className={`flex flex-1 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-[#006052] hover:text-[#006052] cursor-pointer transition-colors shadow-2xs h-9${invalid(uploadErrors.aadhaarFile || errors.aadhaarFile)}`}>
                 <Upload className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                 <span className="truncate">{data.aadhaarFile ? "Change File" : "Upload File"}</span>
                 <input
                   type="file"
-                  accept="image/*,.pdf"
+                  accept={KYC_FILE_ACCEPT}
                   onChange={handleAadhaarFileChange}
                   className="hidden"
                 />
@@ -669,7 +752,10 @@ const ContactPersonForm = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onChange("aadhaarFile", null)}
+                    onClick={() => {
+                      setUploadErrors((current) => ({ ...current, aadhaarFile: "" }));
+                      onChange("aadhaarFile", null);
+                    }}
                     className="text-slate-400 hover:text-red-600 cursor-pointer"
                     title="Remove file"
                   >
@@ -678,6 +764,7 @@ const ContactPersonForm = ({
                 </div>
               </div>
             )}
+            <FieldError message={uploadErrors.aadhaarFile || errors.aadhaarFile} />
           </div>
         </div>
 
@@ -685,8 +772,8 @@ const ContactPersonForm = ({
         {additionalDocs.length > 0 && (
           <div className="pt-2 border-t border-slate-100 space-y-2">
             {additionalDocs.map((doc, idx) => (
+              <div key={doc.id || idx}>
               <div
-                key={doc.id || idx}
                 className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-slate-50 p-2 rounded-md border border-slate-200"
               >
                 <div className="sm:w-44 shrink-0">
@@ -703,9 +790,10 @@ const ContactPersonForm = ({
                   <span className="text-xs truncate">{doc.file ? "Change File" : "Upload File"}</span>
                   <input
                     type="file"
-                    accept="image/*,.pdf"
+                    accept={KYC_FILE_ACCEPT}
                     onChange={(e) => {
                       const f = e.target.files?.[0];
+                      e.target.value = "";
                       if (f) handleUpdateDocFile(doc.id, f);
                     }}
                     className="hidden"
@@ -739,6 +827,8 @@ const ContactPersonForm = ({
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
+              </div>
+              <FieldError message={uploadErrors[doc.id] || errors.docs?.[doc.id]} />
               </div>
             ))}
           </div>
@@ -1027,16 +1117,20 @@ const GuarantorReferralSection = ({
   referralData = {},
   onReferralChange,
   onReferralClear,
+  // Kept by the page so they survive switching tabs: which form "both" shows,
+  // and each form's messages and checks (utils/personDetails.js).
+  checks,
 }) => {
-  // Sub-step state for sequential "both" workflow: "guarantor" -> "referral"
-  const [bothSubStep, setBothSubStep] = useState("guarantor");
+  // Sub-step for sequential "both" workflow: "guarantor" -> "referral"
+  const bothSubStep = checks.activeForm;
+  const setBothSubStep = checks.setActiveForm;
 
-  // Keep bothSubStep in sync if relationshipOption changes
-  useEffect(() => {
-    if (relationshipOption === "both") {
-      setBothSubStep("guarantor");
-    }
-  }, [relationshipOption]);
+  const checksFor = (type) => ({
+    errors: checks.errors[type],
+    onFieldBlur: (field) => checks.onFieldBlur(type, field),
+    onValidate: () => checks.validate(type),
+    onCleared: () => checks.reset(type),
+  });
 
   return (
     <div className="space-y-2">
@@ -1069,7 +1163,10 @@ const GuarantorReferralSection = ({
                   name="loanRelationshipOption"
                   value={opt.id}
                   checked={isSelected}
-                  onChange={() => onOptionChange(opt.id)}
+                  onChange={() => {
+                    setBothSubStep("guarantor");
+                    onOptionChange(opt.id);
+                  }}
                   className="h-3 w-3 accent-[#006052] text-[#006052] focus:ring-[#006052]"
                 />
                 <span className="leading-tight text-[11px] sm:text-xs">{opt.label}</span>
@@ -1125,7 +1222,9 @@ const GuarantorReferralSection = ({
           <>
             {bothSubStep === "guarantor" ? (
               <ContactPersonForm
+                key="guarantor"
                 type="guarantor"
+                {...checksFor("guarantor")}
                 badgeLabel="Guarantor"
                 data={guarantorData}
                 onChange={onGuarantorChange}
@@ -1135,7 +1234,9 @@ const GuarantorReferralSection = ({
               />
             ) : (
               <ContactPersonForm
+                key="referral"
                 type="referral"
+                {...checksFor("referral")}
                 badgeLabel="Referral"
                 data={referralData}
                 onChange={onReferralChange}
@@ -1150,7 +1251,9 @@ const GuarantorReferralSection = ({
         {/* Option: Guarantor only -> Single Form Full Width */}
         {relationshipOption === "guarantor" && (
           <ContactPersonForm
+            key="guarantor"
             type="guarantor"
+            {...checksFor("guarantor")}
             badgeLabel="Guarantor"
             data={guarantorData}
             onChange={onGuarantorChange}
@@ -1163,7 +1266,9 @@ const GuarantorReferralSection = ({
         {/* Option: Referral only -> Single Form Full Width */}
         {relationshipOption === "referral" && (
           <ContactPersonForm
+            key="referral"
             type="referral"
+            {...checksFor("referral")}
             badgeLabel="Referral"
             data={referralData}
             onChange={onReferralChange}

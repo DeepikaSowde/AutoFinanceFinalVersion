@@ -31,6 +31,7 @@ import { hasErrors, validateCustomerDetails, validateCustomerField } from '../ut
 import { kycHasErrors, validateAadhaar, validateDrivingLicence, validateKyc } from '../utils/kyc'
 import { validateVehicleInfo, vehicleInfoHasErrors } from '../utils/vehicleInfo'
 import { useVehicleCatalog } from '../services/vehicleCatalogApi'
+import { formsFor, personHasErrors, shownPersonErrors, validatePerson } from '../utils/personDetails'
 import { apiGet } from '../services/api'
 
 const STEPS = [
@@ -477,12 +478,49 @@ const NewLoan = () => {
     return false
   }
 
+  // Guarantor & Referral (utils/personDetails.js): the chosen option says
+  // which forms must be valid. A field's message shows once the user leaves
+  // it; all of a form's messages show after Next, Review, Submit or +, and
+  // follow the values as they are fixed. Save Draft never checks.
+  const noneShown = { guarantor: {}, referral: {} }
+  const [personShown, setPersonShown] = useState(noneShown)
+  const [activePerson, setActivePerson] = useState('guarantor')
+  const resetPersonChecks = () => {
+    setPersonShown(noneShown)
+    setActivePerson('guarantor')
+  }
+  const showPerson = (type, field) => setPersonShown((shown) => ({ ...shown, [type]: { ...shown[type], [field]: true } }))
+  const personChecks = {
+    activeForm: activePerson,
+    setActiveForm: setActivePerson,
+    errors: {
+      guarantor: shownPersonErrors(validatePerson(form.guarantor, 'guarantor'), personShown.guarantor),
+      referral: shownPersonErrors(validatePerson(form.referral, 'referral'), personShown.referral),
+    },
+    onFieldBlur: showPerson,
+    validate: (type) => {
+      if (!personHasErrors(validatePerson(form[type], type))) return true
+      showPerson(type, '*')
+      return false
+    },
+    reset: (type) => setPersonShown((shown) => ({ ...shown, [type]: {} })),
+  }
+  const peopleAcceptable = () => {
+    const bad = formsFor(form.loan.relationshipOption).filter((type) => personHasErrors(validatePerson(form[type], type)))
+    if (!bad.length) return true
+    bad.forEach((type) => showPerson(type, '*'))
+    setActivePerson(bad[0])
+    setLoanSubTab('guarantor')
+    setStep(2)
+    return false
+  }
+
   const current = STEPS[step]
   const isFirst = step === 0
   const isLast = step === STEPS.length - 1
 
-  // Guarantor & Referral is optional: Next on the Loan step goes straight to
-  // Review from either sub-tab; the Guarantor & Referral tab stays one click away.
+  // Next on the Loan step goes to Review from either sub-tab once the First Due
+  // Date and the chosen Guarantor / Referral forms are valid.
   const goNext = async () => {
     if (step === 0 && !(await customerStepReady())) return
     if (step === 1) {
@@ -492,7 +530,7 @@ const NewLoan = () => {
       setStep(2)
       return
     }
-    if (step === 2 && !firstDueAcceptable()) return
+    if (step === 2 && !(firstDueAcceptable() && peopleAcceptable())) return
     setStep((s) => Math.min(s + 1, STEPS.length - 1))
   }
 
@@ -502,7 +540,7 @@ const NewLoan = () => {
     if (target > 0 && !(await customerStepReady())) return
     if (target > 1 && !(await vehicleInfoAcceptable())) return
     if (target > 1 && !(await chassisAcceptable())) return
-    if (target > 2 && !firstDueAcceptable()) return
+    if (target > 2 && !(firstDueAcceptable() && peopleAcceptable())) return
     setStep(target)
   }
 
@@ -580,6 +618,7 @@ const NewLoan = () => {
       setVehicleErrors({})
       setFirstDueChecked(false)
       setFirstDueIncomplete(false)
+      resetPersonChecks()
       setExistingCustomer(null)
       setExistingCustomerAlert(false)
       setRegNoNotice('')
@@ -648,24 +687,9 @@ const NewLoan = () => {
     if (submitting) return
     setSubmitting(true)
     try {
-      // A guarantor / referrer is saved to the register after the loan, so
-      // check their details first rather than fail half way. Both are
-      // optional: only details that were actually entered are checked.
-      // Entered guarantor details count even if the option was left unset.
+      // Saved to the register after the loan, for the forms the option chose.
       const withGuarantor = hasGuarantorIn(form)
       const withReferral = hasReferralIn(form)
-      const people = [
-        withGuarantor && ['Guarantor', form.guarantor],
-        withReferral && ['Referral', form.referral],
-      ].filter(Boolean)
-      for (const [label, person] of people) {
-        const name = (person?.fullName || person?.name || '').trim()
-        const digits = String(person?.phone || person?.mobile || '').replace(/\D/g, '')
-        if ((name || digits) && (!name || digits.length < 10)) {
-          alert(`Enter the ${label.toLowerCase()}'s full name and a 10-digit mobile number.`)
-          return
-        }
-      }
 
       // A draft or the stepper can reach Review without passing earlier steps.
       {
@@ -706,6 +730,11 @@ const NewLoan = () => {
 
       if (!firstDueAcceptable()) {
         alert(firstDueProblem)
+        return
+      }
+      // Checked before the loan is created, so it can't be saved half way.
+      if (!peopleAcceptable()) {
+        alert('Please fix the Guarantor & Referral details.')
         return
       }
 
@@ -787,6 +816,7 @@ const NewLoan = () => {
     setVehicleErrors({})
     setFirstDueChecked(false)
     setFirstDueIncomplete(false)
+    resetPersonChecks()
     setExistingCustomer(null)
     setExistingCustomerAlert(false)
     setRegNoNotice('')
@@ -807,6 +837,7 @@ const NewLoan = () => {
     setVehicleErrors({})
     setFirstDueChecked(false)
     setFirstDueIncomplete(false)
+    resetPersonChecks()
     setExistingCustomer(null)
     setExistingCustomerAlert(false)
     setRegNoNotice('')
@@ -973,6 +1004,7 @@ const NewLoan = () => {
                 setFirstDueIncomplete(incomplete)
                 if (form.loan.firstDueDate || incomplete) setFirstDueChecked(true)
               }}
+              personChecks={personChecks}
               guarantorData={form.guarantor}
               referralData={form.referral}
               onGuarantorChange={update('guarantor')}

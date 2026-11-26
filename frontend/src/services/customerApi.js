@@ -128,13 +128,11 @@ const toRc = (vehicle) => ({
 // Which of guarantor / referral the loan form chose ("none", "both",
 // "guarantor", "referral"). Older forms said "required: Yes" instead.
 const relationshipOptionOf = (form) => form.loan?.relationshipOption || (form.guarantor?.required === 'Yes' ? 'guarantor' : 'none')
-// Guarantor details that were filled in count even if the option was left
-// unset — they must not be silently dropped (Oviya's "missed guarantor" fix).
 const personEntered = (person) =>
   Boolean(String(person?.fullName || person?.name || person?.phone || person?.mobile || '').trim())
-// Guarantor and referral are optional: choosing the option but leaving the
-// details empty adds neither (no blank guarantor, no failed register entry).
-export const hasGuarantorIn = (form) => personEntered(form.guarantor)
+// A guarantor / referrer is saved only when the chosen option includes one
+// ("No Guarantor or Referral" saves neither, whatever was typed earlier).
+export const hasGuarantorIn = (form) => ['both', 'guarantor'].includes(relationshipOptionOf(form)) && personEntered(form.guarantor)
 export const hasReferralIn = (form) => ['both', 'referral'].includes(relationshipOptionOf(form)) && personEntered(form.referral)
 
 const toGuarantor = (guarantor, hasGuarantor = guarantor.required === 'Yes') => ({

@@ -302,6 +302,7 @@ const LoanTab = ({
   loanDate,
   firstDueDateError,
   onFirstDueDateBlur,
+  personChecks,
 }) => {
   const { t } = useTranslation()
   const [internalActiveSection, setInternalActiveSection] = useState('loan')
@@ -772,6 +773,7 @@ const LoanTab = ({
           referralData={referralData}
           onReferralChange={onReferralChange}
           onReferralClear={onReferralClear}
+          checks={personChecks}
         />
       )}
     </div>
