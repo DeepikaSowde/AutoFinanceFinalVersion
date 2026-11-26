@@ -1,4 +1,5 @@
 import { apiGet, apiPost } from './api'
+import { commissionAmountFor } from '../utils/personDetails'
 import { normalizeAadhaar, normalizeDrivingLicence } from '../utils/kyc'
 import { formatRegNo } from '../utils/vehicleInfo'
 
@@ -183,7 +184,7 @@ const toReferral = (form) => {
     return { referredBy: form.loan.referredBy || '', commission: form.loan.referredByCommission || '' }
   }
   const percentage = Number(referral.commissionPercentage) || 0
-  const amount = Number(referral.commissionAmount) || (percentage > 0 ? Math.round((principalOf(form) * percentage) / 100) : 0)
+  const amount = Number(commissionAmountFor(principalOf(form), referral.commissionPercentage)) || 0
   return {
     referredBy: (referral.fullName || referral.name || '').trim(),
     phone: (referral.phone || referral.mobile || '').trim(),

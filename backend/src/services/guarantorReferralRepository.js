@@ -319,6 +319,22 @@ const commissionAmountOf = (commission, loanAmount) => {
   return 0;
 };
 
+// A new loan's referral commission: 0-100%, and an amount from 0 to the loan
+// amount. Nothing invalid is saved or paid.
+const assertValidCommission = (commission = {}, loanAmount) => {
+  const percentage = Number(commission.percentage || 0);
+  const amount = Number(commission.amount || 0);
+
+  if (!(percentage >= 0 && percentage <= 100)) throw httpError("Commission percentage must be between 0 and 100.");
+  if (!(amount >= 0)) throw httpError("Commission amount cannot be negative.");
+  if (Number(loanAmount) > 0 && amount > Number(loanAmount)) {
+    throw httpError("Commission amount cannot be more than the loan amount.");
+  }
+  if (commission.pay === true && !(commissionAmountOf(commission, loanAmount) > 0)) {
+    throw httpError("Commission amount must be greater than zero to be paid.");
+  }
+};
+
 /*
  * Records that a person guaranteed or referred a loan, adding them to the
  * register first if they are new. For a referral, also records the
@@ -338,6 +354,7 @@ export const linkPersonToLoan = async (input = {}, user) => {
 
   const personId = await withTransaction(async (client) => {
     const loan = await findLoan(client, input.customerId, input.loanId);
+    if (type === "Referral") assertValidCommission(input.commission, loan.loan_amount);
     let row = await findPerson(client, input.person || {}, person);
     let ref;
 

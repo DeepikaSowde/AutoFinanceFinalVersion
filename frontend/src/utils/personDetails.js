@@ -1,9 +1,9 @@
 // New Loan -> Guarantor & Referral: the rules for each form.
 //
 // Which forms are checked depends on the chosen option (both / guarantor /
-// referral / none). A Guarantor needs every field and the Aadhaar document.
-// A Referral needs only Full Name and Mobile Number (what the register
-// requires); its other fields are optional and checked when filled in.
+// referral / none). A Guarantor and a Referral each need every contact field
+// and the Aadhaar document; a Referral also needs Commission (%), more than 0
+// and at most 100. Its amount is always calculated from the loan amount.
 //
 // Number, address and file rules are the same ones the Customer step uses.
 
@@ -11,10 +11,14 @@ import { validateMobile } from './mobile'
 import { validateAadhaar, validateKycFileMeta, needsReattach } from './kyc'
 import { validateAddress, validateLocality, validatePincode } from './customerDetails'
 
+const CONTACT_FIELDS = ['fullName', 'mobile', 'aadhaar', 'pincode', 'address', 'area', 'landmark', 'aadhaarFile']
+
 export const REQUIRED_FIELDS = {
-  guarantor: ['fullName', 'mobile', 'aadhaar', 'pincode', 'address', 'area', 'landmark', 'aadhaarFile'],
-  referral: ['fullName', 'mobile'],
+  guarantor: CONTACT_FIELDS,
+  referral: [...CONTACT_FIELDS, 'commission'],
 }
+
+export const MAX_COMMISSION_PERCENT = 100
 
 const REQUIRED_MESSAGES = {
   fullName: 'Please enter the full name.',
@@ -25,6 +29,31 @@ const REQUIRED_MESSAGES = {
   area: 'Please enter the area / locality.',
   landmark: 'Please enter the landmark.',
   aadhaarFile: 'Please upload the Aadhaar document.',
+  commission: 'Please enter the commission percentage.',
+}
+
+/* ---------- referral commission ---------- */
+
+export const commissionError = (value) => {
+  const typed = String(value ?? '').trim()
+  if (!typed) return REQUIRED_MESSAGES.commission
+  if (/^-/.test(typed)) return 'Commission must be more than 0%.'
+  // digits with an optional decimal part (up to the 4 places that are stored)
+  if (!/^(\d+(\.\d{0,4})?|\.\d{1,4})$/.test(typed)) {
+    return /^\d*\.\d{5,}$/.test(typed) ? 'Use at most 4 decimal places.' : 'Enter a number, e.g. 2 or 1.5.'
+  }
+  if (!(Number(typed) > 0)) return 'Commission must be more than 0%.'
+  if (Number(typed) > MAX_COMMISSION_PERCENT) return `Commission cannot be more than ${MAX_COMMISSION_PERCENT}%.`
+  return ''
+}
+
+// Loan amount x percentage / 100, to the nearest rupee (half a rupee rounds
+// up); '' until both are valid. Worked in whole numbers so that, for example,
+// 100.5 is never read as 100.49999.
+export const commissionAmountFor = (principal, percentage) => {
+  const amount = Number(principal)
+  if (commissionError(percentage) || !(amount > 0) || !Number.isFinite(amount)) return ''
+  return String(Math.round(Math.round(amount * Number(percentage) * 10000) / 1000000))
 }
 
 // The forms that must be valid for a relationship option.
@@ -70,8 +99,9 @@ const formatError = {
 }
 
 // → { fullName, mobile, ..., aadhaarFile, docs: { [docId]: message } }, with
-// '' for a field that is fine.
-export const validatePerson = (person = {}, type = 'guarantor') => {
+// '' for a field that is fine; a referral also has commission and
+// commissionAmount, which needs the loan amount (`principal`).
+export const validatePerson = (person = {}, type = 'guarantor', { principal = 0 } = {}) => {
   const required = REQUIRED_FIELDS[type]
   const values = valuesOf(person)
   const errors = {}
@@ -88,6 +118,18 @@ export const validatePerson = (person = {}, type = 'guarantor') => {
     if (doc.file) errors.docs[doc.id] = documentError(doc.file)
     else errors.docs[doc.id] = text(doc.title) ? 'Upload this document, or remove the entry.' : ''
   }
+
+  if (type === 'referral') {
+    errors.commission = commissionError(person?.commissionPercentage)
+    const amount = commissionAmountFor(principal, person?.commissionPercentage)
+    errors.commissionAmount = errors.commission
+      ? ''
+      : !(Number(principal) > 0)
+      ? 'Enter the Loan Amount to calculate the commission.'
+      : Number(amount) > 0
+      ? ''
+      : 'The commission works out to ₹0. Enter a higher percentage.'
+  }
   return errors
 }
 
@@ -98,7 +140,10 @@ export const personHasErrors = ({ docs = {}, ...fields } = {}) =>
 // (shown['*']), otherwise those of the fields the user has left.
 export const shownPersonErrors = (errors, shown = {}) => {
   if (shown['*']) return errors
-  const visible = Object.fromEntries(Object.entries(errors).filter(([field]) => shown[field]))
+  // The calculated amount's message goes with the percentage it comes from.
+  const visible = Object.fromEntries(
+    Object.entries(errors).filter(([field]) => shown[field === 'commissionAmount' ? 'commission' : field])
+  )
   return { ...visible, docs: {} }
 }
 

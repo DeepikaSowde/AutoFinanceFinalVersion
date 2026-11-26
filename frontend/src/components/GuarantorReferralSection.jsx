@@ -90,19 +90,6 @@ const ContactPersonForm = ({
   const [ambiguousMatches, setAmbiguousMatches] = useState(null);
   const [recordsVersion, setRecordsVersion] = useState(0);
 
-  // Auto-calculate referral commission amount when loanAmount or commissionPercentage changes
-  useEffect(() => {
-    if (type === "referral" && data.commissionPercentage !== undefined && data.commissionPercentage !== "") {
-      const pct = Number(data.commissionPercentage);
-      if (!isNaN(pct) && pct >= 0) {
-        const calculated = String(Math.round((Number(loanAmount || 0) * pct) / 100));
-        if (String(data.commissionAmount || "") !== calculated) {
-          onChange("commissionAmount", calculated);
-        }
-      }
-    }
-  }, [loanAmount, data.commissionPercentage, type]);
-
   // Subscribe to real-time updates from shared storage
   useEffect(() => {
     const handleUpdate = () => {
@@ -571,30 +558,19 @@ const ContactPersonForm = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* 1. Commission (%) — Optional percentage input */}
-                <Field label="Commission (%)">
+                {/* 1. Commission (%) — required, more than 0 and at most 100 */}
+                <Field label="Commission (%)" error={errors.commission}>
                   <div className="relative">
                     <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="any"
+                      type="text"
                       inputMode="decimal"
+                      maxLength={10}
                       value={data.commissionPercentage ?? ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === "" || (!isNaN(val) && Number(val) >= 0 && Number(val) <= 100)) {
-                          onChange("commissionPercentage", val);
-                          if (val === "") {
-                            onChange("commissionAmount", "");
-                          } else {
-                            const calc = Math.round((Number(loanAmount || 0) * Number(val)) / 100);
-                            onChange("commissionAmount", calc > 0 ? String(calc) : "0");
-                          }
-                        }
-                      }}
+                      onChange={(e) => onChange("commissionPercentage", e.target.value)}
+                      onBlur={() => onFieldBlur("commission")}
+                      aria-invalid={Boolean(errors.commission)}
                       placeholder="e.g. 2"
-                      className="h-9 pr-7 text-xs sm:text-sm font-semibold text-slate-800"
+                      className={`h-9 pr-7 text-xs sm:text-sm font-semibold text-slate-800${invalid(errors.commission)}`}
                     />
                     <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
                       %
@@ -603,28 +579,22 @@ const ContactPersonForm = ({
                 </Field>
 
                 {/* 2. Amount for That % (₹) — Automatically calculate using loan amount × commission percentage ÷ 100 */}
-                <Field label="Amount for That % (₹)">
+                <Field label="Amount for That % (₹)" error={errors.commissionAmount}>
                   <div className="relative">
                     <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
                       ₹
                     </span>
+                    {/* Always calculated: loan amount x commission % / 100 */}
                     <Input
-                      type="number"
-                      min="0"
-                      step="any"
-                      inputMode="decimal"
+                      type="text"
+                      readOnly
                       value={data.commissionAmount ?? ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === "" || (!isNaN(val) && Number(val) >= 0)) {
-                          onChange("commissionAmount", val);
-                        }
-                      }}
+                      aria-invalid={Boolean(errors.commissionAmount)}
                       placeholder="0"
-                      className="h-9 pl-7 text-xs sm:text-sm font-bold text-emerald-950"
+                      className={`h-9 pl-7 text-xs sm:text-sm font-bold text-emerald-950${invalid(errors.commissionAmount)}`}
                     />
                   </div>
-                  {Number(loanAmount) > 0 && data.commissionPercentage ? (
+                  {data.commissionAmount ? (
                     <p className="text-[10px] text-emerald-700 mt-0.5 font-medium">
                       Calculated: ₹{Number(loanAmount).toLocaleString("en-IN")} × {data.commissionPercentage}% ÷ 100
                     </p>

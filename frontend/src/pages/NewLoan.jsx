@@ -31,7 +31,7 @@ import { hasErrors, validateCustomerDetails, validateCustomerField } from '../ut
 import { kycHasErrors, validateAadhaar, validateDrivingLicence, validateKyc } from '../utils/kyc'
 import { validateVehicleInfo, vehicleInfoHasErrors } from '../utils/vehicleInfo'
 import { useVehicleCatalog } from '../services/vehicleCatalogApi'
-import { formsFor, personHasErrors, shownPersonErrors, validatePerson } from '../utils/personDetails'
+import { commissionAmountFor, formsFor, personHasErrors, shownPersonErrors, validatePerson } from '../utils/personDetails'
 import { apiGet } from '../services/api'
 
 const STEPS = [
@@ -489,24 +489,32 @@ const NewLoan = () => {
     setPersonShown(noneShown)
     setActivePerson('guarantor')
   }
+  // The referral commission amount is worked out from the loan amount here, so
+  // the form, Review and what is saved always agree.
+  const principal = principalOf(form)
+  const filled = {
+    ...form,
+    referral: { ...form.referral, commissionAmount: commissionAmountFor(principal, form.referral?.commissionPercentage) },
+  }
+  const personErrors = (type) => validatePerson(form[type], type, { principal })
   const showPerson = (type, field) => setPersonShown((shown) => ({ ...shown, [type]: { ...shown[type], [field]: true } }))
   const personChecks = {
     activeForm: activePerson,
     setActiveForm: setActivePerson,
     errors: {
-      guarantor: shownPersonErrors(validatePerson(form.guarantor, 'guarantor'), personShown.guarantor),
-      referral: shownPersonErrors(validatePerson(form.referral, 'referral'), personShown.referral),
+      guarantor: shownPersonErrors(personErrors('guarantor'), personShown.guarantor),
+      referral: shownPersonErrors(personErrors('referral'), personShown.referral),
     },
     onFieldBlur: showPerson,
     validate: (type) => {
-      if (!personHasErrors(validatePerson(form[type], type))) return true
+      if (!personHasErrors(personErrors(type))) return true
       showPerson(type, '*')
       return false
     },
     reset: (type) => setPersonShown((shown) => ({ ...shown, [type]: {} })),
   }
   const peopleAcceptable = () => {
-    const bad = formsFor(form.loan.relationshipOption).filter((type) => personHasErrors(validatePerson(form[type], type)))
+    const bad = formsFor(form.loan.relationshipOption).filter((type) => personHasErrors(personErrors(type)))
     if (!bad.length) return true
     bad.forEach((type) => showPerson(type, '*'))
     setActivePerson(bad[0])
@@ -748,14 +756,13 @@ const NewLoan = () => {
 
       // Early, friendly check; the server re-checks inside the transaction
       // that creates and funds the loan.
-      const principal = principalOf(form)
       const { availableInvestmentBalance } = await getFundingSummary()
       if (principal > availableInvestmentBalance) {
         alert(`Insufficient available balance for this loan. Available: ₹${Number(availableInvestmentBalance).toLocaleString('en-IN')}.`)
         return
       }
 
-      const entry = await submitLoanApplication(await compressObjectImages(form))
+      const entry = await submitLoanApplication(await compressObjectImages(filled))
 
       // Record the guarantor / referrer against the new loan in the shared
       // register (with the referral commission, and its expense if paid now).
@@ -763,10 +770,10 @@ const NewLoan = () => {
       if (withGuarantor) links.push({ person: form.guarantor, type: 'Guarantor' })
       if (withReferral) {
         links.push({
-          person: form.referral,
+          person: filled.referral,
           type: 'Referral',
-          commissionPercentage: form.referral?.commissionPercentage,
-          commissionAmount: form.referral?.commissionAmount,
+          commissionPercentage: filled.referral.commissionPercentage,
+          commissionAmount: filled.referral.commissionAmount,
           payCommission: form.referral?.payCommission,
           paymentMode: form.referral?.paymentMode || 'Cash',
         })
@@ -1006,7 +1013,7 @@ const NewLoan = () => {
               }}
               personChecks={personChecks}
               guarantorData={form.guarantor}
-              referralData={form.referral}
+              referralData={filled.referral}
               onGuarantorChange={update('guarantor')}
               onGuarantorClear={clearGuarantor}
               onReferralChange={update('referral')}
@@ -1015,7 +1022,7 @@ const NewLoan = () => {
               onSectionChange={setLoanSubTab}
             />
           )}
-          {step === 3 && <ReviewTab form={form} onViewSchedule={handleViewSchedule} />}
+          {step === 3 && <ReviewTab form={filled} onViewSchedule={handleViewSchedule} />}
         </div>
 
         {/* Bottom Action Bar: Consistently positioned at the bottom */}
